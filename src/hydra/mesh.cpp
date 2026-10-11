@@ -186,6 +186,7 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
 void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
 {
   _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
+  _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
 
   // Authored normals should only exist on triangle meshes
   if (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE) {
@@ -235,16 +236,23 @@ void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
   else if (interpolation == HdInterpolationFaceVarying) {
     TF_VERIFY(normals.size() == static_cast<size_t>(_topology.GetNumFaceVaryings()));
 
-    // TODO: Cycles has no per-corner normals, so ignore until supported.
-#if 0
-    if (!_util.ComputeTriangulatedFaceVaryingPrimvar(
-            normals.data(), normals.size(), HdTypeFloatVec3, &value))
-    {
+    /* Per-corner normals (hard edges, custom normals — what Blender and most DCCs export): triangulate them
+     * like the other face-varying primvars and store them as Cycles' corner normals, as Blender's own sync
+     * does. Ignoring them made every hard-surface mesh render smooth. */
+    const VtValue triangulated = ComputeTriangulatedFaceVaryingPrimvar(value, HdTypeFloatVec3, _util);
+    if (triangulated.IsEmpty() || !triangulated.IsHolding<VtVec3fArray>()) {
       return;
     }
-
-    const auto &normalsTriangulated = value.UncheckedGet<VtVec3fArray>();
-#endif
+    const auto &cornerNormals = triangulated.UncheckedGet<VtVec3fArray>();
+    if (cornerNormals.size() != _geom->num_triangles() * 3) {
+      TF_WARN("Face-varying normals of %s do not match its triangles", GetId().GetText());
+      return;
+    }
+    packed_normal *const N =
+        _geom->attributes.add(ATTR_STD_CORNER_NORMAL)->data_for_write<packed_normal>();
+    for (size_t i = 0; i < cornerNormals.size(); ++i) {
+      N[i] = packed_normal(make_float3(cornerNormals[i][0], cornerNormals[i][1], cornerNormals[i][2]));
+    }
   }
 }
 
