@@ -10,6 +10,9 @@
 #include "hydra/node_util.h"
 #include "hydra/session.h"
 #include "hydra/util.h"
+#ifdef WITH_OSL
+#  include "scene/osl.h"
+#endif
 #include "scene/scene.h"
 #include "scene/shader.h"
 #include "scene/shader_graph.h"
@@ -51,6 +54,51 @@ static bool IsAovPassThrough(const ShaderNode *node, const TfToken &socketName)
 {
   return node && node->type->name == "aov_output" &&
          (socketName == kAovPassThroughInput || socketName == "out");
+}
+
+/* OSL script node, like Blender's Script node: "cycles_script" with the shader file (.osl or
+ * .oso) in "filepath", its inputs and outputs are the shader parameters. */
+static const TfToken kScriptFilepath("filepath");
+
+static ShaderNode *CreateScriptNode(ShaderGraph *graph,
+                                    Scene *scene,
+                                    HdMaterialNodeParameterContainerSchema params,
+                                    const SdfPath &nodePath)
+{
+  std::string filepath;
+  if (const auto valueDs = params.Get(kScriptFilepath).GetValue()) {
+    const VtValue value = valueDs->GetValue(0.0f);
+    if (value.IsHolding<SdfAssetPath>()) {
+      const SdfAssetPath &asset = value.UncheckedGet<SdfAssetPath>();
+      filepath = asset.GetResolvedPath().empty() ? asset.GetAssetPath() : asset.GetResolvedPath();
+    }
+    else {
+      filepath = VtValue::Cast<std::string>(value).GetWithDefault(std::string());
+    }
+  }
+  if (filepath.empty()) {
+    TF_WARN("Script node '%s' has no shader file", nodePath.GetText());
+    return nullptr;
+  }
+#ifdef WITH_OSL
+  if (!scene->shader_manager->use_osl()) {
+    TF_WARN(
+        "Script node '%s' needs Open Shading Language (render setting) and a CPU or OptiX "
+        "device",
+        nodePath.GetText());
+    return nullptr;
+  }
+  ShaderNode *node = OSLShaderManager::osl_node(graph, scene, filepath, "");
+  if (!node) {
+    TF_WARN("Script node '%s' could not load '%s'", nodePath.GetText(), filepath.c_str());
+  }
+  return node;
+#else
+  (void)graph;
+  (void)scene;
+  TF_WARN("Script node '%s' needs a build with OSL", nodePath.GetText());
+  return nullptr;
+#endif
 }
 
 /* Default values for Cycles shader node sockets that differ from the Cycles socket defaults,
@@ -447,7 +495,8 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     const SceneLock lock(renderParam);
 
-    if (network && !_nodes.empty() && !dirtyResource) {
+    /* A script node is rebuilt when its file changes, so rebuild materials with one. */
+    if (network && !_nodes.empty() && !dirtyResource && !HasScriptNode()) {
       UpdateParameters(network);
       _shader->tag_update(lock.scene);
     }
@@ -466,7 +515,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
         else
 #endif
         {
-          graph = BuildShaderGraph(network);
+          graph = BuildShaderGraph(network, lock.scene);
         }
         if (!graph) {
           TF_WARN("Could not build a shader graph for %s.", id.GetText());
@@ -504,6 +553,9 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     auto valueDs = params.Get(paramName).GetValue();
     if (!valueDs) {
       continue;
+    }
+    if (paramName == kScriptFilepath && nodeDesc.node->special_type == SHADER_SPECIAL_TYPE_OSL) {
+      continue; /* Used to create the node. */
     }
     VtValue value = valueDs->GetValue(0.0f);
 
@@ -657,7 +709,18 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
   }
 }
 
-unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSchema network)
+bool HdCyclesMaterial::HasScriptNode() const
+{
+  for (const auto &[path, nodeDesc] : _nodes) {
+    if (nodeDesc.node->special_type == SHADER_SPECIAL_TYPE_OSL) {
+      return true;
+    }
+  }
+  return false;
+}
+
+unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSchema network,
+                                                           Scene *scene)
 {
   _nodes.clear();
 
@@ -702,8 +765,15 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
         }
       }
 
+      if (isNativeNode && cyclesType == "script") {
+        nodeDesc.node = CreateScriptNode(graph.get(), scene, nodeSchema.GetParameters(), nodePath);
+        if (!nodeDesc.node) {
+          continue;
+        }
+        _nodes.emplace(nodePath, nodeDesc);
+      }
       /* If it's a native Cycles' node-type, just do the lookup now. */
-      if (const NodeType *nodeType = NodeType::find(cyclesType)) {
+      else if (const NodeType *nodeType = NodeType::find(cyclesType)) {
         nodeDesc.node = graph->create_node(nodeType);
         /* Image nodes start with scene linear, detect the color space unless one is set. */
         if (const SocketType *colorspace = nodeType->find_input(ustring("colorspace"))) {
@@ -794,6 +864,15 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       }
       else if (node->type->name == "emission") {
         outputName = "Emission";
+      }
+      else if (node->special_type == SHADER_SPECIAL_TYPE_OSL) {
+        /* Script node: its first closure output. */
+        for (const ShaderOutput *out : node->outputs) {
+          if (out->type() == SocketType::CLOSURE) {
+            outputName = out->name().c_str();
+            break;
+          }
+        }
       }
       else {
         outputName = "BSDF";
