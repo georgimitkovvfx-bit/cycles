@@ -98,6 +98,22 @@ point the configure step to it:
 
     -DEMBREE_ROOT_DIR="<path to Embree install>"
 
+OSL is off for Houdini builds unless an OSL built against Houdini's OpenImageIO is given: the precompiled OSL
+links Blender's OpenImageIO, which cannot be mixed with Houdini's. Build OSL (1.15) as static libraries with
+`BUILD_SHARED_LIBS=OFF`, `OSL_USE_OPTIX=ON` and `USE_LLVM_BITCODE=ON` (for OptiX), against Houdini's OpenImageIO
+and Imath (`$HFS/toolkit/include`, `OpenImageIO_sidefx` and `Imath_sidefx` in `$HFS/custom/houdini/dsolib`),
+the precompiled LLVM, pugixml and zlib, and a `clang`, `opt` and `llc` of the same LLVM version for the CUDA
+bitcode. With Houdini's OpenImageIO 2.5, two changes are needed in OSL: build the PTX with PTX ISA 6.0
+(`+ptx60`, LLVM 20 emits instructions that need it), and in `optexture.cpp` do not assign an OIIO `ustring` in
+device code. Then configure with:
+
+    -DWITH_CYCLES_OSL=ON
+    -DOSL_ROOT_DIR="<path to OSL install>"
+    -DOpenImageIO_DIR="<directory with an OpenImageIOConfig.cmake for Houdini's OpenImageIO>"
+    -DImath_DIR="<directory with an ImathConfig.cmake for Houdini's Imath>"
+
+`oslc` is installed with the plugin; the Cycles Script node uses it to read shader parameters.
+
 The install step runs Houdini's `hython` to generate the Cycles shader nodes and the render settings user
 interface, so it requires a Houdini license.
 

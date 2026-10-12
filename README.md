@@ -9,7 +9,7 @@ This is a fork of [cjhosken/hdCycles](https://projects.blender.org/cjhosken/hdCy
 Cycles repository). The work for Houdini 22 lives on the `houdini-22` branch.
 
 > **Status: work in progress.** Daily lookdev with Cycles shaders, Karma/MaterialX materials, USD lights,
-> volumes, AOVs and per-object settings works. OSL does **not** work yet; see [Known issues](#known-issues).
+> volumes, AOVs, per-object settings and OSL works; see [Known issues](#known-issues).
 
 ## Tested with
 
@@ -41,6 +41,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as meshes |
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV), any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions mapped to Cycles passes, Cryptomatte with manifests, husk image filters (slap comps) |
 | Per-object settings | Ray visibility, shadow catcher, holdout, shadow caustics, shadow terminator, AO distance: Cycles tab of the Render Geometry Settings LOP |
+| OSL | **Open Shading Language** render setting (CPU and OptiX). **Cycles Script** node for `.osl`/`.oso` files like Blender's Script node, and Houdini's own OSL shader nodes (OSL Generic Shader Builder) in Cycles materials |
 | Tab menu | Cycles nodes grouped like Blender's Add menu (Input, Output, Shader, Displacement, Color, Texture, Utilities/Math, Utilities/Vector) |
 
 ## Known issues
@@ -55,7 +56,11 @@ Linux and macOS builds have not been tested on Houdini 22.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
   are not supported. Editing a parameter rebuilds the whole shader.
-- **OSL** is not available in Houdini builds (on the GPU it would be OptiX only).
+- **OSL:** on the GPU only OptiX supports it, and shaders cannot trace rays there: the Ambient Occlusion and
+  Raycast nodes do nothing (Blender has the same limits). The first OptiX render compiles every OSL shader and
+  can take minutes. Without a color attribute the Vertex Color node differs from SVM (also in Blender). Builds
+  need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). Once, a CPU render showed a
+  wrong Principled Volume with OSL; not reproduced.
 - The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
 
 ### Viewport
@@ -82,7 +87,6 @@ Roughly in this order:
 2. Shader node ports, Render Settings LOP touch-ups, ramps and degrees.
 3. Light groups, per-light settings.
 4. Motion blur.
-5. OSL (OptiX only on the GPU).
 
 ## Building
 
@@ -120,6 +124,10 @@ cmake --install build
 4. Settings: use the **Cycles Render Settings** LOP (or the Cycles tab of the Render Settings LOP). Viewport-only
    settings are in the viewport's display options.
 5. Batch rendering: `husk -R Cycles scene.usd`.
+6. OSL: turn on **Open Shading Language** in the Device panel of the render settings (CPU or OptiX). Add a
+   **Cycles Script** node (Tab menu Cycles > Script), pick an `.osl` or `.oso` file and press **Load Shader**: the
+   node gets the shader's inputs and outputs (its type is saved in the hip file). Houdini's OSL Generic Shader
+   Builder also works inside a Cycles material.
 
 **Device:** `AUTO` by default (best GPU, then CPU). Override with the `cycles:device` render setting
 (`AUTO`, `OPTIX`, `CUDA`, `CPU`) or the `CYCLES_DEVICE` environment variable, e.g.
@@ -142,6 +150,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | Register the delegate in `UsdRenderers.json` | Without it Cycles is missing from the Solaris renderer menu and `husk -R Cycles` | `301887910` |
 | Allow a static Embree without SYCL (`EMBREE_ROOT_DIR`), don't ship the SYCL runtime | The precompiled Embree needs `sycl8.dll`, which clashes with other plugins (Arnold) and stops Cycles loading | `4edfd12f9` |
 | Generate shader nodes, render settings UI and the Cycles Render Settings LOP at install time with `hython` | New Houdini install step (`src/hydra/houdini/CMakeLists.txt`) | `3653a9084`, `16f63cd20`, `8abcbdb5f` |
+| Allow OSL with an OSL built against Houdini's OpenImageIO (`OSL_ROOT_DIR`), static OSL, link USD `ar` | The precompiled OSL links Blender's OpenImageIO 3.1, which cannot be mixed with Houdini's 2.5 | `5476bf7e4`, `298aa4da1` |
 
 ### Rendering fixes
 
@@ -169,6 +178,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | `AUTO` device, the new default: OptiX, then CUDA, HIP, Metal, oneAPI, then CPU. Before, the default was CPU, which made the viewport slow. The device setting also accepts tokens, the form Houdini writes menu values in. | `a4e3c43b6` |
 | Film and background render settings (`cycles:film:*`, `cycles:background:*`: exposure, pixel filter, transparent background). An explicit transparency setting now overrides the automatic one. | `ff9948176` |
 | Changing the device or thread count restarts the delegate. | `16f63cd20` |
+| **Open Shading Language** render setting (`cycles:shading_system`), a restart setting like the device. | `c454d7dd4` |
+| **OSL script nodes:** `cycles_script` shaders with the shader file in `filepath`, and shaders implemented by an OSL source asset or source code (`info:OSL:sourceAsset`, read through the asset resolver when it is not a file, as Houdini provides its OSL shader nodes). | `4a9ce323c`, `298aa4da1` |
 | `shader_defaults.json` in the resource directory overrides Cycles socket defaults per node type. Houdini only writes parameters that differ from the UI default, so the delegate must use the same defaults as the UI. | `2595a4dd6` |
 | **AOVs:** render vars can name any Cycles pass, with a default format from the pass; other names are shader AOVs written by AOV Output nodes. Extra material terminals (e.g. `outputs:cycles:aov`) pull AOV Output nodes into the network. | `49debc368` |
 | **Light path expression render vars:** Karma's common LPEs map to the Cycles light passes holding the same light paths, with the albedo like an LPE. AOVs of the same Cycles pass type share one pass (the kernel writes one buffer per type). | `87d538e45` |
@@ -193,6 +204,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Render passes on the Cycles Render Settings LOP** like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, with Blender's EXR names) plus Karma-named light path expressions. | `f7d18bc95`, `fc3d31d29` |
 | **Image Filters** on the Cycles Render Settings LOP: husk slap comps from the Image Filter LOP. | `86ab0b082` |
 | **AOV Output node in Cycles material builders:** a pass-through between the shader and the material output, so Houdini exports it. | `44ada1aaf` |
+| **Cycles Script node** for OSL shaders, like Blender's Script node: Load Shader compiles the file with the installed `oslc` and turns the node into a type with the shader's ports, embedded in the hip file. | `afb0980ee` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
 ### Documentation
@@ -216,6 +228,7 @@ src/hydra/houdini/
   src/blender_layout.py             maps Blender layouts onto Cycles nodes
   src/rendersettings2ds.py          Cycles tabs (render settings, geometry) + viewport options (.ds)
   src/cyclesrendersettings2hda.py   Cycles Render Settings LOP
+  src/script2hda.py, script_node.py Cycles Script node (OSL)
 ```
 
 New Houdini-only source: `src/hydra/houdini_volume.{h,cpp}` (volumes from SOPs and native Houdini volumes).
@@ -223,7 +236,8 @@ New source built with `hdMtlx`: `src/hydra/materialx.{h,cpp}` (MaterialX transla
 
 Modified upstream files: `src/hydra/{camera,display_driver,field,geometry,light,material,output_driver,plugin,render_delegate,render_pass,session,volume}`,
 `src/hydra/resources/plugInfo.json`,
-`src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/Modules/FindUSDHoudini.cmake`,
+`src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
+`src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
 `src/scene/shader_nodes.cpp`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..houdini-22`.
