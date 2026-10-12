@@ -20,6 +20,11 @@ delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "UsdRenderers.json" "${CMAKE_INSTA
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/icons/ DESTINATION houdini/icons)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/toolbar/ DESTINATION houdini/toolbar)
 
+# The Cycles Script node compiles OSL shaders with oslc to read their parameters.
+if(WITH_CYCLES_OSL AND OSL_COMPILER)
+  install(PROGRAMS ${OSL_COMPILER} DESTINATION houdini/bin)
+endif()
+
 #####################################################################
 # Shader node registry dump, used to generate a VOP HDA per Cycles shader node
 #####################################################################
@@ -119,5 +124,16 @@ install(CODE "
   )
   if(NOT _lop_result EQUAL 0)
     message(WARNING \"cyclesrendersettings2hda.py failed with exit code \${_lop_result}\")
+  endif()
+
+  message(STATUS \"Generating Cycles Script node\")
+  execute_process(
+    COMMAND \"${HYTHON_EXECUTABLE}\"
+            \"${CMAKE_CURRENT_SOURCE_DIR}/src/script2hda.py\"
+            --hda-install-dir \"\${CMAKE_INSTALL_PREFIX}/houdini/otls\"
+    RESULT_VARIABLE _script_result
+  )
+  if(NOT _script_result EQUAL 0)
+    message(WARNING \"script2hda.py failed with exit code \${_script_result}\")
   endif()
 ")
