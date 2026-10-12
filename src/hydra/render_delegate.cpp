@@ -123,6 +123,12 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
     params.threads = VtValue::Cast<int>(it->second).GetWithDefault(params.threads);
   }
 
+  // Shading system is fixed when the scene is created, like the device
+  it = settings.find(HdCyclesRenderSettingsTokens->shadingSystem);
+  if (it != settings.end() && VtValue::Cast<bool>(it->second).GetWithDefault(false)) {
+    params.shadingsystem = SHADINGSYSTEM_OSL;
+  }
+
   // Get the Cycles device from settings or environment, defaulting to the best available GPU
   std::string deviceType = "AUTO";
   it = settings.find(HdCyclesRenderSettingsTokens->device);
@@ -193,7 +199,8 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
   for (const auto &setting : settingsMap) {
     // Skip over the settings known to be used for initialization only
     if (setting.first == HdCyclesRenderSettingsTokens->device ||
-        setting.first == HdCyclesRenderSettingsTokens->threads)
+        setting.first == HdCyclesRenderSettingsTokens->threads ||
+        setting.first == HdCyclesRenderSettingsTokens->shadingSystem)
     {
       continue;
     }
@@ -589,6 +596,9 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
   }
   if (key == HdCyclesRenderSettingsTokens->threads) {
     return VtValue(session->params.threads);
+  }
+  if (key == HdCyclesRenderSettingsTokens->shadingSystem) {
+    return VtValue(session->params.shadingsystem == SHADINGSYSTEM_OSL);
   }
   if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     return VtValue(session->params.time_limit);

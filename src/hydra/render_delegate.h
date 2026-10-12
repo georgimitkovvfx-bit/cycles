@@ -17,6 +17,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     (stageMetersPerUnit) \
     ((device, "cycles:device")) \
     ((threads, "cycles:threads")) \
+    ((shadingSystem, "cycles:shading_system")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \

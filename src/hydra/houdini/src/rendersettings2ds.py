@@ -48,6 +48,7 @@ SESSION_SETTINGS = {
         },
     },
     "cycles:threads": {"type": "int", "default": 0},
+    "cycles:shading_system": {"type": "boolean", "default": False},
     "cycles:samples": {"type": "int", "default": 1024},
     "cycles:time_limit": {"type": "float", "default": 0.0},
     "cycles:sample_offset": {"type": "int", "default": 0},
@@ -125,6 +126,10 @@ LAYOUT = [
         S("cycles:device", "Device",
           "Device to render with. Automatic uses the best available GPU (OptiX, then CUDA, "
           "HIP, oneAPI, Metal) and falls back to the CPU. Changing it restarts the render.",
+          viewport=True),
+        S("cycles:shading_system", "Open Shading Language",
+          "Use Open Shading Language. On the GPU only OptiX supports it. Changing it restarts "
+          "the render.",
           viewport=True),
     ], open=True),
     P("Sampling", [

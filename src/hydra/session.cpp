@@ -179,8 +179,12 @@ HdCyclesSession::HdCyclesSession(Session *session_, const bool keep_nodes)
 }
 
 HdCyclesSession::HdCyclesSession(const SessionParams &params)
-    : session(new Session(params, SceneParams())), keep_nodes(false), _ownCyclesSession(true)
+    : keep_nodes(false), _ownCyclesSession(true)
 {
+  SceneParams scene_params;
+  scene_params.shadingsystem = params.shadingsystem;
+  session = new Session(params, scene_params);
+
   Scene *const scene = session->scene.get();
 
   // Create background with ambient light
