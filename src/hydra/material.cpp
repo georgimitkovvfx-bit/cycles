@@ -18,6 +18,7 @@
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/colorspace.h"
+#include "util/md5.h"
 #include "util/path.h"
 #include "util/string.h"
 
@@ -29,6 +30,11 @@
 #include <pxr/imaging/hd/materialNodeSchema.h>
 #include <pxr/imaging/hd/materialSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
+#include <pxr/usd/ar/asset.h>
+#include <pxr/usd/ar/resolvedPath.h>
+#include <pxr/usd/ar/resolver.h>
+
+#include <filesystem>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -60,22 +66,22 @@ static bool IsAovPassThrough(const ShaderNode *node, const TfToken &socketName)
  * .oso) in "filepath", its inputs and outputs are the shader parameters. */
 static const TfToken kScriptFilepath("filepath");
 
-static ShaderNode *CreateScriptNode(ShaderGraph *graph,
-                                    Scene *scene,
-                                    HdMaterialNodeParameterContainerSchema params,
-                                    const SdfPath &nodePath)
+static std::string GetFilepath(const VtValue &value)
 {
-  std::string filepath;
-  if (const auto valueDs = params.Get(kScriptFilepath).GetValue()) {
-    const VtValue value = valueDs->GetValue(0.0f);
-    if (value.IsHolding<SdfAssetPath>()) {
-      const SdfAssetPath &asset = value.UncheckedGet<SdfAssetPath>();
-      filepath = asset.GetResolvedPath().empty() ? asset.GetAssetPath() : asset.GetResolvedPath();
-    }
-    else {
-      filepath = VtValue::Cast<std::string>(value).GetWithDefault(std::string());
-    }
+  if (value.IsHolding<SdfAssetPath>()) {
+    const SdfAssetPath &asset = value.UncheckedGet<SdfAssetPath>();
+    return asset.GetResolvedPath().empty() ? asset.GetAssetPath() : asset.GetResolvedPath();
   }
+  return VtValue::Cast<std::string>(value).GetWithDefault(std::string());
+}
+
+/* OSL node from a shader file, or from its bytecode when given (the file is then only a name). */
+static ShaderNode *CreateOSLNode(ShaderGraph *graph,
+                                 Scene *scene,
+                                 const std::string &filepath,
+                                 const SdfPath &nodePath,
+                                 const std::string &bytecode = "")
+{
   if (filepath.empty()) {
     TF_WARN("Script node '%s' has no shader file", nodePath.GetText());
     return nullptr;
@@ -88,7 +94,15 @@ static ShaderNode *CreateScriptNode(ShaderGraph *graph,
         nodePath.GetText());
     return nullptr;
   }
-  ShaderNode *node = OSLShaderManager::osl_node(graph, scene, filepath, "");
+  ShaderNode *node;
+  if (bytecode.empty()) {
+    node = OSLShaderManager::osl_node(graph, scene, filepath, "");
+  }
+  else {
+    MD5Hash md5;
+    md5.append(bytecode);
+    node = OSLShaderManager::osl_node(graph, scene, "", md5.get_hex(), bytecode);
+  }
   if (!node) {
     TF_WARN("Script node '%s' could not load '%s'", nodePath.GetText(), filepath.c_str());
   }
@@ -96,9 +110,78 @@ static ShaderNode *CreateScriptNode(ShaderGraph *graph,
 #else
   (void)graph;
   (void)scene;
+  (void)bytecode;
   TF_WARN("Script node '%s' needs a build with OSL", nodePath.GetText());
   return nullptr;
 #endif
+}
+
+static ShaderNode *CreateScriptNode(ShaderGraph *graph,
+                                    Scene *scene,
+                                    HdMaterialNodeParameterContainerSchema params,
+                                    const SdfPath &nodePath)
+{
+  const auto valueDs = params.Get(kScriptFilepath).GetValue();
+  return CreateOSLNode(
+      graph, scene, valueDs ? GetFilepath(valueDs->GetValue(0.0f)) : std::string(), nodePath);
+}
+
+/* A shader implemented by an OSL file (info:implementationSource = "sourceAsset" with
+ * info:OSL:sourceAsset), e.g. Houdini's OSL shader nodes, is a script node too. */
+static ShaderNode *CreateSourceAssetNode(ShaderGraph *graph,
+                                         Scene *scene,
+                                         const HdContainerDataSourceHandle &typeInfo,
+                                         const SdfPath &nodePath)
+{
+  if (!typeInfo) {
+    return nullptr;
+  }
+  const auto value = [&](const char *name) {
+    const auto valueDs = HdSampledDataSource::Cast(typeInfo->Get(TfToken(name)));
+    return valueDs ? valueDs->GetValue(0.0f) : VtValue();
+  };
+
+  const std::string implementation =
+      VtValue::Cast<TfToken>(value("implementationSource")).GetWithDefault(TfToken()).GetString();
+  if (implementation == "sourceAsset") {
+    const std::string filepath = GetFilepath(value("OSL:sourceAsset"));
+    if (filepath.empty() || path_is_file(filepath)) {
+      return filepath.empty() ? nullptr : CreateOSLNode(graph, scene, filepath, nodePath);
+    }
+    /* Not a file, e.g. Houdini serves the compiled OSL of its shader nodes through its asset
+     * resolver. */
+    std::string bytecode;
+    if (const std::shared_ptr<ArAsset> asset = ArGetResolver().OpenAsset(ArResolvedPath(filepath)))
+    {
+      if (const std::shared_ptr<const char> buffer = asset->GetBuffer()) {
+        bytecode.assign(buffer.get(), asset->GetSize());
+      }
+    }
+    if (bytecode.empty()) {
+      TF_WARN("Script node '%s' could not read '%s'", nodePath.GetText(), filepath.c_str());
+      return nullptr;
+    }
+    return CreateOSLNode(graph, scene, filepath, nodePath, bytecode);
+  }
+  if (implementation == "sourceCode") {
+    const std::string code =
+        VtValue::Cast<std::string>(value("OSL:sourceCode")).GetWithDefault(std::string());
+    if (code.empty()) {
+      return nullptr;
+    }
+    /* Cycles compiles shader files, so write the code to a file named by its hash. */
+    MD5Hash md5;
+    md5.append(code);
+    const std::string dir = path_join(std::filesystem::temp_directory_path().string(),
+                                      "hdCycles_osl");
+    const std::string filepath = path_join(dir, md5.get_hex() + ".osl");
+    if (!path_is_file(filepath) && !path_write_text(filepath, code)) {
+      TF_WARN("Script node '%s' could not write '%s'", nodePath.GetText(), filepath.c_str());
+      return nullptr;
+    }
+    return CreateOSLNode(graph, scene, filepath, nodePath);
+  }
+  return nullptr;
 }
 
 /* Default values for Cycles shader node sockets that differ from the Cycles socket defaults,
@@ -782,6 +865,12 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
         if (isNativeNode) {
           GetShaderNodeDefaults().Apply(nodeDesc.node, cyclesType.string());
         }
+        _nodes.emplace(nodePath, nodeDesc);
+      }
+      else if (ShaderNode *oslNode = CreateSourceAssetNode(
+                   graph.get(), scene, nodeSchema.GetNodeTypeInfo(), nodePath))
+      {
+        nodeDesc.node = oslNode;
         _nodes.emplace(nodePath, nodeDesc);
       }
       else {
