@@ -321,7 +321,13 @@ if(WITH_CYCLES_OSL AND NOT USD_OVERRIDE_OSL)
     find_package(OSL REQUIRED CONFIG)
   endif()
 
-  if(WIN32)
+  # A custom (e.g. static) OSL build has nothing to bundle from the precompiled libraries.
+  if(NOT OSL_ROOT_DIR STREQUAL "${_cycles_lib_dir}/osl")
+    if(HOUDINI_ROOT)
+      # oslc links Houdini's OpenImageIO, needed to compile the shaders at build time.
+      list(APPEND PLATFORM_BUNDLED_LIBRARY_DIRS ${HOUDINI_ROOT}/bin)
+    endif()
+  elseif(WIN32)
     add_bundled_libraries(osl/bin)
   else()
     add_bundled_libraries(osl/lib)

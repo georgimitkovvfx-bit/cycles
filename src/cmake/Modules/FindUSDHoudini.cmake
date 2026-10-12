@@ -197,16 +197,11 @@ if(HOUDINI_ROOT AND EXISTS ${HOUDINI_ROOT})
   unset(_openimageio_util_library CACHE)
 
   # OSL
-  find_library(_osl_library NAMES HOSL PATHS ${_library_dir} NO_DEFAULT_PATH)
-  if(_osl_library)
-    set(OSL_INCLUDE_DIRS ${_include_dir})
-    set(OSL_LIBRARIES ${_osl_library})
-    set(USD_OVERRIDE_OSL ON)
+  # Houdini's HOSL is not usable by Cycles, and Blender's precompiled OSL links Blender's OpenImageIO.
+  # Only build with OSL when given one built against Houdini's OpenImageIO (OSL_ROOT_DIR).
+  if(NOT OSL_ROOT_DIR)
     set(WITH_CYCLES_OSL OFF)
   endif()
-  unset(_osl_library CACHE)
-  # We currently disable OSL support whne building hdCycles gainst Houdini
-  set(WITH_CYCLES_OSL OFF)
 
   # MaterialX
   find_library(_materialx_core_library NAMES MaterialXCore  PATHS ${_library_dir} NO_DEFAULT_PATH)
