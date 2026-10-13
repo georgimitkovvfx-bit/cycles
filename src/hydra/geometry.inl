@@ -146,16 +146,21 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     auto *const instancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
 
-    VtMatrix4dArray transforms;
+    /* Instance transforms at the motion steps when the instances move, else only at the current
+     * frame. */
+    std::vector<VtMatrix4dArray> stepTransforms;
     std::vector<HdCyclesInstancer::Primvar> instancePrimvars;
     if (instancer) {
-      transforms = instancer->ComputeInstanceTransforms(
-          id, instancePrimvarsDirty ? &instancePrimvars : nullptr);
+      stepTransforms = instancer->ComputeInstanceTransforms(
+          id,
+          static_cast<HdCyclesSession *>(renderParam)->GetMotionTimes(),
+          instancePrimvarsDirty ? &instancePrimvars : nullptr);
     }
     else {
       // Default to a single instance with an identity transform
-      transforms.push_back(GfMatrix4d(1.0));
+      stepTransforms.push_back(VtMatrix4dArray(1, GfMatrix4d(1.0)));
     }
+    const VtMatrix4dArray &transforms = stepTransforms[stepTransforms.size() / 2];
 
     const size_t oldSize = _instances.size();
     const size_t newSize = transforms.size();
@@ -179,7 +184,10 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
                                                      instancer ? +0.0f : -1.0f);
     }
 
-    // Update transforms of all instances
+    // Update transforms of all instances. The prototype and the instances move over the same
+    // motion steps, or one of them does not move.
+    const size_t numSteps = std::max(_geomTransformMotion.size(),
+                                     stepTransforms.size() > 1 ? stepTransforms.size() : 0);
     for (size_t i = 0; i < transforms.size(); ++i) {
       const float metersPerUnit =
           static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
@@ -188,10 +196,15 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
                             convert_transform(_geomTransform * transforms[i]);
       _instances[i]->set_tfm(tfm);
 
-      array<Transform> motion(_geomTransformMotion.size());
-      for (size_t step = 0; step < _geomTransformMotion.size(); ++step) {
+      array<Transform> motion(numSteps);
+      for (size_t step = 0; step < numSteps; ++step) {
+        const GfMatrix4d &geomTransform = _geomTransformMotion.empty() ?
+                                              _geomTransform :
+                                              _geomTransformMotion[step];
+        const GfMatrix4d &instanceTransform = stepTransforms.size() > 1 ? stepTransforms[step][i] :
+                                                                          transforms[i];
         motion[step] = transform_scale(make_float3(metersPerUnit)) *
-                       convert_transform(_geomTransformMotion[step] * transforms[i]);
+                       convert_transform(geomTransform * instanceTransform);
       }
       _instances[i]->set_motion(motion);
     }

@@ -34,18 +34,33 @@ class HdCyclesInstancer final : public PXR_NS::HdInstancer {
             PXR_NS::HdRenderParam *renderParam,
             PXR_NS::HdDirtyBits *dirtyBits) override;
 
-  /* Transforms of the instances of a prototype, through all parent instancers. With `primvars`,
-   * also the per-instance primvars of all these instancers, in the same instance order. */
-  PXR_NS::VtMatrix4dArray ComputeInstanceTransforms(const PXR_NS::SdfPath &prototypeId,
-                                                    std::vector<Primvar> *primvars = nullptr);
+  /* Transforms of the instances of a prototype, through all parent instancers: at each of the
+   * motion `times` when the instances move over the shutter, else only at the current frame.
+   * With `primvars`, also the per-instance primvars of all these instancers, in the same instance
+   * order. */
+  std::vector<PXR_NS::VtMatrix4dArray> ComputeInstanceTransforms(
+      const PXR_NS::SdfPath &prototypeId,
+      const std::vector<float> &times,
+      std::vector<Primvar> *primvars = nullptr);
 
  private:
+  /* Instancer transform and instance transform primvars at one time. */
+  struct Sample {
+    PXR_NS::GfMatrix4d xform = PXR_NS::GfMatrix4d(1.0);
+    PXR_NS::VtVec3fArray translate;
+    PXR_NS::VtVec4fArray rotate;
+    PXR_NS::VtVec3fArray scale;
+    PXR_NS::VtMatrix4dArray instanceTransform;
+  };
+
   void SyncPrimvars();
 
-  PXR_NS::VtVec3fArray _translate;
-  PXR_NS::VtVec4fArray _rotate;
-  PXR_NS::VtVec3fArray _scale;
-  PXR_NS::VtMatrix4dArray _instanceTransform;
+  /* Samples at the motion times when anything moves over the shutter, else at the current
+   * frame. Sampled when first needed after a sync, or for other motion times. */
+  const std::vector<Sample> &GetSamples(const std::vector<float> &times);
+
+  std::vector<float> _sampleTimes;
+  std::vector<Sample> _samples;
   std::vector<Primvar> _primvars;
 };
 
