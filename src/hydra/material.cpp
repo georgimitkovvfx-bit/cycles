@@ -577,6 +577,9 @@ class UsdToCycles {
           {TfToken("file"), ustring("filename")},
           {TfToken("sourceColorSpace"), ustring("colorspace")},
       }};
+  /* shortcut: 'fallback' is ignored, a geometry without the primvar reads 0 (Karma and Storm use
+   * the fallback, e.g. 1 for a displayOpacity reader into opacity). Cycles' Attribute node has no
+   * "found" output; add one when assets rely on fallbacks. */
   const UsdToCyclesMapping UsdPrimvarReader = {"attribute",
                                                {{TfToken("varname"), ustring("attribute")}}};
 
