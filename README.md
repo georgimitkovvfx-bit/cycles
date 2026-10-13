@@ -9,7 +9,8 @@ This is a fork of [cjhosken/hdCycles](https://projects.blender.org/cjhosken/hdCy
 Cycles repository). The work for Houdini 22 lives on the `houdini-22` branch.
 
 > **Status: work in progress.** Daily lookdev with Cycles shaders, Karma/MaterialX materials, USD lights,
-> volumes, AOVs, per-object settings and OSL works; see [Known issues](#known-issues).
+> volumes, AOVs, light groups, per-object and per-light settings, motion blur and OSL works, in the viewport,
+> husk and TOPs; see [Known issues](#known-issues).
 
 ## Tested with
 
@@ -38,8 +39,11 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Stability | No crash on quit, renderer switch or device change |
 | Units | Stages with `metersPerUnit` 1 and 0.01 |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
-| Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as meshes |
-| AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV), any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions mapped to Cycles passes, Cryptomatte with manifests, husk image filters (slap comps) |
+| Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as smooth meshes |
+| Motion blur | Object transforms, mesh deformation (time samples or velocities) and the camera, over the camera shutter (Motion Blur in the render settings) |
+| AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
+| Batch rendering | husk, the USD Render ROP and TOPs (USD Render Scene, USD Render Files, ROP Fetch). The Cycles Render Settings LOP is the stage's default render settings, like Karma's |
+| Per-light settings | Max Bounces, Multiple Importance, Shadow Caustics, ray visibility and Light Group: Cycles tab of the Light LOP |
 | Per-object settings | Ray visibility, shadow catcher, holdout, shadow caustics, shadow terminator, AO distance: Cycles tab of the Render Geometry Settings LOP |
 | OSL | **Open Shading Language** render setting (CPU and OptiX). **Cycles Script** node for `.osl`/`.oso` files like Blender's Script node, and Houdini's own OSL shader nodes (OSL Generic Shader Builder) in Cycles materials |
 | Tab menu | Cycles nodes grouped like Blender's Add menu (Input, Output, Shader, Displacement, Color, Texture, Utilities/Math, Utilities/Vector) |
@@ -50,8 +54,12 @@ Linux and macOS builds have not been tested on Houdini 22.
 - **AOVs:** Cycles has no light path expression engine: only Karma's common LPEs (diffuse, glossy reflection,
   glossy transmission and volume; combined, direct, indirect; the beauty, direct emission, albedo) map to Cycles
   passes, others render black. A Blender light pass and the LPE of the same light path (DiffDir and
-  directdiffuse) cannot be rendered together. No primvar AOVs or light groups. Houdini runs live viewport slap
-  comps only for Karma and the Vulkan viewport; with Cycles use the Slap Comp Import COP or husk image filters.
+  directdiffuse) cannot be rendered together. Karma's shadow/unshadowed LPEs and its geometric normal, facing
+  ratio, camera-space position, element and motion vector AOVs have no Cycles pass and render black. Adding a
+  primvar AOV while the viewport renders needs a render restart.
+- **Motion blur:** meshes only for deformation (not curves, points or volumes), no instancer motion and no
+  motion vector pass. LOP expressions give no motion: cache samples with the Motion Blur LOP, as for Karma.
+  Changing the shutter or Motion Blur restarts the viewport render.
 - **MaterialX:** a user reported image textures not refreshing after a file path change; not reproduced yet.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
@@ -64,9 +72,8 @@ Linux and macOS builds have not been tested on Houdini 22.
 - The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
 
 ### Viewport
-- Orbiting the Cycles viewport behaves like a first-person camera (the pivot is at the camera). The earlier
-  jumps far from the origin are gone since the `depth` AOV became 0..1 window depth; the pivot is likely still
-  read from that depth.
+- Orbiting pivoted at the camera (like a first-person camera); fixed by declaring the depth AOV as OpenGL
+  style depth, still to be confirmed in the GUI.
 
 ### UI
 - Port locations are wrong on some shader nodes (the Principled BSDF inputs listed last is fixed).
@@ -74,8 +81,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 - Color Ramp and the curve nodes expose raw arrays instead of Houdini ramp parameters; angles are in radians.
 
 ### Missing features
-- Per-light settings (Cycles light options such as cast shadow, MIS, max bounces).
-- Motion blur and the Fast GI method menu are not exposed.
+- The Fast GI method menu is not exposed. Implicit shapes have no UVs.
 - Viewport resolution divider (the viewport always renders at full resolution).
 - HIP (AMD) and oneAPI (Intel) devices are disabled; NVIDIA and CPU only.
 
@@ -83,10 +89,9 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 Roughly in this order:
 
-1. Confirm the orbit jump is gone.
+1. Confirm the orbit fix in the GUI.
 2. Shader node ports, Render Settings LOP touch-ups, ramps and degrees.
-3. Light groups, per-light settings.
-4. Motion blur.
+3. Motion blur for curves, points, volumes and instancers; the motion vector pass.
 
 ## Building
 
@@ -128,6 +133,11 @@ cmake --install build
    **Cycles Script** node (Tab menu Cycles > Script), pick an `.osl` or `.oso` file and press **Load Shader**: the
    node gets the shader's inputs and outputs (its type is saved in the hip file). Houdini's OSL Generic Shader
    Builder also works inside a Cycles material.
+7. Motion blur: turn on **Motion Blur** in the render settings; the shutter is the camera's (Shutter Open/Close).
+   Animated LOP parameters only have the current frame: cache samples with the **Motion Blur LOP**, as for Karma.
+8. Light groups: set a **Light Group** on the Cycles tab of the Light LOP (Render Geometry Settings LOP for
+   emissive objects), and add the same name under **Light Groups** in the passes of the Cycles Render Settings
+   LOP, which writes it as `Combined_<name>`.
 
 **Device:** `AUTO` by default (best GPU, then CPU). Override with the `cycles:device` render setting
 (`AUTO`, `OPTIX`, `CUDA`, `CPU`) or the `CYCLES_DEVICE` environment variable, e.g.
@@ -169,6 +179,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Volume shaders made the volume disappear.** Houdini's material builder authors every Cycles shader as the surface terminal, also volume shaders; a volume output on the surface terminal now goes to the volume input. | `a3710bf34` |
 | **8 bit image textures rendered linear.** Cycles image nodes start as scene linear and an empty color space was looked up by name; Houdini's ACES OpenColorIO configuration has no `default_byte` role, which automatic detection relied on (core Cycles fix, plus the delegate treating an empty color space as automatic). | `9a09aff94`, `29ce63d07` |
 | **The sample subset settings had no effect:** the session overwrote them. | `6c119c43c` |
+| **Implicit spheres, cylinders, cones and capsules were faceted** 10-segment meshes (a sphere 8% small). A scene index meshes them with 64 segments and normals; a radius 1 sphere matches the analytic size within 0.2%. | `5ef0a65ff` |
+| **Orbiting the viewport pivoted at the camera:** `UsdRenderers.json` declared the depth as camera distance while the viewport gets window depth. | `fa48caaca` |
+| **Render vars were missing from the Houdini viewport** and its slap comps: Houdini only binds render vars with a valid default AOV descriptor, queried by prim name. | `d1a7ddf18` |
+| **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
 ### Render delegate features
@@ -187,6 +201,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Viewport color AOV readable:** with the OpenGL display driver the color buffer had no data, so Houdini's Slap Comp Import found no color. | `ca84bfc1c` |
 | **Cryptomatte:** `CryptoObject00`, `CryptoMaterial00`, `CryptoAsset00`, ... render vars; objects, assets and materials named after their prims; the Cryptomatte metadata and manifests go into the image through the render stats. | `5515a46ac` |
 | **MaterialX materials** (`materialx.cpp`): HdMtlx builds a MaterialX document per terminal (render contexts `mtlx` and `kma`), surfaces map to the Principled BSDF, about 100 standard/pbr library nodes map to Cycles nodes and node graph nodes are expanded from the MaterialX libraries. Built when USD provides `hdMtlx`. | `afc6f7453` |
+| **Karma Render Settings LOP AOVs** (`ray:hitP`, `ray:hitPz`, `ray:hitN`, `ray:primid`, `st`, `AO`) map to Cycles passes. | `0c0a29a66` |
+| **Light groups and per-light settings:** `lightgroup:<name>` render vars, `inputs:cycles:light:*` light attributes (max bounces, MIS, shadow caustics, ray visibility, light group). | `4b97f56e6` |
+| **Primvar AOVs:** render vars with source type `primvar`, written by every shader; the list comes from the render settings prim, which Hydra syncs before materials. | `cd9120fca` |
+| **Motion blur:** three evenly spaced motion steps over the camera shutter for transforms, mesh points (time samples or velocities) and the camera. | `acb24e055` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
 ### Houdini user interface
@@ -205,6 +223,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Image Filters** on the Cycles Render Settings LOP: husk slap comps from the Image Filter LOP. | `86ab0b082` |
 | **AOV Output node in Cycles material builders:** a pass-through between the shader and the material output, so Houdini exports it. | `44ada1aaf` |
 | **Cycles Script node** for OSL shaders, like Blender's Script node: Load Shader compiles the file with the installed `oslc` and turns the node into a type with the shader's ports, embedded in the hip file. | `afb0980ee` |
+| **Default render settings:** the Cycles Render Settings LOP sets itself as the stage's render settings (on by default, like Karma's), so husk, ROPs and TOPs no longer render upstream Karma settings without the Cycles passes. | `bd4a5b6d2` |
+| **Light settings and light groups:** Cycles tab on the Light LOP (`HdCyclesPlugin_Light.ds`), Light Group for objects, Light Groups on the Cycles Render Settings LOP. | `a9c2a8a5a` |
+| **Split Render Product by Render Var** and **Primvar AOVs** on the Cycles Render Settings LOP. | `46182e5a1`, `4cca27455` |
+| **Motion Blur** in the render settings; motion blur and the camera shutter restart the delegate. | `3f3fd20e3` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
 ### Documentation
