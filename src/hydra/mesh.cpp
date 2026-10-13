@@ -202,8 +202,8 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
 
   TF_VERIFY(points.size() >= numPoints);
 
-  // Motion blur: positions at the motion steps, from time samples of the points, or else their
-  // velocities (per second). Rendered at the center step.
+  // Motion blur: positions at the motion steps, from time samples of the points (velocities are
+  // resolved into those by the scene index). Rendered at the center step.
   const std::vector<float> motionTimes = _session->GetMotionTimes();
   std::vector<VtVec3fArray> motionPoints;
   if (!motionTimes.empty() && points.size() >= numPoints) {
@@ -222,22 +222,6 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
           break;
         }
         motionPoints.push_back(stepValue.UncheckedGet<VtVec3fArray>());
-      }
-    }
-    else {
-      const VtValue velocitiesValue = ReadPrimvar(primvars, HdTokens->velocities);
-      if (velocitiesValue.IsHolding<VtVec3fArray>() &&
-          velocitiesValue.UncheckedGet<VtVec3fArray>().size() == points.size())
-      {
-        const VtVec3fArray &velocities = velocitiesValue.UncheckedGet<VtVec3fArray>();
-        for (const float time : motionTimes) {
-          const float seconds = float(time / _session->GetFramesPerSecond());
-          VtVec3fArray stepPoints(points.size());
-          for (size_t i = 0; i < points.size(); ++i) {
-            stepPoints[i] = points[i] + velocities[i] * seconds;
-          }
-          motionPoints.push_back(std::move(stepPoints));
-        }
       }
     }
   }

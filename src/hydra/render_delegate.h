@@ -106,6 +106,9 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
  private:
   PXR_NS::Hgi *_hgi = nullptr;
   std::unique_ptr<HdCyclesSession> _renderParam;
+  /* The resync scene index of the render index, once the render pass is created. */
+  HdCyclesResyncSceneIndexPtr GetResyncSceneIndex();
+
   PXR_NS::HdRenderIndex *_renderIndex = nullptr;
   HdCyclesResyncSceneIndexPtr _resyncSceneIndex;
 };

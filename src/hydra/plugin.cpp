@@ -118,7 +118,8 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
 
   /* Last in the chain, after every scene index that adds prims, so that the render delegate can
-   * have any prim synced again (HdCyclesDelegate::Update). */
+   * have any prim synced again (HdCyclesDelegate::Update), and the velocities of all prims are
+   * resolved, also of prims added by procedurals. */
   HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
       "Cycles",
       [](const std::string & /*renderInstanceId*/,

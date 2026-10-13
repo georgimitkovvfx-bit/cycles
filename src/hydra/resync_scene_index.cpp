@@ -4,17 +4,101 @@
 
 #include "hydra/resync_scene_index.h"
 
+#include <pxr/imaging/hd/overlayContainerDataSource.h>
+#include <pxr/imaging/hd/retainedDataSource.h>
+#include <pxr/imaging/hd/sceneGlobalsSchema.h>
+#include <pxr/imaging/hdsi/velocityMotionResolvingSceneIndex.h>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+/* Sets the frame rate in the scene globals of the root prim to the render delegate's. */
+class SceneGlobalsSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
+ public:
+  static TfRefPtr<SceneGlobalsSceneIndex> New(
+      const HdSceneIndexBaseRefPtr &inputSceneIndex,
+      std::shared_ptr<const std::atomic<double>> timeCodesPerSecond)
+  {
+    return TfCreateRefPtr(
+        new SceneGlobalsSceneIndex(inputSceneIndex, std::move(timeCodesPerSecond)));
+  }
+
+  HdSceneIndexPrim GetPrim(const SdfPath &primPath) const override
+  {
+    HdSceneIndexPrim prim = _GetInputSceneIndex()->GetPrim(primPath);
+    const double timeCodesPerSecond = *_timeCodesPerSecond;
+    if (primPath.IsAbsoluteRootPath() && timeCodesPerSecond > 0.0) {
+      prim.dataSource = HdOverlayContainerDataSource::OverlayedContainerDataSources(
+          HdRetainedContainerDataSource::New(
+              HdSceneGlobalsSchema::GetSchemaToken(),
+              HdSceneGlobalsSchema::Builder()
+                  .SetTimeCodesPerSecond(
+                      HdRetainedTypedSampledDataSource<double>::New(timeCodesPerSecond))
+                  .Build()),
+          prim.dataSource);
+    }
+    return prim;
+  }
+
+  SdfPathVector GetChildPrimPaths(const SdfPath &primPath) const override
+  {
+    return _GetInputSceneIndex()->GetChildPrimPaths(primPath);
+  }
+
+ protected:
+  SceneGlobalsSceneIndex(const HdSceneIndexBaseRefPtr &inputSceneIndex,
+                         std::shared_ptr<const std::atomic<double>> timeCodesPerSecond)
+      : HdSingleInputFilteringSceneIndexBase(inputSceneIndex),
+        _timeCodesPerSecond(std::move(timeCodesPerSecond))
+  {
+  }
+
+  void _PrimsAdded(const HdSceneIndexBase & /*sender*/,
+                   const HdSceneIndexObserver::AddedPrimEntries &entries) override
+  {
+    _SendPrimsAdded(entries);
+  }
+
+  void _PrimsRemoved(const HdSceneIndexBase & /*sender*/,
+                     const HdSceneIndexObserver::RemovedPrimEntries &entries) override
+  {
+    _SendPrimsRemoved(entries);
+  }
+
+  void _PrimsDirtied(const HdSceneIndexBase & /*sender*/,
+                     const HdSceneIndexObserver::DirtiedPrimEntries &entries) override
+  {
+    _SendPrimsDirtied(entries);
+  }
+
+ private:
+  std::shared_ptr<const std::atomic<double>> _timeCodesPerSecond;
+};
+
+}  // namespace
 
 HdCyclesResyncSceneIndexRefPtr HdCyclesResyncSceneIndex::New(
     const HdSceneIndexBaseRefPtr &inputSceneIndex)
 {
-  return TfCreateRefPtr(new HdCyclesResyncSceneIndex(inputSceneIndex));
+  auto timeCodesPerSecond = std::make_shared<std::atomic<double>>(0.0);
+  return TfCreateRefPtr(new HdCyclesResyncSceneIndex(
+      HdsiVelocityMotionResolvingSceneIndex::New(
+          SceneGlobalsSceneIndex::New(inputSceneIndex, timeCodesPerSecond)),
+      timeCodesPerSecond));
 }
 
-HdCyclesResyncSceneIndex::HdCyclesResyncSceneIndex(const HdSceneIndexBaseRefPtr &inputSceneIndex)
-    : HdSingleInputFilteringSceneIndexBase(inputSceneIndex)
+HdCyclesResyncSceneIndex::HdCyclesResyncSceneIndex(
+    const HdSceneIndexBaseRefPtr &inputSceneIndex,
+    std::shared_ptr<std::atomic<double>> timeCodesPerSecond)
+    : HdSingleInputFilteringSceneIndexBase(inputSceneIndex),
+      _timeCodesPerSecond(std::move(timeCodesPerSecond))
 {
+}
+
+void HdCyclesResyncSceneIndex::SetTimeCodesPerSecond(const double timeCodesPerSecond)
+{
+  *_timeCodesPerSecond = timeCodesPerSecond;
 }
 
 HdSceneIndexPrim HdCyclesResyncSceneIndex::GetPrim(const SdfPath &primPath) const

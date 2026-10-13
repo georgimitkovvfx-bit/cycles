@@ -300,6 +300,10 @@ HdRenderPassSharedPtr HdCyclesDelegate::CreateRenderPass(HdRenderIndex *index,
                                                          const HdRprimCollection &collection)
 {
   _renderIndex = index;
+  /* Frame rate of velocities, set before the render index was known (houdini:fps). */
+  if (HdCyclesResyncSceneIndexPtr resyncSceneIndex = GetResyncSceneIndex()) {
+    resyncSceneIndex->SetTimeCodesPerSecond(_renderParam->GetFramesPerSecond());
+  }
   return HdRenderPassSharedPtr(new HdCyclesRenderPass(index, collection, _renderParam.get()));
 }
 
@@ -421,12 +425,10 @@ void HdCyclesDelegate::Update()
     return;
   }
 
-  if (!_resyncSceneIndex) {
-    _resyncSceneIndex = FindResyncSceneIndex(_renderIndex->GetTerminalSceneIndex());
-    if (!_resyncSceneIndex) {
-      TF_WARN("No Cycles resync scene index, changed render settings may need a render restart");
-      return;
-    }
+  HdCyclesResyncSceneIndexPtr resyncSceneIndex = GetResyncSceneIndex();
+  if (!resyncSceneIndex) {
+    TF_WARN("No Cycles resync scene index, changed render settings may need a render restart");
+    return;
   }
 
   const SdfPath &root = SdfPath::AbsoluteRootPath();
@@ -451,11 +453,19 @@ void HdCyclesDelegate::Update()
       entries.emplace_back(id, cameraLocators);
     }
   }
-  _resyncSceneIndex->Resync(entries);
+  resyncSceneIndex->Resync(entries);
 
   /* Restart the render with the synced prims. The session thread takes scene changes into the
    * running render without restarting it, which the render pass could miss. */
   ++_settingsVersion;
+}
+
+HdCyclesResyncSceneIndexPtr HdCyclesDelegate::GetResyncSceneIndex()
+{
+  if (!_resyncSceneIndex && _renderIndex) {
+    _resyncSceneIndex = FindResyncSceneIndex(_renderIndex->GetTerminalSceneIndex());
+  }
+  return _resyncSceneIndex;
 }
 
 TfToken HdCyclesDelegate::GetMaterialBindingPurpose() const
@@ -635,7 +645,15 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     _renderParam->SetViewport(VtValue::Cast<bool>(value).GetWithDefault(false));
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniFps) {
-    _renderParam->SetFramesPerSecond(VtValue::Cast<double>(value).GetWithDefault(24.0));
+    const double fps = _renderParam->GetFramesPerSecond();
+    _renderParam->SetFramesPerSecond(VtValue::Cast<double>(value).GetWithDefault(0.0));
+    /* Velocities move points by the frame rate. */
+    if (HdCyclesResyncSceneIndexPtr resyncSceneIndex = GetResyncSceneIndex()) {
+      resyncSceneIndex->SetTimeCodesPerSecond(_renderParam->GetFramesPerSecond());
+    }
+    if (_renderParam->GetFramesPerSecond() != fps) {
+      _renderParam->RequestResync(false, true);
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur) {
     _renderParam->SetMotionBlurDisabled(VtValue::Cast<bool>(value).GetWithDefault(false));

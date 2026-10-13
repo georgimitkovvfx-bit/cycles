@@ -11,6 +11,7 @@
 
 #include <pxr/imaging/hd/renderDelegate.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <optional>
@@ -89,9 +90,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _motionBlurDisabled = disabled;
   }
 
+  // Frame rate from the application (houdini:fps), 0 if it is unknown
   void SetFramesPerSecond(const double fps)
   {
-    _framesPerSecond = fps > 0.0 ? fps : 24.0;
+    _framesPerSecond = std::max(fps, 0.0);
   }
 
   double GetFramesPerSecond() const
@@ -196,7 +198,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   float _shutterClose = 0.0f;
   bool _shutterFromSettings = false;
   bool _motionBlurDisabled = false;
-  double _framesPerSecond = 24.0;
+  double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
