@@ -48,8 +48,6 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
                         PXR_NS::HdMaterialNodeParameterContainerSchema params,
                         const PXR_NS::SdfPath &nodePath);
 
-  void UpdateParameters(PXR_NS::HdMaterialNetworkSchema network);
-
   void UpdateConnections(NodeDesc &nodeDesc,
                          PXR_NS::HdMaterialNodeSchema nodeSchema,
                          const PXR_NS::SdfPath &nodePath,
@@ -57,8 +55,6 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
 
   unique_ptr<CCL_NS::ShaderGraph> BuildShaderGraph(PXR_NS::HdMaterialNetworkSchema network,
                                                    CCL_NS::Scene *scene);
-
-  bool HasScriptNode() const;
 
   CCL_NS::Shader *_shader = nullptr;
   std::unordered_map<PXR_NS::SdfPath, NodeDesc, PXR_NS::SdfPath::Hash> _nodes;

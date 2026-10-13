@@ -641,58 +641,51 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     const SceneLock lock(renderParam);
 
-    /* A script node is rebuilt when its file changes, so rebuild materials with one. */
-    if (network && !_nodes.empty() && !dirtyResource && !HasScriptNode()) {
-      UpdateParameters(network);
-      _shader->tag_update(lock.scene);
+    unique_ptr<ShaderGraph> graph;
+    if (!network) {
+      TF_WARN("Could not get a material network for %s.", id.GetText());
     }
     else {
-      unique_ptr<ShaderGraph> graph;
-      if (!network) {
-        TF_WARN("Could not get a material network for %s.", id.GetText());
-      }
-      else {
 #ifdef WITH_HYDRA_MATERIALX
-        if (isMaterialX) {
-          /* Always rebuilt, parameter updates need the whole network. */
-          _nodes.clear();
-          graph = BuildMaterialXShaderGraph(id, network, primDs);
-        }
-        else
+      if (isMaterialX) {
+        /* The node map is only for native networks. */
+        _nodes.clear();
+        graph = BuildMaterialXShaderGraph(id, network, primDs);
+      }
+      else
 #endif
-        {
-          graph = BuildShaderGraph(network, lock.scene);
-        }
-        if (!graph) {
-          TF_WARN("Could not build a shader graph for %s.", id.GetText());
-        }
+      {
+        graph = BuildShaderGraph(network, lock.scene);
       }
-
       if (!graph) {
-        /* Default shader if translation failed, so something is visible. */
-        graph = make_unique<ShaderGraph>();
-        PrincipledBsdfNode *bsdf = graph->create_node<PrincipledBsdfNode>();
-        graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+        TF_WARN("Could not build a shader graph for %s.", id.GetText());
       }
+    }
 
-      AddInstanceIdAOV(graph.get());
-      AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
+    if (!graph) {
+      /* Default shader if translation failed, so something is visible. */
+      graph = make_unique<ShaderGraph>();
+      PrincipledBsdfNode *bsdf = graph->create_node<PrincipledBsdfNode>();
+      graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
+    }
 
-      const bool existed = _shader != nullptr;
-      if (!_shader) {
-        _shader = lock.scene->create_node<Shader>();
-        // Cryptomatte material name
-        _shader->name = id.GetString();
-      }
+    AddInstanceIdAOV(graph.get());
+    AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
-      const AttributeRequestSet attributes = _shader->attributes;
-      _shader->set_graph(std::move(graph));
-      _shader->tag_update(lock.scene);
+    const bool existed = _shader != nullptr;
+    if (!_shader) {
+      _shader = lock.scene->create_node<Shader>();
+      // Cryptomatte material name
+      _shader->name = id.GetString();
+    }
 
-      /* Geometry only exports the primvars that shaders read when it is synced. */
-      if (existed && _shader->attributes.modified(attributes)) {
-        static_cast<HdCyclesSession *>(renderParam)->RequestResync(false, true);
-      }
+    const AttributeRequestSet attributes = _shader->attributes;
+    _shader->set_graph(std::move(graph));
+    _shader->tag_update(lock.scene);
+
+    /* Geometry only exports the primvars that shaders read when it is synced. */
+    if (existed && _shader->attributes.modified(attributes)) {
+      static_cast<HdCyclesSession *>(renderParam)->RequestResync(false, true);
     }
   }
 
@@ -763,22 +756,6 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
         nodeDesc.node->set(*input, u_colorspace_data);
       }
     }
-  }
-}
-
-void HdCyclesMaterial::UpdateParameters(HdMaterialNetworkSchema network)
-{
-  HdMaterialNodeContainerSchema nodes = network.GetNodes();
-  for (const TfToken &nodeName : nodes.GetNames()) {
-    const SdfPath nodePath = MaterialNodeNameToSdfPath(nodeName);
-
-    const auto nodeIt = _nodes.find(nodePath);
-    if (nodeIt == _nodes.end()) {
-      TF_RUNTIME_ERROR("Could not update parameters on missing node '%s'", nodePath.GetText());
-      continue;
-    }
-
-    UpdateParameters(nodeIt->second, nodes.Get(nodeName).GetParameters(), nodePath);
   }
 }
 
@@ -867,16 +844,6 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
 
     shaderGraph->connect(output, input);
   }
-}
-
-bool HdCyclesMaterial::HasScriptNode() const
-{
-  for (const auto &[path, nodeDesc] : _nodes) {
-    if (nodeDesc.node->special_type == SHADER_SPECIAL_TYPE_OSL) {
-      return true;
-    }
-  }
-  return false;
 }
 
 unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSchema network,
