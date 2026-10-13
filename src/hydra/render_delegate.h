@@ -100,6 +100,9 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
 
   PXR_NS::VtValue GetRenderSetting(const PXR_NS::TfToken &key) const override;
 
+  PXR_NS::HdCommandDescriptors GetCommandDescriptors() const override;
+  bool InvokeCommand(const PXR_NS::TfToken &command, const PXR_NS::HdCommandArgs &args) override;
+
  private:
   PXR_NS::Hgi *_hgi = nullptr;
   std::unique_ptr<HdCyclesSession> _renderParam;
