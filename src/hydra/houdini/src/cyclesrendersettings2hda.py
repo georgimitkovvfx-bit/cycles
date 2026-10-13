@@ -213,6 +213,12 @@ for i in range(1, top.evalParm("shader_aovs") + 1):
         color = top.parm("shader_aov_type%%d" %% i).evalAsString() == "color"
         add_var(name, name, "raw", "color3f" if color else "float")
 
+# Light groups, with Blender's pass names
+for i in range(1, top.evalParm("lightgroups") + 1):
+    name = top.evalParm("lightgroup_name%%d" %% i)
+    if name:
+        add_var("Combined_" + name, "lightgroup:" + name, "raw", "color3f")
+
 # Image filter lists (slap comps) husk applies to the rendered AOVs
 filters = top.evalParm("imagefilters").split()
 if filters:
@@ -301,6 +307,17 @@ def aov_parameters(passes_folder):
         "shader_aov_type#", "Type", ("color", "value"), ("Color", "Value")))
     shader.addParmTemplate(aovs)
     passes_folder.addParmTemplate(shader)
+
+    lightgroup = hou.FolderParmTemplate("folder_aov_lightgroup", "Light Groups",
+                                        folder_type=hou.folderType.Collapsible)
+    groups = hou.FolderParmTemplate("lightgroups", "Light Groups",
+                                    folder_type=hou.folderType.MultiparmBlock)
+    groups.setHelp("A Combined_<name> render var per light group: the light of the lights, "
+                   "emissive objects and dome light whose Light Group is <name> (Cycles tab of "
+                   "the Light LOP and the Render Geometry Settings LOP).")
+    groups.addParmTemplate(hou.StringParmTemplate("lightgroup_name#", "Name", 1))
+    lightgroup.addParmTemplate(groups)
+    passes_folder.addParmTemplate(lightgroup)
 
 
 def string_ref(parm_name):
@@ -487,11 +504,13 @@ def main():
     test.parm("aov_diffuse_direct").set(True)
     test.parm("aov_lpe_combineddiffuse").set(True)
     test.parm("shader_aovs").set(1)
+    test.parm("lightgroups").set(1)
+    test.parm("lightgroup_name1").set("key")
     stage_prims = test.stage()
     product = stage_prims.GetPrimAtPath("/Render/%s/Products/renderproduct" % test.name())
     targets = [str(t).rsplit("/", 1)[1]
                for t in product.GetRelationship("orderedVars").GetTargets()]
-    if targets != ["beauty", "DiffDir", "combineddiffuse", "AOV"]:
+    if targets != ["beauty", "DiffDir", "combineddiffuse", "AOV", "Combined_key"]:
         raise RuntimeError("Unexpected render vars %r" % targets)
     log("Wrote %s (%d settings)" % (hda_path, len(list(rendersettings2ds.settings()))))
     return 0
