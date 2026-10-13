@@ -7662,7 +7662,17 @@ void OSLNode::attributes(Shader *shader, AttributeRequestSet *attributes)
     }
   }
 
-  for (const ustring &name : requested_attributes) {
+  for (const auto &[param, default_name] : requested_attributes) {
+    /* A name from a string parameter is the node's value, unless it is linked (only known at
+     * run time). */
+    const ShaderInput *in = param.empty() ? nullptr : input(param);
+    if (in && in->link) {
+      continue;
+    }
+    const ustring name = in ? get_string(in->socket_type) : default_name;
+    if (name.empty()) {
+      continue;
+    }
     /* OSL reads standard attributes as "geom:<name>". */
     const AttributeStandard std = string_startswith(name, "geom:") ?
                                       Attribute::name_standard(name.c_str() + strlen("geom:")) :

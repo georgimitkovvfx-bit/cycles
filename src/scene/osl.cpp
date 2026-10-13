@@ -556,15 +556,16 @@ const char *OSLManager::shader_load_filepath(string filepath)
   return shader_load_bytecode(bytecode_hash, bytecode);
 }
 
-/* Attribute names that a shader reads with getattribute(), when they are string constants or
- * string parameter defaults.
+/* Attributes that a shader reads with getattribute(), when the name is a string constant or a
+ * string parameter: (parameter name or empty, name or parameter default). The node reads the
+ * parameter's own value, since the user sets the name there.
  * shortcut: a name computed at run time or from a connected string parameter is not found (then
  * another node must request the attribute, like in Blender); upgrade by asking OSL for the
  * "attributes_needed" of the optimized shader group, if that becomes available in time. */
-static vector<ustring> oso_getattribute_names(const string &bytecode)
+static vector<pair<ustring, ustring>> oso_getattribute_names(const string &bytecode)
 {
-  map<string, string> strings;
-  vector<ustring> names;
+  map<string, pair<ustring, ustring>> strings;
+  vector<pair<ustring, ustring>> names;
   std::istringstream lines(bytecode);
   string line;
   while (std::getline(lines, line)) {
@@ -576,13 +577,14 @@ static vector<ustring> oso_getattribute_names(const string &bytecode)
       string type, symbol, value;
       tokens >> type >> symbol >> std::ws;
       if (type == "string" && tokens.peek() == '"' && tokens >> std::quoted(value)) {
-        strings[symbol] = value;
+        strings[symbol] = {op == "param" ? ustring(symbol) : ustring(), ustring(value)};
       }
     }
     else if (op == "getattribute") {
       /* getattribute result [object] name [index] value %line{1} ..., the name is the last
        * string argument. */
-      string arg, name;
+      string arg;
+      pair<ustring, ustring> name;
       tokens >> arg;
       while (tokens >> arg && arg[0] != '%') {
         const auto it = strings.find(arg);
@@ -590,8 +592,8 @@ static vector<ustring> oso_getattribute_names(const string &bytecode)
           name = it->second;
         }
       }
-      if (!name.empty()) {
-        names.push_back(ustring(name));
+      if (!name.first.empty() || !name.second.empty()) {
+        names.push_back(name);
       }
     }
   }
