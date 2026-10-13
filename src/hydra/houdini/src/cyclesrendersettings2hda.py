@@ -213,6 +213,13 @@ for i in range(1, top.evalParm("shader_aovs") + 1):
         color = top.parm("shader_aov_type%%d" %% i).evalAsString() == "color"
         add_var(name, name, "raw", "color3f" if color else "float")
 
+# Primvars, written to their AOV by every shader
+for i in range(1, top.evalParm("primvar_aovs") + 1):
+    name = top.evalParm("primvar_aov_name%%d" %% i)
+    if name:
+        color = top.parm("primvar_aov_type%%d" %% i).evalAsString() == "color"
+        add_var(name, name, "primvar", "color3f" if color else "float")
+
 # Light groups, with Blender's pass names
 for i in range(1, top.evalParm("lightgroups") + 1):
     name = top.evalParm("lightgroup_name%%d" %% i)
@@ -336,6 +343,20 @@ def aov_parameters(passes_folder):
         "shader_aov_type#", "Type", ("color", "value"), ("Color", "Value")))
     shader.addParmTemplate(aovs)
     passes_folder.addParmTemplate(shader)
+
+    primvar = hou.FolderParmTemplate("folder_aov_primvar", "Primvar AOV",
+                                     folder_type=hou.folderType.Collapsible)
+    primvars = hou.FolderParmTemplate("primvar_aovs", "Primvars",
+                                      folder_type=hou.folderType.MultiparmBlock)
+    primvars.setHelp("A render var per primvar (Cd, a custom attribute, ...), written by every "
+                     "material and the default shader.")
+    name = hou.StringParmTemplate("primvar_aov_name#", "Primvar", 1, default_value=("Cd",))
+    name.setJoinWithNext(True)
+    primvars.addParmTemplate(name)
+    primvars.addParmTemplate(hou.MenuParmTemplate(
+        "primvar_aov_type#", "Type", ("color", "value"), ("Color", "Value")))
+    primvar.addParmTemplate(primvars)
+    passes_folder.addParmTemplate(primvar)
 
     lightgroup = hou.FolderParmTemplate("folder_aov_lightgroup", "Light Groups",
                                         folder_type=hou.folderType.Collapsible)
@@ -542,13 +563,14 @@ def main():
     test.parm("aov_diffuse_direct").set(True)
     test.parm("aov_lpe_combineddiffuse").set(True)
     test.parm("shader_aovs").set(1)
+    test.parm("primvar_aovs").set(1)
     test.parm("lightgroups").set(1)
     test.parm("lightgroup_name1").set("key")
     stage_prims = test.stage()
     product = stage_prims.GetPrimAtPath("/Render/%s/Products/renderproduct" % test.name())
     targets = [str(t).rsplit("/", 1)[1]
                for t in product.GetRelationship("orderedVars").GetTargets()]
-    if targets != ["beauty", "DiffDir", "combineddiffuse", "AOV", "Combined_key"]:
+    if targets != ["beauty", "DiffDir", "combineddiffuse", "AOV", "Cd", "Combined_key"]:
         raise RuntimeError("Unexpected render vars %r" % targets)
     test.parm("splitrendervars").set(True)
     stage_prims = test.stage()
@@ -557,7 +579,7 @@ def main():
                 for t in settings_prim.GetRelationship("products").GetTargets()]
     if products != ["renderproduct_color", "renderproduct_DiffDir",
                     "renderproduct_combineddiffuse", "renderproduct_AOV",
-                    "renderproduct_Combined_key"]:
+                    "renderproduct_Cd", "renderproduct_Combined_key"]:
         raise RuntimeError("Unexpected split render products %r" % products)
     log("Wrote %s (%d settings)" % (hda_path, len(list(rendersettings2ds.settings()))))
     return 0
