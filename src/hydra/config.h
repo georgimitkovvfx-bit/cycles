@@ -25,6 +25,7 @@ class HdCyclesRenderBuffer;
 }  // namespace HD_CYCLES_NS
 
 namespace CCL_NS {
+class Attribute;
 class AttributeSet;
 class BufferParams;
 class Camera;

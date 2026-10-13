@@ -68,13 +68,11 @@ void HdCyclesPoints::PopulatePoints(HdSceneDelegate *sceneDelegate)
   }
 
   const auto &points = value.UncheckedGet<VtVec3fArray>();
-  static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
 
   _geom->resize(int(points.size()));
 
-  std::copy_n(reinterpret_cast<const packed_float3 *>(points.data()),
-              points.size(),
-              _geom->get_position_for_write());
+  /* Radius has no motion steps, Cycles uses the center one for all. */
+  SetPositions(_geom->attributes.add(ATTR_STD_POSITION), primvars, points, points.size());
 }
 
 void HdCyclesPoints::PopulateWidths(HdSceneDelegate *sceneDelegate)

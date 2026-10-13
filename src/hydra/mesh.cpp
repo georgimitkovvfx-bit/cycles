@@ -197,37 +197,10 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
     return;
   }
 
-  VtVec3fArray points = value.UncheckedGet<VtVec3fArray>();
+  const VtVec3fArray &points = value.UncheckedGet<VtVec3fArray>();
   const size_t numPoints = _topology.GetNumPoints();
 
   TF_VERIFY(points.size() >= numPoints);
-
-  // Motion blur: positions at the motion steps, from time samples of the points (velocities are
-  // resolved into those by the scene index). Rendered at the center step.
-  const std::vector<float> motionTimes = _session->GetMotionTimes();
-  std::vector<VtVec3fArray> motionPoints;
-  if (!motionTimes.empty() && points.size() >= numPoints) {
-    const HdSampledDataSourceHandle pointsDs =
-        primvars.GetPrimvar(HdTokens->points).GetPrimvarValue();
-    std::vector<float> sampleTimes;
-    if (pointsDs && pointsDs->GetContributingSampleTimesForInterval(
-                        motionTimes.front(), motionTimes.back(), &sampleTimes))
-    {
-      for (const float time : motionTimes) {
-        const VtValue stepValue = pointsDs->GetValue(time);
-        if (!stepValue.IsHolding<VtVec3fArray>() ||
-            stepValue.UncheckedGet<VtVec3fArray>().size() != points.size())
-        {
-          motionPoints.clear();  // Changing topology
-          break;
-        }
-        motionPoints.push_back(stepValue.UncheckedGet<VtVec3fArray>());
-      }
-    }
-  }
-  if (!motionPoints.empty()) {
-    points = motionPoints[motionTimes.size() / 2];
-  }
 
   const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
   if (subdivision) {
@@ -236,29 +209,7 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
     _geom->resize_mesh(int(numPoints), 0);
   }
   AttributeSet &attributes = (subdivision) ? _geom->subd_attributes : _geom->attributes;
-  Attribute *attr_P = attributes.add(ATTR_STD_POSITION);
-
-  _geom->set_use_motion_blur(!motionPoints.empty());
-  _geom->set_motion_steps(motionPoints.empty() ? 0 : uint(motionPoints.size()));
-  if (motionPoints.empty()) {
-    attr_P->remove_motion();
-  }
-  else {
-    attr_P->add_motion(_geom);
-  }
-
-  packed_float3 *verts = attr_P->data_for_write<packed_float3>();
-  std::copy_n(reinterpret_cast<const packed_float3 *>(points.data()), numPoints, verts);
-
-  for (int step = 0; step < int(motionPoints.size()); ++step) {
-    const int attrStep = attr_P->time_step_to_attr_step(step, int(motionPoints.size()));
-    if (attrStep != 0) {
-      std::copy_n(reinterpret_cast<const packed_float3 *>(motionPoints[step].data()),
-                  numPoints,
-                  attr_P->data_for_write<packed_float3>(attrStep));
-    }
-  }
-  _geom->tag_position_modified();
+  SetPositions(attributes.add(ATTR_STD_POSITION), primvars, points, numPoints);
 }
 
 void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)

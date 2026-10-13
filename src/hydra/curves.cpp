@@ -73,11 +73,11 @@ void HdCyclesCurves::PopulatePoints(HdSceneDelegate *sceneDelegate)
 
   TF_VERIFY(points.size() >= _geom->num_keys());
 
-  static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
-
-  std::copy_n(reinterpret_cast<const packed_float3 *>(points.data()),
-              std::min(points.size(), _geom->num_keys()),
-              _geom->get_position_for_write());
+  /* Radius has no motion steps, Cycles uses the center one for all. */
+  SetPositions(_geom->attributes.add(ATTR_STD_POSITION),
+               primvars,
+               points,
+               std::min(points.size(), _geom->num_keys()));
 }
 
 void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)

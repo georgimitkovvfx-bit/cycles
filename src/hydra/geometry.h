@@ -8,6 +8,7 @@
 #include "hydra/config.h"
 #include "hydra/instancer.h"
 
+#include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/rprim.h>
 
 #include <vector>
@@ -38,6 +39,13 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
 
   /* Object color of every instance, from a constant displayColor value. */
   void SetInstanceColor(const PXR_NS::VtValue &value);
+
+  /* The first numPoints of the points primvar, at the motion steps when they move over the
+   * shutter. `points` is its value at the current frame. */
+  void SetPositions(CCL_NS::Attribute *attr_P,
+                    const PXR_NS::HdPrimvarsSchema &primvars,
+                    const PXR_NS::VtVec3fArray &points,
+                    size_t numPoints);
 
   CyclesBase *_geom = nullptr;
   std::vector<CCL_NS::Object *> _instances;

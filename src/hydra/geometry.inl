@@ -370,6 +370,60 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstanceColor(const VtValue &value)
 }
 
 template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
+                                                      const HdPrimvarsSchema &primvars,
+                                                      const VtVec3fArray &points,
+                                                      const size_t numPoints)
+{
+  static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
+
+  /* Motion blur: positions at the motion steps, from time samples of the points (the scene index
+   * resolves velocities into those). Rendered at the center step. */
+  const std::vector<float> motionTimes = _session->GetMotionTimes();
+  std::vector<VtVec3fArray> motionPoints;
+  const HdSampledDataSourceHandle pointsDs =
+      primvars.GetPrimvar(HdTokens->points).GetPrimvarValue();
+  std::vector<float> sampleTimes;
+  if (!motionTimes.empty() && pointsDs &&
+      pointsDs->GetContributingSampleTimesForInterval(
+          motionTimes.front(), motionTimes.back(), &sampleTimes))
+  {
+    for (const float time : motionTimes) {
+      const VtValue stepValue = pointsDs->GetValue(time);
+      if (!stepValue.IsHolding<VtVec3fArray>() || stepValue.GetArraySize() != points.size()) {
+        motionPoints.clear(); /* Changing topology. */
+        break;
+      }
+      motionPoints.push_back(stepValue.UncheckedGet<VtVec3fArray>());
+    }
+  }
+
+  _geom->set_use_motion_blur(!motionPoints.empty());
+  _geom->set_motion_steps(uint(motionPoints.size()));
+  if (motionPoints.empty()) {
+    attr_P->remove_motion();
+  }
+  else {
+    attr_P->add_motion(_geom);
+  }
+
+  const VtVec3fArray &center = motionPoints.empty() ? points :
+                                                      motionPoints[motionPoints.size() / 2];
+  std::copy_n(reinterpret_cast<const packed_float3 *>(center.data()),
+              numPoints,
+              attr_P->data_for_write<packed_float3>());
+  for (int step = 0; step < int(motionPoints.size()); ++step) {
+    const int attrStep = attr_P->time_step_to_attr_step(step, int(motionPoints.size()));
+    if (attrStep != 0) {
+      std::copy_n(reinterpret_cast<const packed_float3 *>(motionPoints[step].data()),
+                  numPoints,
+                  attr_P->data_for_write<packed_float3>(attrStep));
+    }
+  }
+  _geom->tag_position_modified();
+}
+
+template<typename Base, typename CyclesBase>
 void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
 {
   if (!_geom && _instances.empty()) {
