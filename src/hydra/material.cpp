@@ -34,6 +34,9 @@
 #include <pxr/usd/ar/resolvedPath.h>
 #include <pxr/usd/ar/resolver.h>
 
+#include <OpenImageIO/filesystem.h>
+
+#include <algorithm>
 #include <filesystem>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -596,6 +599,45 @@ void HdCyclesMaterial::AddPrimvarAOVs(ShaderGraph *graph,
   }
 }
 
+/* Image textures with "<UDIM>" in the file name (native and MaterialX) read the tiles found next
+ * to it on disk. shortcut: only the <UDIM> token, add <UVTILE> when a scene uses it. */
+static void SetUdimTiles(ShaderGraph *graph)
+{
+  for (ShaderNode *node : graph->nodes) {
+    if (node->type != ImageTextureNode::get_node_type()) {
+      continue;
+    }
+    ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+    const string filename = image->get_filename().string();
+    const size_t udim = filename.find("<UDIM>");
+    if (udim == string::npos) {
+      continue;
+    }
+    const string prefix = path_filename(filename.substr(0, udim));
+    const string suffix = filename.substr(udim + strlen("<UDIM>"));
+    std::vector<string> files;
+    OIIO::Filesystem::get_directory_entries(path_dirname(filename), files);
+
+    array<int> tiles;
+    for (const string &file : files) {
+      const string name = path_filename(file);
+      if (name.size() != prefix.size() + 4 + suffix.size() || !string_startswith(name, prefix) ||
+          !string_endswith(name, suffix))
+      {
+        continue;
+      }
+      const string number = name.substr(prefix.size(), 4);
+      if (std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; }) &&
+          number >= "1001")
+      {
+        tiles.push_back_slow(std::stoi(number));
+      }
+    }
+    std::sort(tiles.begin(), tiles.end());
+    image->set_tiles(tiles);
+  }
+}
+
 HdCyclesMaterial::HdCyclesMaterial(const SdfPath &sprimId) : HdMaterial(sprimId) {}
 
 HdCyclesMaterial::~HdCyclesMaterial() = default;
@@ -669,6 +711,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
     }
 
+    SetUdimTiles(graph.get());
     AddInstanceIdAOV(graph.get());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
