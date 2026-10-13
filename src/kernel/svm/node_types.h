@@ -198,7 +198,7 @@ static_assert(sizeof(SVMNodeAttr) % sizeof(uint) == 0);
 
 /* NODE_VERTEX_COLOR / NODE_VERTEX_COLOR_DERIVATIVE */
 struct SVMNodeVertexColor {
-  uint8_t layer_id;
+  int layer_id;
   SVMStackOffset color_offset;
   SVMStackOffset alpha_offset;
   NodeBumpOffset bump_offset;

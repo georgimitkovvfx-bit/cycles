@@ -5184,7 +5184,7 @@ void VertexColorNode::compile(SVMCompiler &compiler)
   compiler.add_node(this,
                     NODE_VERTEX_COLOR,
                     SVMNodeVertexColor{
-                        .layer_id = uint8_t(layer_id),
+                        .layer_id = layer_id,
                         .color_offset = compiler.output("Color"),
                         .alpha_offset = compiler.output("Alpha"),
                         .bump_offset = bump_offset,
