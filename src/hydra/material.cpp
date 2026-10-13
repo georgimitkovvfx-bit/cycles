@@ -289,6 +289,9 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (UsdPrimvarReader_float3)
     (UsdPrimvarReader_float4)
     (UsdPrimvarReader_int)
+    (UsdPrimvarReader_normal)
+    (UsdPrimvarReader_point)
+    (UsdPrimvarReader_vector)
     (UsdTransform2d)
     (a)
     (rgb)
@@ -350,7 +353,8 @@ class UsdToCyclesMapping {
           case SocketType::FLOAT:
           case SocketType::INT:
           case SocketType::UINT:
-            return "alpha";
+            /* Alpha is 1 for attributes without alpha, Fac is the value (or average). */
+            return "fac";
           case SocketType::COLOR:
           case SocketType::VECTOR:
           case SocketType::POINT:
@@ -437,7 +441,10 @@ class UsdToCycles {
         usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float2 ||
         usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float3 ||
         usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float4 ||
-        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_int)
+        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_int ||
+        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_normal ||
+        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_point ||
+        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_vector)
     {
       return &UsdPrimvarReader;
     }
