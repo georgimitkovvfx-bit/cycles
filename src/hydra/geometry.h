@@ -9,6 +9,8 @@
 
 #include <pxr/imaging/hd/rprim.h>
 
+#include <vector>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Base {
@@ -35,6 +37,7 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
 
   CyclesBase *_geom = nullptr;
   std::vector<CCL_NS::Object *> _instances;
+  const HdCyclesSession *_session = nullptr;
 
  private:
   void Initialize(PXR_NS::HdRenderParam *renderParam);
@@ -43,6 +46,8 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
   void UpdateObjectSettings(const PXR_NS::HdContainerDataSourceHandle &primDs);
 
   PXR_NS::GfMatrix4d _geomTransform;
+  // Transforms at the motion steps when moving over the shutter, else empty
+  std::vector<PXR_NS::GfMatrix4d> _geomTransformMotion;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

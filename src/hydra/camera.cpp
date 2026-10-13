@@ -52,7 +52,7 @@ HdDirtyBits HdCyclesCamera::GetInitialDirtyBitsMask() const
 }
 
 void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
-                          HdRenderParam * /*renderParam*/,
+                          HdRenderParam *renderParam,
                           HdDirtyBits *dirtyBits)
 {
   if (*dirtyBits == DirtyBits::Clean) {
@@ -76,24 +76,27 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
   if (auto ds = cameraSchema.GetShutterClose()) {
     shutterClose = float(ds->GetTypedValue(0.0f));
   }
+  _shutterOpen = shutterOpen;
+  _shutterClose = shutterClose;
+
+  auto *const session = static_cast<HdCyclesSession *>(renderParam);
+  session->SetCameraShutter(shutterOpen, shutterClose);
 
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     HdXformSchema xformSchema = HdXformSchema::GetFromParent(primDs);
     if (auto matrixDs = xformSchema.GetMatrix()) {
-      SampleTyped<GfMatrix4d, 2>(matrixDs, shutterOpen, shutterClose, &_transformSamples);
-      bool transform_found = false;
-      for (size_t i = 0; i < _transformSamples.count; ++i) {
-        if (_transformSamples.times[i] == 0.0f) {
-          _transform = _transformSamples.values[i];
-          _data.SetTransform(_transform);
-          transform_found = true;
-          break;
-        }
+      // Motion blur: transforms at the evenly spaced motion steps, rendered at the center one
+      std::vector<float> times = session->GetMotionTimes(shutterOpen, shutterClose);
+      if (times.empty()) {
+        times.push_back(0.0f);
       }
-      if (!transform_found && _transformSamples.count) {
-        _transform = _transformSamples.values[0];
-        _data.SetTransform(_transform);
+      _transformSamples.Resize(times.size());
+      for (size_t i = 0; i < times.size(); ++i) {
+        _transformSamples.times[i] = times[i];
+        _transformSamples.values[i] = matrixDs->GetTypedValue(times[i]);
       }
+      _transform = _transformSamples.values[times.size() / 2];
+      _data.SetTransform(_transform);
     }
   }
 
@@ -189,6 +192,12 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     motion[i] = convert_camera_transform(_transformSamples.values[i], metersPerUnit);
   }
   cam->set_motion(motion);
+
+  // Motion steps are evenly spaced over the camera shutter (in frames)
+  if (_shutterClose > _shutterOpen) {
+    cam->set_shuttertime(float(_shutterClose - _shutterOpen));
+    cam->set_motion_position(MOTION_POSITION_CENTER);
+  }
 }
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,

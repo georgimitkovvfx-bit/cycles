@@ -11,6 +11,7 @@
 // overload taking a 'Node *', rather than the one taking a 'bool'
 #include "scene/background.h"
 #include "scene/film.h"
+#include "scene/integrator.h"
 #include "scene/light.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
@@ -397,8 +398,26 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   return primvarAovsChanged;
 }
 
-void HdCyclesSession::SetRenderSettingsPrimvarAovs(
-    const SdfPath &id, const bool active, std::vector<std::pair<string, string>> &&aovs)
+std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
+                                                   const float shutterClose) const
+{
+  // Three steps, like Blender's default of one motion step for objects
+  constexpr int numSteps = 3;
+  if (_motionBlurDisabled || !session->scene->integrator->get_motion_blur() ||
+      !(shutterClose > shutterOpen))
+  {
+    return {};
+  }
+  std::vector<float> times(numSteps);
+  for (int i = 0; i < numSteps; i++) {
+    times[i] = shutterOpen + (shutterClose - shutterOpen) * float(i) / float(numSteps - 1);
+  }
+  return times;
+}
+
+void HdCyclesSession::SetRenderSettingsPrimvarAovs(const SdfPath &id,
+                                                   const bool active,
+                                                   std::vector<std::pair<string, string>> &&aovs)
 {
   if (aovs.empty() && !active) {
     _renderSettingsPrimvarAovs.erase(id);

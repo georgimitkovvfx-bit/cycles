@@ -563,6 +563,20 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->houdiniViewport) {
     _renderParam->SetViewport(VtValue::Cast<bool>(value).GetWithDefault(false));
   }
+  else if (key == HdCyclesRenderSettingsTokens->houdiniFps) {
+    _renderParam->SetFramesPerSecond(VtValue::Cast<double>(value).GetWithDefault(24.0));
+  }
+  else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur) {
+    _renderParam->SetMotionBlurDisabled(VtValue::Cast<bool>(value).GetWithDefault(false));
+  }
+  // Changing these restarts the render delegate (UsdRenderers.json): the motion steps of the
+  // geometry would need a sync, which scene indices don't do for prims the delegate marks dirty.
+  else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
+           key == HdCyclesRenderSettingsTokens->shutterClose)
+  {
+    _renderParam->SetShutterSetting(key == HdCyclesRenderSettingsTokens->shutterClose,
+                                    float(VtValue::Cast<double>(value).GetWithDefault(0.0)));
+  }
   else if (key == HdCyclesRenderSettingsTokens->transparentBackground) {
     _renderParam->SetTransparentBackground(
         value.IsEmpty() ? std::nullopt :

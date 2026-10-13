@@ -22,7 +22,11 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \
     ((transparentBackground, "cycles:background:transparent")) \
-    ((houdiniViewport, "houdini:viewport"))
+    ((houdiniViewport, "houdini:viewport")) \
+    ((houdiniFps, "houdini:fps")) \
+    (disableMotionBlur) \
+    ((shutterOpen, "shutter:open")) \
+    ((shutterClose, "shutter:close"))
 // clang-format on
 
 TF_DECLARE_PUBLIC_TOKENS(HdCyclesRenderSettingsTokens, HD_CYCLES_RENDER_SETTINGS_TOKENS);

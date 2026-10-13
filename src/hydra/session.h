@@ -66,6 +66,46 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _projectionMatrix = projectionMatrix;
   }
 
+  // Shutter interval in frames, relative to the current frame: from the shutter:open/close render
+  // settings (the Houdini viewport and husk), else from the first camera with an open shutter,
+  // since geometry is synced before the render pass knows its camera.
+  void SetShutterSetting(const bool close, const float value)
+  {
+    (close ? _shutterClose : _shutterOpen) = value;
+    _shutterFromSettings = true;
+  }
+
+  void SetCameraShutter(const float open, const float close)
+  {
+    if (!_shutterFromSettings && !(_shutterClose > _shutterOpen)) {
+      _shutterOpen = open;
+      _shutterClose = close;
+    }
+  }
+
+  void SetMotionBlurDisabled(const bool disabled)
+  {
+    _motionBlurDisabled = disabled;
+  }
+
+  void SetFramesPerSecond(const double fps)
+  {
+    _framesPerSecond = fps > 0.0 ? fps : 24.0;
+  }
+
+  double GetFramesPerSecond() const
+  {
+    return _framesPerSecond;
+  }
+
+  // Times in frames of the motion steps over the shutter when rendering with motion blur, else
+  // empty. The steps are evenly spaced, as Cycles expects, the center one at mid-shutter.
+  std::vector<float> GetMotionTimes() const
+  {
+    return GetMotionTimes(_shutterOpen, _shutterClose);
+  }
+  std::vector<float> GetMotionTimes(float shutterOpen, float shutterClose) const;
+
   // Rendering for the Houdini viewport: it reads the depth AOV as window depth (0..1) and needs
   // integer IDs, final renders keep distance and float IDs
   bool IsViewport() const
@@ -131,6 +171,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
   mutable CCL_NS::thread_mutex _projectionMutex;
   bool _viewport = false;
+  float _shutterOpen = 0.0f;
+  float _shutterClose = 0.0f;
+  bool _shutterFromSettings = false;
+  bool _motionBlurDisabled = false;
+  double _framesPerSecond = 24.0;
   std::optional<bool> _transparentBackground;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;

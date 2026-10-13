@@ -117,8 +117,22 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
   if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
     _geomTransform = GfMatrix4d(1.0);
+    _geomTransformMotion.clear();
     if (auto matrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix()) {
       _geomTransform = matrixDs->GetTypedValue(0.0f);
+
+      // Motion blur: transforms at the motion steps, rendered at the center one
+      const std::vector<float> motionTimes =
+          static_cast<HdCyclesSession *>(renderParam)->GetMotionTimes();
+      std::vector<float> sampleTimes;
+      if (!motionTimes.empty() && matrixDs->GetContributingSampleTimesForInterval(
+                                      motionTimes.front(), motionTimes.back(), &sampleTimes))
+      {
+        for (const float time : motionTimes) {
+          _geomTransformMotion.push_back(matrixDs->GetTypedValue(time));
+        }
+        _geomTransform = _geomTransformMotion[motionTimes.size() / 2];
+      }
     }
   }
 
@@ -164,6 +178,13 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       const Transform tfm = transform_scale(make_float3(metersPerUnit)) *
                             convert_transform(_geomTransform * transforms[i]);
       _instances[i]->set_tfm(tfm);
+
+      array<Transform> motion(_geomTransformMotion.size());
+      for (size_t step = 0; step < _geomTransformMotion.size(); ++step) {
+        motion[step] = transform_scale(make_float3(metersPerUnit)) *
+                       convert_transform(_geomTransformMotion[step] * transforms[i]);
+      }
+      _instances[i]->set_motion(motion);
     }
   }
 
@@ -292,6 +313,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Initialize(HdRenderParam *renderParam)
     return;
   }
 
+  _session = static_cast<const HdCyclesSession *>(renderParam);
   const SceneLock lock(renderParam);
 
   // Create geometry
