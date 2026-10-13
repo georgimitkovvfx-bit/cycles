@@ -233,6 +233,11 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     focalLength = data.GetFocalLength() * GfCamera::FOCAL_LENGTH_UNIT * metersPerUnit;
 
     cam->set_fov(GfDegreesToRadians(data.GetFieldOfView(GfCamera::FOVVertical)));
+    /* The motion pass projects with these at the previous and next frame, their default zooms.
+     * shortcut: an animated focal length gives no zoom vectors, sample it at the motion times
+     * like the transform when that is needed. */
+    cam->set_fov_pre(cam->get_fov());
+    cam->set_fov_post(cam->get_fov());
   }
 
   cam->set_sensorwidth(data.GetHorizontalAperture() * GfCamera::APERTURE_UNIT * metersPerUnit);
