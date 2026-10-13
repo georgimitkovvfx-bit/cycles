@@ -308,8 +308,19 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (periodic)
     (specularColor)
     (useSpecularWorkflow)
+    (ior)
 );
 // clang-format on
+
+/* The value of a node parameter, or `fallback` when it is not authored. */
+template<typename T>
+static T GetParameter(const HdMaterialNodeParameterContainerSchema &params,
+                      const TfToken &name,
+                      const T &fallback)
+{
+  const HdSampledDataSourceHandle ds = params.Get(name).GetValue();
+  return ds ? VtValue::Cast<T>(ds->GetValue(0.0f)).GetWithDefault(fallback) : fallback;
+}
 
 /* Simple class to handle remapping of USDPreviewSurface nodes and parameters to Cycles
  * equivalents. */
@@ -340,6 +351,13 @@ class UsdToCyclesMapping {
                            const HdMaterialNodeParameterContainerSchema & /*params*/) const
   {
     return true;
+  }
+
+  /* Add the nodes that an input needs besides its socket, once the graph is linked. */
+  virtual void finalize(ShaderGraph * /*graph*/,
+                        ShaderNode * /*node*/,
+                        const HdMaterialNodeParameterContainerSchema & /*params*/) const
+  {
   }
 
   virtual std::string parameterName(const TfToken &name,
@@ -428,20 +446,49 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
     bsdf->set_emission_strength(1.0f);
   }
 
+  static bool isSpecularWorkflow(const HdMaterialNodeParameterContainerSchema &params)
+  {
+    return GetParameter(params, CyclesMaterialTokens->useSpecularWorkflow, 0) != 0;
+  }
+
   bool isInputUsed(const TfToken &name,
                    const HdMaterialNodeParameterContainerSchema &params) const override
   {
-    /* specularColor is the Specular Tint like in Blender's USD import, but only in the specular
-     * workflow like in USD and Karma (Blender always uses it).
-     * shortcut: Karma reflects specularColor at normal incidence, the tint only colors the
-     * reflectance of the IOR (0.04); also map it to the IOR if specular workflow assets look
-     * too dull. */
+    /* specularColor only applies in the specular workflow, like in USD and Karma (Blender's USD
+     * import always uses it). There the IOR only shapes the Fresnel curve: keep the default, so
+     * that the Specular Tint scale in finalize() is fixed. */
     if (name == CyclesMaterialTokens->specularColor) {
-      const HdSampledDataSourceHandle ds =
-          params.Get(CyclesMaterialTokens->useSpecularWorkflow).GetValue();
-      return ds && VtValue::Cast<int>(ds->GetValue(0.0f)).GetWithDefault(0) != 0;
+      return isSpecularWorkflow(params);
+    }
+    if (name == CyclesMaterialTokens->ior) {
+      return !isSpecularWorkflow(params);
     }
     return true;
+  }
+
+  void finalize(ShaderGraph *graph,
+                ShaderNode *node,
+                const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
+    if (isSpecularWorkflow(params)) {
+      /* specularColor is the reflectance at normal incidence. Cycles reflects the Specular Tint
+       * times the reflectance of the IOR (0.04 for 1.5), so scale it by the inverse. */
+      const float ior = bsdf->get_ior();
+      const float scale = 1.0f / sqr((ior - 1.0f) / (ior + 1.0f));
+      ShaderInput *tint = bsdf->input("Specular Tint");
+      if (ShaderOutput *link = tint->link) {
+        VectorMathNode *math = graph->create_node<VectorMathNode>();
+        math->set_math_type(NODE_VECTOR_MATH_SCALE);
+        math->set_scale(scale);
+        graph->disconnect(tint);
+        graph->connect(link, math->input("Vector1"));
+        graph->connect(math->output("Vector"), tint);
+      }
+      else {
+        bsdf->set_specular_tint(bsdf->get_specular_tint() * scale);
+      }
+    }
   }
 };
 
@@ -984,6 +1031,15 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     }
 
     UpdateConnections(nodeIt->second, nodes.Get(nodeName), nodePath, graph.get());
+  }
+
+  /* USD inputs that need more nodes than the one their node maps to. */
+  for (const TfToken &nodeName : nodes.GetNames()) {
+    const auto nodeIt = _nodes.find(MaterialNodeNameToSdfPath(nodeName));
+    if (nodeIt != _nodes.end() && nodeIt->second.mapping) {
+      nodeIt->second.mapping->finalize(
+          graph.get(), nodeIt->second.node, nodes.Get(nodeName).GetParameters());
+    }
   }
 
   /* Finally connect the terminals to the graph output (Surface, Volume, Displacement). */
