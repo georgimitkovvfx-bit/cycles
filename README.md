@@ -67,8 +67,8 @@ Linux and macOS builds have not been tested on Houdini 22.
 - **OSL:** on the GPU only OptiX supports it, and shaders cannot trace rays there: the Ambient Occlusion and
   Raycast nodes do nothing (Blender has the same limits). The first OptiX render compiles every OSL shader and
   can take minutes. Without a color attribute the Vertex Color node differs from SVM (also in Blender). Builds
-  need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). Once, a CPU render showed a
-  wrong Principled Volume with OSL; not reproduced.
+  need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). With OSL, a Principled Volume in a
+  mesh renders inconsistently (CPU vs OptiX vs SVM), sometimes only.
 - The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
 
 ### Viewport
