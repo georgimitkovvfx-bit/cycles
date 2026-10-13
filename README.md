@@ -63,7 +63,10 @@ Linux and macOS builds have not been tested on Houdini 22.
   **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
   (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
 - **Primvars:** matrix, string and int64 primvars are not exported. Per-object settings (`cycles:object:*`) are not
-  read per instance.
+  read per instance. The USD Primvar Reader's `fallback` is ignored: geometry without the primvar reads 0.
+- **UsdPreviewSurface:** the diffuse color default is Cycles' 0.8 (USD: 0.18); `opacityThreshold`, `occlusion` and
+  `displacement` are not translated; in the specular workflow `ior` is ignored. UsdUVTexture scale and bias apply
+  only when authored (not connected), and its r/g/b outputs are luminance.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
   are not supported. Editing a parameter rebuilds the whole shader.
@@ -198,6 +201,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Vertex Color node read float and float2 attributes from the float3 array** (core Cycles, SVM): wrong values, CPU and OptiX differed. | `88c9261a2` |
 | **Point instancer orientations and scales were applied in the wrong order** (also nested instancers): instances with orient or pscale, e.g. from the Instancer LOP or SOP Import, landed in the wrong place. | `dfcda7df8` |
 | **Crash re-tessellating a subdivision mesh** when only its points changed. | `459f60fb3` |
+| **Review fixes for the primvar and instance work:** crash syncing a prototype with no instances (`e1601b67c`); vertex primvars dropped on meshes with unused trailing points (`44220246f`); out of bounds read of short uniform primvars (`f8564cb24`); UV map aliases interpolated linearly on subdivision surfaces (`289d73167`); OSL `getattribute` requested the parameter default instead of the node's value (`b20dd4dfd`); Vertex Color node with standard names (`uv`, `density`) read nothing and attribute ids above 255 wrapped (`c2b98f277`, `3ce37f642`). | `e1601b67c`, `44220246f`, `f8564cb24`, `289d73167`, `b20dd4dfd`, `c2b98f277`, `3ce37f642` |
+| **UsdPreviewSurface / UsdUVTexture translation:** specularColor is F0 in the specular workflow (was 25 times too dim; metallic ignored there, black default), clearcoat maps to the coat, the normal input is tangent space through a Normal Map node, UsdUVTexture scale/bias scale the output (they were used as UV tiling) and `sourceColorSpace` raw is honoured. Matches Karma within 0.02. | `20e7ebebf`, `9dcf9931f`, `3ab17edd7`, `ffcf479f2`, `f921fb280`, `0d47522b3` |
 | **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
