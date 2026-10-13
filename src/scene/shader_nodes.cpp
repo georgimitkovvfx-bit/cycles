@@ -7662,6 +7662,19 @@ void OSLNode::attributes(Shader *shader, AttributeRequestSet *attributes)
     }
   }
 
+  for (const ustring &name : requested_attributes) {
+    /* OSL reads standard attributes as "geom:<name>". */
+    const AttributeStandard std = string_startswith(name, "geom:") ?
+                                      Attribute::name_standard(name.c_str() + strlen("geom:")) :
+                                      ATTR_STD_NONE;
+    if (std != ATTR_STD_NONE) {
+      attributes->add(std);
+    }
+    else {
+      attributes->add(name);
+    }
+  }
+
   ShaderNode::attributes(shader, attributes);
 }
 

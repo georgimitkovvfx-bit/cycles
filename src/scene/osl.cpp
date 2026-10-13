@@ -27,6 +27,9 @@
 #  include "util/projection.h"
 #  include "util/task.h"
 
+#  include <iomanip>
+#  include <sstream>
+
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -553,6 +556,48 @@ const char *OSLManager::shader_load_filepath(string filepath)
   return shader_load_bytecode(bytecode_hash, bytecode);
 }
 
+/* Attribute names that a shader reads with getattribute(), when they are string constants or
+ * string parameter defaults.
+ * shortcut: a name computed at run time or from a connected string parameter is not found (then
+ * another node must request the attribute, like in Blender); upgrade by asking OSL for the
+ * "attributes_needed" of the optimized shader group, if that becomes available in time. */
+static vector<ustring> oso_getattribute_names(const string &bytecode)
+{
+  map<string, string> strings;
+  vector<ustring> names;
+  std::istringstream lines(bytecode);
+  string line;
+  while (std::getline(lines, line)) {
+    std::istringstream tokens(line);
+    string op;
+    tokens >> op;
+    if (op == "const" || op == "param") {
+      /* E.g. const string $const1 "name" %read{1,1} %write{2147483647,-1} */
+      string type, symbol, value;
+      tokens >> type >> symbol >> std::ws;
+      if (type == "string" && tokens.peek() == '"' && tokens >> std::quoted(value)) {
+        strings[symbol] = value;
+      }
+    }
+    else if (op == "getattribute") {
+      /* getattribute result [object] name [index] value %line{1} ..., the name is the last
+       * string argument. */
+      string arg, name;
+      tokens >> arg;
+      while (tokens >> arg && arg[0] != '%') {
+        const auto it = strings.find(arg);
+        if (it != strings.end()) {
+          name = it->second;
+        }
+      }
+      if (!name.empty()) {
+        names.push_back(ustring(name));
+      }
+    }
+  }
+  return names;
+}
+
 const char *OSLManager::shader_load_bytecode(const string &hash, const string &bytecode)
 {
   foreach_shading_system(
@@ -570,6 +615,7 @@ const char *OSLManager::shader_load_bytecode(const string &hash, const string &b
   info.has_surface_emission = (bytecode.find("\"emission\"") != string::npos);
   info.has_surface_transparent = (bytecode.find("\"transparent\"") != string::npos);
   info.has_surface_bssrdf = (bytecode.find("\"bssrdf\"") != string::npos);
+  info.attributes = oso_getattribute_names(bytecode);
 
   loaded_shaders[hash] = info;
 
@@ -876,6 +922,7 @@ OSLNode *OSLShaderManager::osl_node(ShaderGraph *graph,
   else {
     node->filepath = filepath;
   }
+  node->requested_attributes = info->attributes;
 
   /* Generate inputs and outputs */
   node->create_inputs_outputs(node->type);

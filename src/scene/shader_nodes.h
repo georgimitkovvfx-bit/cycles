@@ -1736,6 +1736,8 @@ class OSLNode final : public ShaderNode {
   string filepath;
   string bytecode_hash;
   bool has_emission;
+  /* Attributes the shader reads with getattribute(). */
+  vector<ustring> requested_attributes;
 };
 
 class NormalMapNode : public ShaderNode {

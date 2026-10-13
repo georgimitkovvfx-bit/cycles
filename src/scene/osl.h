@@ -51,6 +51,8 @@ struct OSLShaderInfo {
   bool has_surface_emission = false;
   bool has_surface_transparent = false;
   bool has_surface_bssrdf = false;
+  /* Attribute names read with getattribute(). */
+  vector<ustring> attributes;
 };
 
 #endif
