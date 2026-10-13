@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/plugin.h"
+#include "hydra/implicit_mesh.h"
 #include "hydra/render_delegate.h"
 #include "util/log.h"
 #include "util/path.h"
@@ -89,7 +90,9 @@ TF_REGISTRY_FUNCTION(TfType)
 HdSceneIndexBaseRefPtr HdCycles_ImplicitSurfaceSceneIndexPlugin::_AppendSceneIndex(
     const HdSceneIndexBaseRefPtr &inputScene, const HdContainerDataSourceHandle &inputArgs)
 {
-  return HdsiImplicitSurfaceSceneIndex::New(inputScene, inputArgs);
+  // Curved shapes as fine meshes first, then Hdsi turns the cube and plane into meshes
+  return HdsiImplicitSurfaceSceneIndex::New(
+      HD_CYCLES_NS::HdCyclesImplicitMeshSceneIndex::New(inputScene), inputArgs);
 }
 
 // Cycles has no implicit surfaces, so turn USD Sphere, Cube, Cone, Cylinder, Capsule and Plane

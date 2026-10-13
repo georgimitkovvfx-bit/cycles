@@ -1,0 +1,36 @@
+/* SPDX-FileCopyrightText: 2026 Blender Foundation
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+#pragma once
+
+#include "hydra/config.h"
+
+#include <pxr/imaging/hd/filteringSceneIndex.h>
+
+HDCYCLES_NAMESPACE_OPEN_SCOPE
+
+TF_DECLARE_REF_PTRS(HdCyclesImplicitMeshSceneIndex);
+
+/* Turns the curved implicit USD shapes (Sphere, Cylinder, Cone, Capsule) into meshes fine enough
+ * to look smooth in a ray traced render. HdsiImplicitSurfaceSceneIndex, which handles the other
+ * shapes, uses 10 segments around, made for a rasterizer that subdivides them. */
+class HdCyclesImplicitMeshSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
+ public:
+  static HdCyclesImplicitMeshSceneIndexRefPtr New(const HdSceneIndexBaseRefPtr &inputSceneIndex);
+
+  HdSceneIndexPrim GetPrim(const SdfPath &primPath) const override;
+  SdfPathVector GetChildPrimPaths(const SdfPath &primPath) const override;
+
+ protected:
+  HdCyclesImplicitMeshSceneIndex(const HdSceneIndexBaseRefPtr &inputSceneIndex);
+
+  void _PrimsAdded(const HdSceneIndexBase &sender,
+                   const HdSceneIndexObserver::AddedPrimEntries &entries) override;
+  void _PrimsRemoved(const HdSceneIndexBase &sender,
+                     const HdSceneIndexObserver::RemovedPrimEntries &entries) override;
+  void _PrimsDirtied(const HdSceneIndexBase &sender,
+                     const HdSceneIndexObserver::DirtiedPrimEntries &entries) override;
+};
+
+HDCYCLES_NAMESPACE_CLOSE_SCOPE

@@ -29,6 +29,7 @@ set(SRC_HD_CYCLES_HEADERS
   file_reader.h
   geometry.h
   geometry.inl
+  implicit_mesh.h
   instancer.h
   light.h
   material.h
@@ -50,6 +51,7 @@ set(SRC_HD_CYCLES
   field.cpp
   file_reader.cpp
   geometry.cpp
+  implicit_mesh.cpp
   instancer.cpp
   light.cpp
   material.cpp
