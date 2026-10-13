@@ -303,16 +303,19 @@ void ApplyPrimvars(AttributeSet &attributes,
                    AttributeStandard std)
 {
   /* Wrong counts would overflow or underfill the attribute, e.g. Houdini array attributes or
-   * cubic curve varying data. */
+   * cubic curve varying data. More vertex values are fine: a mesh only has the points up to the
+   * last one its faces use, the values of unused points after it are left out. */
   const size_t expected = Attribute::element_size(attributes.geometry, elem, attributes.prim);
-  if (value.GetArraySize() != expected) {
+  if (value.GetArraySize() != expected &&
+      !(elem == ATTR_ELEMENT_VERTEX && value.GetArraySize() > expected))
+  {
     TF_WARN(
         "Primvar %s has %zu values, expected %zu", name.c_str(), value.GetArraySize(), expected);
     return;
   }
 
   const void *data = HdGetValueData(value);
-  size_t size = value.GetArraySize();
+  size_t size = expected;
 
   const HdType valueType = HdGetValueTupleType(value).type;
 
@@ -332,19 +335,20 @@ void ApplyPrimvars(AttributeSet &attributes,
 
       if (elem & ATTR_ELEMENT_IS_NORMAL) {
         attrType = CCL_NS::TypeNormal;
-        size = valueData.size() * sizeof(packed_normal);
 
         VtArray<packed_normal> valueConverted;
-        valueConverted.reserve(valueData.size());
-        for (const GfVec3f &vec : valueData) {
+        valueConverted.reserve(size);
+        for (size_t i = 0; i < size; ++i) {
+          const GfVec3f &vec = valueData[i];
           valueConverted.push_back(packed_normal(make_float3(vec[0], vec[1], vec[2])));
         }
+        size *= sizeof(packed_normal);
         data = valueConverted.data();
         value = std::move(valueConverted);
       }
       else {
         attrType = CCL_NS::TypeVector;
-        size = valueData.size() * sizeof(packed_float3);
+        size *= sizeof(packed_float3);
         static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
       }
       break;
