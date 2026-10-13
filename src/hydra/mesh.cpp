@@ -433,6 +433,11 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
       const ustring ownName(primvarName.GetString());
       for (const ustring &name : names) {
         ApplyPrimvars(attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE);
+        /* Copies of the UV map under other names subdivide smoothly like the UV map. */
+        Attribute *attr = (std == ATTR_STD_UV) ? attributes.find(name) : nullptr;
+        if (attr) {
+          attr->flags |= ATTR_SUBDIVIDE_SMOOTH_FVAR;
+        }
       }
     }
   }
