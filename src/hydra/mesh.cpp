@@ -702,7 +702,9 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
 
     _geom->set_subd_dicing_rate(1.0f);
     _geom->set_subd_max_level(_topology.GetRefineLevel());
-    _geom->set_subd_objecttoworld(_instances[0]->get_tfm());
+    if (!_instances.empty()) {
+      _geom->set_subd_objecttoworld(_instances[0]->get_tfm());
+    }
   }
 }
 
