@@ -73,8 +73,9 @@ template<> ustring convertToCycles<ustring>(const VtValue &value)
     return ustring(value.UncheckedGet<std::string>());
   }
   if (value.IsHolding<SdfAssetPath>()) {
+    /* The authored path when it does not resolve (a missing file), like MaterialX. */
     const SdfAssetPath &path = value.UncheckedGet<SdfAssetPath>();
-    return ustring(path.GetResolvedPath());
+    return ustring(path.GetResolvedPath().empty() ? path.GetAssetPath() : path.GetResolvedPath());
   }
 
   if (value.CanCast<TfToken>()) {
