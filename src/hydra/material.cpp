@@ -309,6 +309,8 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (specularColor)
     (useSpecularWorkflow)
     (ior)
+    (scale)
+    (bias)
 );
 // clang-format on
 
@@ -431,6 +433,45 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
     }
 
     return UsdToCyclesMapping::parameterName(name, inputConnection, value);
+  }
+
+  bool isInputUsed(const TfToken &name,
+                   const HdMaterialNodeParameterContainerSchema & /*params*/) const override
+  {
+    /* Applied to the outputs in finalize(), they are not the texture mapping "Scale". */
+    return name != CyclesMaterialTokens->scale && name != CyclesMaterialTokens->bias;
+  }
+
+  void finalize(ShaderGraph *graph,
+                ShaderNode *node,
+                const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* The outputs are the texture values times scale plus bias, e.g. to unpack normal maps.
+     * shortcut: authored values only, a connected scale or bias is ignored; add it when an asset
+     * needs it. */
+    const GfVec4f scale = GetParameter(params, CyclesMaterialTokens->scale, GfVec4f(1.0f));
+    const GfVec4f bias = GetParameter(params, CyclesMaterialTokens->bias, GfVec4f(0.0f));
+    if (scale == GfVec4f(1.0f) && bias == GfVec4f(0.0f)) {
+      return;
+    }
+    ShaderOutput *color = node->output("Color");
+    if (!color->links.empty()) {
+      VectorMathNode *math = graph->create_node<VectorMathNode>();
+      math->set_math_type(NODE_VECTOR_MATH_MULTIPLY_ADD);
+      math->set_vector2(make_float3(scale[0], scale[1], scale[2]));
+      math->set_vector3(make_float3(bias[0], bias[1], bias[2]));
+      graph->relink(color, math->output("Vector"));
+      graph->connect(color, math->input("Vector1"));
+    }
+    ShaderOutput *alpha = node->output("Alpha");
+    if (!alpha->links.empty()) {
+      MathNode *math = graph->create_node<MathNode>();
+      math->set_math_type(NODE_MATH_MULTIPLY_ADD);
+      math->set_value2(scale[3]);
+      math->set_value3(bias[3]);
+      graph->relink(alpha, math->output("Value"));
+      graph->connect(alpha, math->input("Value1"));
+    }
   }
 };
 
