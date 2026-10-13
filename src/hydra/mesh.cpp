@@ -409,6 +409,14 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
       if (!subdivision) {
         // Adjust attributes for polygons that were triangulated
         if (primvarInterpolation == HdInterpolationUniform) {
+          /* Read per face, a short array would be read out of bounds. */
+          if (value.GetArraySize() != size_t(_topology.GetNumFaces())) {
+            TF_WARN("Primvar %s has %zu values, expected %d",
+                    primvarName.GetText(),
+                    value.GetArraySize(),
+                    _topology.GetNumFaces());
+            continue;
+          }
           value = ComputeTriangulatedUniformPrimvar(value, valueType, _primitiveParams);
           if (value.IsEmpty()) {
             continue;
