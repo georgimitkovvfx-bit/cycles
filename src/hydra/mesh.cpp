@@ -275,6 +275,7 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
 void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
 {
   _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
+  _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
 
   // Authored normals should only exist on triangle meshes
   if (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE) {
@@ -324,16 +325,21 @@ void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
   else if (interpolation == HdInterpolationFaceVarying) {
     TF_VERIFY(normals.size() == static_cast<size_t>(_topology.GetNumFaceVaryings()));
 
-    // TODO: Cycles has no per-corner normals, so ignore until supported.
-#if 0
-    if (!_util.ComputeTriangulatedFaceVaryingPrimvar(
-            normals.data(), normals.size(), HdTypeFloatVec3, &value))
+    const VtValue triangulated = ComputeTriangulatedFaceVaryingPrimvar(
+        value, HdTypeFloatVec3, _util);
+    if (!triangulated.IsHolding<VtVec3fArray>() ||
+        triangulated.GetArraySize() != _geom->num_triangles() * 3)
     {
       return;
     }
+    const auto &cornerNormals = triangulated.UncheckedGet<VtVec3fArray>();
 
-    const auto &normalsTriangulated = value.UncheckedGet<VtVec3fArray>();
-#endif
+    packed_normal *const N =
+        _geom->attributes.add(ATTR_STD_CORNER_NORMAL)->data_for_write<packed_normal>();
+    for (size_t i = 0; i < cornerNormals.size(); ++i) {
+      N[i] = packed_normal(
+          make_float3(cornerNormals[i][0], cornerNormals[i][1], cornerNormals[i][2]));
+    }
   }
 }
 
