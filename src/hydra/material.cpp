@@ -876,11 +876,22 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
 
     SetNodeValue(nodeDesc.node, *input, value);
 
+    /* UsdImaging passes UsdUVTexture's sourceColorSpace as the color space of the file
+     * parameter, like the colorSpace metadata of asset inputs. */
+    if (const HdTokenDataSourceHandle colorSpaceDs = params.Get(paramName).GetColorSpace()) {
+      if (const SocketType *colorspace = nodeDesc.node->type->find_input(ustring("colorspace"))) {
+        nodeDesc.node->set(*colorspace, ustring(colorSpaceDs->GetTypedValue(0.0f).GetString()));
+        input = colorspace;
+      }
+    }
+
     /* An empty color space (and UsdUVTexture's "auto") is automatic detection, not a color
-     * space of that name. */
+     * space of that name. Automatic detection reads 8-bit images as UsdUVTexture's "sRGB".
+     * shortcut: a float image marked "sRGB" is read as linear; map "sRGB" to the color space of
+     * the OCIO config when assets need it. */
     if (input->type == SocketType::STRING && input->name == "colorspace") {
       const ustring colorspace = nodeDesc.node->get_string(*input);
-      if (colorspace.empty() || colorspace == "auto") {
+      if (colorspace.empty() || colorspace == "auto" || colorspace == "sRGB") {
         nodeDesc.node->set(*input, u_colorspace_auto);
       }
       else if (colorspace == "raw") {
