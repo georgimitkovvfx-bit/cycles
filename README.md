@@ -34,12 +34,12 @@ Linux and macOS builds have not been tested on Houdini 22.
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties |
-| Interactive edits | Moving/editing lights, objects, materials and settings updates the render |
+| Interactive edits | Moving/editing lights, objects, materials and settings updates the render. Motion blur, the shutter and primvar AOVs change without restarting the render. Texture files changed on disk reload on the next material edit or with **Reload Textures** in the viewport's renderer menu; UDIM (`<UDIM>`) textures |
 | Viewport | Free view and looking through a camera |
 | Stability | No crash on quit, renderer switch or device change |
 | Units | Stages with `metersPerUnit` 1 and 0.01 |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
-| Primvars | USD primvars are Cycles attributes for the Attribute, UV Map, Vertex Color, Normal Map/Tangent and USD Primvar Reader nodes, MaterialX geometry nodes and OSL `getattribute`: every interpolation on meshes (also subdivided), curves and points, constant primvars on volumes, float/double/half/int/bool scalars, vectors and arrays. Houdini's attribute names work too: `Cd`, `Alpha`, `uv`, `v`, `accel` find `displayColor`, `displayOpacity`, `st`, `velocities`, `accelerations` and the other way round. Face-varying normals (Houdini vertex `N`) are used |
+| Primvars | USD primvars are Cycles attributes for the Attribute, UV Map, Vertex Color, Normal Map/Tangent and USD Primvar Reader nodes, MaterialX geometry nodes and OSL `getattribute`: every interpolation on meshes (also subdivided), curves and points, constant primvars on volumes, float/double/half/int/bool scalars, vectors and arrays. Houdini's attribute names work too: `Cd`, `Alpha`, `uv`, `v`, `accel` find `displayColor`, `displayOpacity`, `st`, `velocities`, `accelerations` and the other way round. Face-varying normals (Houdini vertex `N`) are used. **Instance primvars:** per-point primvars of point instancers (Houdini Instancer LOP, SOP Import of packed primitives) and constant primvars on native instances reach the prototypes' shaders; the prototype's own primvar wins, then the innermost instancer, like Karma |
 | Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as smooth meshes |
 | Motion blur | Object transforms, mesh deformation (time samples or velocities) and the camera, over the camera shutter (Motion Blur in the render settings) |
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
@@ -56,15 +56,14 @@ Linux and macOS builds have not been tested on Houdini 22.
   glossy transmission and volume; combined, direct, indirect; the beauty, direct emission, albedo) map to Cycles
   passes, others render black. A Blender light pass and the LPE of the same light path (DiffDir and
   directdiffuse) cannot be rendered together. Karma's shadow/unshadowed LPEs and its geometric normal, facing
-  ratio, camera-space position, element and motion vector AOVs have no Cycles pass and render black. Adding a
-  primvar AOV while the viewport renders needs a render restart.
+  ratio, camera-space position, element and motion vector AOVs have no Cycles pass and render black.
 - **Motion blur:** meshes only for deformation (not curves, points or volumes), no instancer motion and no
   motion vector pass. LOP expressions give no motion: cache samples with the Motion Blur LOP, as for Karma.
-  Changing the shutter or Motion Blur restarts the viewport render.
-- **MaterialX:** a user reported image textures not refreshing after a file path change; not reproduced yet.
-- **Primvars:** matrix, string and int64 primvars are not exported. Per-instance primvars of point instancers
-  and native instances do not reach the prototypes' shaders yet (in progress). A material that starts reading a
-  new primvar while the viewport renders needs a render restart.
+- **Textures:** a texture file overwritten in place, with nothing changed in the scene, updates after
+  **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
+  (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
+- **Primvars:** matrix, string and int64 primvars are not exported. Per-object settings (`cycles:object:*`) are not
+  read per instance.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
   are not supported. Editing a parameter rebuilds the whole shader.
@@ -93,12 +92,11 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 In progress, roughly in this order:
 
-1. Instance primvars (point instancers, native instances) for the prototypes' shaders.
-2. Texture refresh (files changed on disk, UDIM), re-syncing prims without restarting the render.
-3. Motion blur for curves, points, volumes and instancers; the motion vector pass; Fast GI method.
-4. Texture coordinates on implicit shapes, the viewport resolution divider, Blender render defaults, curve shape.
-5. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
-6. Confirm the orbit fix in the GUI.
+1. Motion blur for curves, points, volumes and instancers; the motion vector pass; Fast GI method.
+2. Texture coordinates on implicit shapes, the viewport resolution divider, Blender render defaults, curve shape.
+3. Viewport responsiveness (start at low resolution, more frequent updates).
+4. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
+5. Confirm the orbit fix and the Reload Textures command in the GUI.
 
 ## Building
 
@@ -141,8 +139,12 @@ cmake --install build
    node gets the shader's inputs and outputs (its type is saved in the hip file). Houdini's OSL Generic Shader
    Builder also works inside a Cycles material.
 7. Motion blur: turn on **Motion Blur** in the render settings; the shutter is the camera's (Shutter Open/Close).
+   Changing either no longer restarts the viewport render.
    Animated LOP parameters only have the current frame: cache samples with the **Motion Blur LOP**, as for Karma.
-8. Light groups: set a **Light Group** on the Cycles tab of the Light LOP (Render Geometry Settings LOP for
+8. Attributes: an **Attribute** node (or USD Primvar Reader, MaterialX geometry nodes, OSL `getattribute`) reads
+   any primvar by name: Houdini names work (`Cd`, `uv`, `Alpha`), as do per-point attributes of instancers.
+9. Textures: after overwriting a texture file, use **Reload Textures** in the viewport's renderer menu.
+10. Light groups: set a **Light Group** on the Cycles tab of the Light LOP (Render Geometry Settings LOP for
    emissive objects), and add the same name under **Light Groups** in the passes of the Cycles Render Settings
    LOP, which writes it as `Combined_<name>`.
 
@@ -193,6 +195,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Scalar constant primvars rendered garbage** (how Houdini writes detail attributes), other numeric types rendered 0, and primvar values were copied without a size check (Houdini array attributes overflowed). | `c3b4eb536` |
 | **USD Primvar Reader float output** into a float input read the constant alpha (1); normal/point/vector readers were dropped. | `45a5dafeb` |
 | **UsdPreviewSurface emission and specular color were ignored** (mapped to Principled BSDF sockets that no longer exist). | `7071a7f7f` |
+| **Vertex Color node read float and float2 attributes from the float3 array** (core Cycles, SVM): wrong values, CPU and OptiX differed. | `88c9261a2` |
+| **Point instancer orientations and scales were applied in the wrong order** (also nested instancers): instances with orient or pscale, e.g. from the Instancer LOP or SOP Import, landed in the wrong place. | `dfcda7df8` |
+| **Crash re-tessellating a subdivision mesh** when only its points changed. | `459f60fb3` |
 | **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
@@ -217,6 +222,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Primvar AOVs:** render vars with source type `primvar`, written by every shader; the list comes from the render settings prim, which Hydra syncs before materials. | `cd9120fca` |
 | **Motion blur:** three evenly spaced motion steps over the camera shutter for transforms, mesh points (time samples or velocities) and the camera. | `acb24e055` |
 | **Primvars as attributes:** all numeric types and scalar constants (`c3b4eb536`); all interpolations on points and curves, constant primvars on volumes as object attributes (`6d86055d6`); Houdini attribute names as aliases made only when a shader asks for them, the UV map as face-varying float2, `displayColor`/`Cd` as the vertex color at every interpolation, volume standard names, the constant color on every instance (`0c7b5de34`); face-varying normals as corner normals (`a77312a17`). | `c3b4eb536`, `6d86055d6`, `0c7b5de34`, `a77312a17` |
+| **Instance primvars as object attributes:** point instancer and native instance primvars, composed through nested instancers, stored only for names the shaders read. | `f751e8b3f` |
+| **Re-sync with scene indices:** with USD 26 scene indices Hydra never re-synced prims a delegate marked dirty. A pass-through scene index at the end of the chain (`resync_scene_index.cpp`) lets the delegate re-sync materials and prims, so motion blur and shutter changes, primvar AOVs and materials that start reading a primvar update without restarting the render. | `b5598ad66`, `b128d02b8`, `24e5ce736`, `014578e4b` |
+| **Texture reload:** image files are identified by path, modification time and size (core Cycles), so a changed or late-created file loads on the next material rebuild; materials always rebuild on parameter changes; a **Reload Textures** renderer command; UDIM `<UDIM>` tiles for native and MaterialX images; asset parameters that do not resolve keep their authored path. | `78dd64030`, `43e22cfbd`, `a39c407be`, `74d5ebeba`, `0ad76428d` |
 | **OSL script nodes request the attributes they read** (core Cycles): `getattribute` names found in the byte code (string constants and parameter defaults), so a Script node reading a primvar no longer needs another node requesting it. | `888453431` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
@@ -239,7 +247,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Default render settings:** the Cycles Render Settings LOP sets itself as the stage's render settings (on by default, like Karma's), so husk, ROPs and TOPs no longer render upstream Karma settings without the Cycles passes. | `bd4a5b6d2` |
 | **Light settings and light groups:** Cycles tab on the Light LOP (`HdCyclesPlugin_Light.ds`), Light Group for objects, Light Groups on the Cycles Render Settings LOP. | `a9c2a8a5a` |
 | **Split Render Product by Render Var** and **Primvar AOVs** on the Cycles Render Settings LOP. | `46182e5a1`, `4cca27455` |
-| **Motion Blur** in the render settings; motion blur and the camera shutter restart the delegate. | `3f3fd20e3` |
+| **Motion Blur** in the render settings (since `b128d02b8` motion blur and the camera shutter no longer restart the delegate). | `3f3fd20e3` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
 ### Documentation
@@ -269,11 +277,13 @@ src/hydra/houdini/
 New Houdini-only source: `src/hydra/houdini_volume.{h,cpp}` (volumes from SOPs and native Houdini volumes).
 New source built with `hdMtlx`: `src/hydra/materialx.{h,cpp}` (MaterialX translation).
 
-Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry,light,material,mesh,output_driver,plugin,pointcloud,render_delegate,render_pass,session,util,volume}`,
+New source: `src/hydra/resync_scene_index.{h,cpp}` (re-sync scene index).
+
+Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry,instancer,light,material,mesh,node_util,output_driver,plugin,pointcloud,render_delegate,render_pass,session,util,volume}`,
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/kernel/geom/attribute.h`, `src/scene/{osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/kernel/geom/attribute.h`, `src/kernel/svm/vertex_color.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..hdCycles-H22`.
 
