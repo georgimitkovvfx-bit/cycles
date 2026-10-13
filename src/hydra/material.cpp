@@ -533,6 +533,21 @@ static void AddInstanceIdAOV(ShaderGraph *graph)
   graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
 }
 
+void HdCyclesMaterial::AddPrimvarAOVs(ShaderGraph *graph,
+                                      const std::vector<std::pair<string, string>> &aovs)
+{
+  for (const auto &[passName, primvar] : aovs) {
+    OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
+    aovNode->set_name(ustring(passName));
+
+    AttributeNode *attributeNode = graph->create_node<AttributeNode>();
+    attributeNode->set_attribute(ustring(primvar));
+
+    graph->connect(attributeNode->output("Color"), aovNode->input("Color"));
+    graph->connect(attributeNode->output("Fac"), aovNode->input("Value"));
+  }
+}
+
 HdCyclesMaterial::HdCyclesMaterial(const SdfPath &sprimId) : HdMaterial(sprimId) {}
 
 HdCyclesMaterial::~HdCyclesMaterial() = default;
@@ -613,6 +628,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       }
 
       AddInstanceIdAOV(graph.get());
+      AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
       if (!_shader) {
         _shader = lock.scene->create_node<Shader>();

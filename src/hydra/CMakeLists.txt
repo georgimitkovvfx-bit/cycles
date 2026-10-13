@@ -40,6 +40,7 @@ set(SRC_HD_CYCLES_HEADERS
   render_buffer.h
   render_delegate.h
   render_pass.h
+  render_settings.h
   session.h
   util.h
   volume.h
@@ -62,6 +63,7 @@ set(SRC_HD_CYCLES
   render_buffer.cpp
   render_delegate.cpp
   render_pass.cpp
+  render_settings.cpp
   session.cpp
   util.cpp
   volume.cpp

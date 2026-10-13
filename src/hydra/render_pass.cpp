@@ -20,6 +20,9 @@
 
 #include "session/session.h"
 
+#include <pxr/imaging/hd/changeTracker.h>
+#include <pxr/imaging/hd/material.h>
+#include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/renderPassState.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -93,7 +96,19 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         // Need to resync passes when denoising is enabled or disabled to update the pass mode
         (settingsVersion != _lastSettingsVersion && scene->integrator->use_denoise_is_modified()))
     {
-      _renderParam->SyncAovBindings(aovBindings);
+      if (_renderParam->SyncAovBindings(aovBindings)) {
+        // Every shader writes the primvar AOVs: rebuild the shaders, then export the primvars
+        // the geometry did not need before.
+        HdRenderIndex *const renderIndex = GetRenderIndex();
+        HdChangeTracker &changeTracker = renderIndex->GetChangeTracker();
+        for (const SdfPath &path : renderIndex->GetSprimSubtree(HdPrimTypeTokens->material,
+                                                                SdfPath::AbsoluteRootPath()))
+        {
+          changeTracker.MarkSprimDirty(path, HdMaterial::DirtyResource);
+        }
+        changeTracker.MarkAllRprimsDirty(HdChangeTracker::DirtyPrimvar);
+        _renderParam->UpdateDefaultSurface();
+      }
 
       if (renderDelegate->IsDisplaySupported()) {
         // Update display pass to the first requested color AOV

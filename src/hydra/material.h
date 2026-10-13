@@ -34,6 +34,10 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
     return _shader;
   }
 
+  // Write primvars to AOVs, given as (pass name, primvar name)
+  static void AddPrimvarAOVs(CCL_NS::ShaderGraph *graph,
+                             const std::vector<std::pair<std::string, std::string>> &aovs);
+
  private:
   struct NodeDesc {
     CCL_NS::ShaderNode *node;

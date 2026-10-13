@@ -18,6 +18,7 @@
 #include "hydra/pointcloud.h"
 #include "hydra/render_buffer.h"
 #include "hydra/render_pass.h"
+#include "hydra/render_settings.h"
 #include "hydra/session.h"
 #include "hydra/volume.h"
 #include "scene/background.h"
@@ -70,6 +71,7 @@ const TfTokenVector kSupportedSPrimTypes = {
 
 const TfTokenVector kSupportedBPrimTypes = {
     HdPrimTypeTokens->renderBuffer,
+    HdPrimTypeTokens->renderSettings,
 #ifdef WITH_OPENVDB
     _tokens->openvdbAsset,
 #endif
@@ -348,6 +350,9 @@ HdBprim *HdCyclesDelegate::CreateBprim(const TfToken &typeId, const SdfPath &bpr
 {
   if (typeId == HdPrimTypeTokens->renderBuffer) {
     return new HdCyclesRenderBuffer(bprimId);
+  }
+  if (typeId == HdPrimTypeTokens->renderSettings) {
+    return new HdCyclesRenderSettings(bprimId);
   }
 #ifdef WITH_OPENVDB
   if (typeId == _tokens->openvdbAsset) {

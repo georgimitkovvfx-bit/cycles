@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/session.h"
+#include "hydra/material.h"
 #include "scene/object.h"
 #include "scene/shader.h"
 // Have to include shader.h before background.h so that 'set_shader' uses the correct 'set'
@@ -147,17 +148,29 @@ PassType AovToPassType(const HdRenderPassAovBinding &aovBinding)
     return type;
   }
 
-  // Primvars and other Karma ray values are not supported
-  if (TfStringStartsWith(name, "primvars:") || TfStringStartsWith(name, "ray:")) {
+  // Other Karma ray values are not supported
+  if (TfStringStartsWith(name, "ray:")) {
     return PASS_NONE;
   }
 
+  // Shader AOVs, and primvars written to an AOV by every shader
   const HdFormat format = aovBinding.renderBuffer ? aovBinding.renderBuffer->GetFormat() :
                                                     HdFormatInvalid;
   return HdGetComponentCount(format) == 1 ? PASS_AOV_VALUE : PASS_AOV_COLOR;
 }
 
 }  // namespace
+
+string HdCyclesSession::GetPrimvar(const string &sourceName, const TfToken &sourceType)
+{
+  if (GetPassType(TfToken(sourceName)) != PASS_NONE) {
+    return string();
+  }
+  if (TfStringStartsWith(sourceName, "primvars:")) {
+    return sourceName.substr(strlen("primvars:"));
+  }
+  return sourceType == "primvar" ? sourceName : string();
+}
 
 PassType HdCyclesSession::GetPassType(const TfToken &aovName)
 {
@@ -214,31 +227,7 @@ HdCyclesSession::HdCyclesSession(const SessionParams &params)
     scene->default_background->tag_update(scene);
   }
 
-  // Wire up object color in default surface material
-  {
-    unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
-
-    ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
-
-    DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
-
-    graph->connect(objectNode->output("Color"), diffuseNode->input("Color"));
-    graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
-
-    // Create the instanceId AOV output
-    const ustring instanceId(HdAovTokens->instanceId.GetString());
-
-    OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
-    aovNode->set_name(instanceId);
-
-    AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
-    instanceIdNode->set_attribute(instanceId);
-
-    graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
-
-    scene->default_surface->set_graph(std::move(graph));
-    scene->default_surface->tag_update(scene);
-  }
+  UpdateDefaultSurface();
 }
 
 HdCyclesSession::~HdCyclesSession()
@@ -300,7 +289,7 @@ void HdCyclesSession::SetTransparentBackground(const std::optional<bool> transpa
   session->scene->light_manager->tag_update(session->scene.get(), LightManager::UPDATE_ALL);
 }
 
-void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBindings)
+bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBindings)
 {
   Scene *const scene = session->scene.get();
 
@@ -338,6 +327,7 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   }
 
   std::unordered_map<int, const Pass *> passOfType;
+  std::vector<std::pair<string, string>> primvarAovs;
   for (const HdRenderPassAovBinding &aovBinding : aovBindings) {
     const string sourceName = GetSourceName(aovBinding).GetString();
     CryptomatteType cryptomatteType;
@@ -384,10 +374,15 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     pass->set_name(ustring(aovBinding.aovName.GetString()));
     pass->set_include_albedo(includeAlbedo);
     pass->set_lightgroup(ustring(lightgroup));
-    // Shader AOV passes are matched to AOV Output nodes by name
+    // Shader AOV passes are matched to AOV Output nodes by name, primvar AOVs get their own
     if (type == PASS_AOV_COLOR || type == PASS_AOV_VALUE) {
       const TfToken sourceName = GetSourceName(aovBinding);
-      if (sourceName != aovBinding.aovName) {
+      const string primvar = GetPrimvar(sourceName.GetString(),
+                                        TfToken(GetAovSetting(aovBinding, TfToken("sourceType"))));
+      if (!primvar.empty()) {
+        primvarAovs.emplace_back(aovBinding.aovName.GetString(), primvar);
+      }
+      else if (sourceName != aovBinding.aovName) {
         pass->set_name(ustring(sourceName.GetString()));
         _passNames[aovBinding.aovName] = sourceName.GetString();
       }
@@ -396,6 +391,72 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
       passOfType[type] = pass;
     }
   }
+
+  const bool primvarAovsChanged = primvarAovs != _primvarAovs;
+  _primvarAovs = std::move(primvarAovs);
+  return primvarAovsChanged;
+}
+
+void HdCyclesSession::SetRenderSettingsPrimvarAovs(
+    const SdfPath &id, const bool active, std::vector<std::pair<string, string>> &&aovs)
+{
+  if (aovs.empty() && !active) {
+    _renderSettingsPrimvarAovs.erase(id);
+  }
+  else {
+    _renderSettingsPrimvarAovs[id] = {active, std::move(aovs)};
+  }
+
+  std::vector<std::pair<string, string>> primvarAovs;
+  for (const auto &[path, settings] : _renderSettingsPrimvarAovs) {
+    if (settings.first) {
+      primvarAovs = settings.second;
+      break;
+    }
+    for (const auto &aov : settings.second) {
+      if (std::find(primvarAovs.begin(), primvarAovs.end(), aov) == primvarAovs.end()) {
+        primvarAovs.push_back(aov);
+      }
+    }
+  }
+
+  if (primvarAovs != _primvarAovs) {
+    _primvarAovs = std::move(primvarAovs);
+    UpdateDefaultSurface();
+  }
+}
+
+void HdCyclesSession::UpdateDefaultSurface()
+{
+  if (!_ownCyclesSession) {
+    return;  // The application owns the scene and its default shaders
+  }
+
+  Scene *const scene = session->scene.get();
+  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+
+  // Wire up object color in default surface material
+  ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
+
+  DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
+
+  graph->connect(objectNode->output("Color"), diffuseNode->input("Color"));
+  graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
+
+  // Create the instanceId AOV output
+  const ustring instanceId(HdAovTokens->instanceId.GetString());
+
+  OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
+  aovNode->set_name(instanceId);
+
+  AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
+  instanceIdNode->set_attribute(instanceId);
+
+  graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
+
+  HdCyclesMaterial::AddPrimvarAOVs(graph.get(), _primvarAovs);
+  scene->default_surface->set_graph(std::move(graph));
+  scene->default_surface->tag_update(scene);
 }
 
 const string &HdCyclesSession::GetPassName(const TfToken &aovName) const

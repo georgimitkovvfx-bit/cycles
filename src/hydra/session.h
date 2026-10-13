@@ -11,9 +11,11 @@
 
 #include <pxr/imaging/hd/renderDelegate.h>
 
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -91,7 +93,29 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _aovBindings;
   }
 
-  void SyncAovBindings(const PXR_NS::HdRenderPassAovBindingVector &aovBindings);
+  // Returns true when the primvar AOVs changed: materials then need to be rebuilt, and geometry
+  // to export the primvars.
+  bool SyncAovBindings(const PXR_NS::HdRenderPassAovBindingVector &aovBindings);
+
+  // Primvar AOVs as (Cycles pass name, primvar name): every shader writes the primvar to the pass
+  const std::vector<std::pair<std::string, std::string>> &GetPrimvarAovs() const
+  {
+    return _primvarAovs;
+  }
+
+  // Primvar AOVs of a render settings prim, synced before shaders are built, with the scene
+  // locked. The active render settings are used, or all of them when none is active (husk).
+  void SetRenderSettingsPrimvarAovs(
+      const PXR_NS::SdfPath &id,
+      bool active,
+      std::vector<std::pair<std::string, std::string>> &&primvarAovs);
+
+  // Rebuild the default surface shader with the primvar AOVs, with the scene locked
+  void UpdateDefaultSurface();
+
+  // Primvar a render var reads: source type "primvar" or a "primvars:<name>" source name, unless
+  // it is a Cycles pass (Karma's "st" is the UV pass). Empty if none.
+  static std::string GetPrimvar(const std::string &sourceName, const PXR_NS::TfToken &sourceType);
 
   // Name of the Cycles pass holding an AOV, which can be shared with other AOVs
   const std::string &GetPassName(const PXR_NS::TfToken &aovName) const;
@@ -110,6 +134,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::optional<bool> _transparentBackground;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
+  std::vector<std::pair<std::string, std::string>> _primvarAovs;
+  std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
+      _renderSettingsPrimvarAovs;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
 };
 
