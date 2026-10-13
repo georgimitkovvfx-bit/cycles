@@ -7,6 +7,7 @@
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "kernel/types.h"
+#include "scene/background.h"
 #include "scene/light.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -31,6 +32,10 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (visibleInPrimaryRay)
     (treatAsPoint)
     (falloff)
+    ((useMis, "inputs:cycles:light:use_mis"))
+    ((useCaustics, "inputs:cycles:light:use_caustics"))
+    ((maxBounces, "inputs:cycles:light:max_bounces"))
+    ((lightgroup, "inputs:cycles:light:lightgroup"))
 );
 // clang-format on
 
@@ -100,12 +105,37 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     const bool normalize = GetTypedValue<bool>(lightDs, HdLightTokens->normalize, false);
     _light->set_normalize(normalize);
 
-    if (auto ds = GetTypedDataSource<bool>(lightDs, _tokens->visibleInPrimaryRay)) {
-      if (ds->GetTypedValue(0.0f)) {
-        _object->set_visibility(_object->get_visibility() | PATH_RAY_VISIBILITY_CAMERA);
+    // Cycles light settings from "inputs:cycles:light:<setting>" attributes, like Blender's light
+    // and object Visibility panels; unauthored settings use Blender's defaults.
+    static const std::pair<TfToken, uint> rayVisibility[] = {
+        {TfToken("inputs:cycles:light:visible_camera"), PATH_RAY_VISIBILITY_CAMERA},
+        {TfToken("inputs:cycles:light:visible_diffuse"), PATH_RAY_VISIBILITY_DIFFUSE},
+        {TfToken("inputs:cycles:light:visible_glossy"), PATH_RAY_VISIBILITY_GLOSSY},
+        {TfToken("inputs:cycles:light:visible_transmission"), PATH_RAY_VISIBILITY_TRANSMIT},
+        {TfToken("inputs:cycles:light:visible_volume_scatter"),
+         PATH_RAY_VISIBILITY_VOLUME_SCATTER},
+    };
+    uint visibility = PATH_RAY_VISIBILITY_ALL;
+    if (!GetTypedValue<bool>(lightDs, _tokens->visibleInPrimaryRay, true)) {
+      visibility &= ~PATH_RAY_VISIBILITY_CAMERA;
+    }
+    for (const auto &[token, ray] : rayVisibility) {
+      if (!GetTypedValue<bool>(lightDs, token, true)) {
+        visibility &= ~ray;
       }
-      else {
-        _object->set_visibility(_object->get_visibility() & ~PATH_RAY_VISIBILITY_CAMERA);
+    }
+    _object->set_visibility(visibility);
+    _light->set_use_mis(GetTypedValue<bool>(lightDs, _tokens->useMis, true));
+    _light->set_use_caustics(GetTypedValue<bool>(lightDs, _tokens->useCaustics, false));
+    _light->set_max_bounces(GetTypedValue<int>(lightDs, _tokens->maxBounces, 1024));
+
+    const ustring lightgroup(GetTypedValue<std::string>(lightDs, _tokens->lightgroup, ""));
+    _object->set_lightgroup(lightgroup);
+    if (_lightType == HdPrimTypeTokens->domeLight) {
+      Background *background = lock.scene->background;
+      if (background->get_lightgroup() != lightgroup) {
+        background->set_lightgroup(lightgroup);
+        background->tag_update(lock.scene);
       }
     }
 

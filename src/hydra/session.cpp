@@ -123,8 +123,12 @@ bool ParseCryptomatte(const string &name, CryptomatteType &type, int &index)
   return false;
 }
 
-// Light path expressions, Hydra AOVs, then Cycles pass names ("diffuse_direct", "mist", ...),
-// then shader AOVs written by the AOV Output node, matched by name.
+// Render vars with the source name "lightgroup:<name>" are the combined pass of a light group:
+// the lights and objects whose "lightgroup" setting is <name>.
+const char *const kLightgroupPrefix = "lightgroup:";
+
+// Light path expressions, light groups, Hydra AOVs, then Cycles pass names ("diffuse_direct",
+// "mist", ...), then shader AOVs written by the AOV Output node, matched by name.
 PassType AovToPassType(const HdRenderPassAovBinding &aovBinding)
 {
   const string lpe = GetLpe(aovBinding);
@@ -133,12 +137,15 @@ PassType AovToPassType(const HdRenderPassAovBinding &aovBinding)
   }
 
   const TfToken sourceName = GetSourceName(aovBinding);
+  const string &name = sourceName.GetString();
+  if (TfStringStartsWith(name, kLightgroupPrefix)) {
+    return PASS_COMBINED;
+  }
+
   const PassType type = HdCyclesSession::GetPassType(sourceName);
   if (type != PASS_NONE) {
     return type;
   }
-
-  const string &name = sourceName.GetString();
 
   // Primvars and other Karma ray values are not supported
   if (TfStringStartsWith(name, "primvars:") || TfStringStartsWith(name, "ray:")) {
@@ -347,10 +354,14 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     }
 
     const bool includeAlbedo = !GetLpe(aovBinding).empty();
+    const string lightgroup = TfStringStartsWith(sourceName, kLightgroupPrefix) ?
+                                  sourceName.substr(strlen(kLightgroupPrefix)) :
+                                  string();
 
     // The kernel writes one buffer per pass type, so AOVs of the same type (the beauty and a
-    // "C.*[LO]" LPE, for example) read the first pass of that type. Shader AOVs have a pass each.
-    if (type != PASS_AOV_COLOR && type != PASS_AOV_VALUE) {
+    // "C.*[LO]" LPE, for example) read the first pass of that type. Shader AOVs and light groups
+    // have a pass each.
+    if (type != PASS_AOV_COLOR && type != PASS_AOV_VALUE && lightgroup.empty()) {
       const auto existing = passOfType.find(type);
       if (existing != passOfType.end()) {
         if (existing->second->get_include_albedo() != includeAlbedo) {
@@ -364,13 +375,15 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
       }
     }
 
-    const PassMode mode = PassMode::DENOISED;
+    // Light group passes are not denoised (like in Blender)
+    const PassMode mode = lightgroup.empty() ? PassMode::DENOISED : PassMode::NOISY;
 
     Pass *pass = scene->create_node<Pass>();
     pass->set_type(type);
     pass->set_mode(mode);
     pass->set_name(ustring(aovBinding.aovName.GetString()));
     pass->set_include_albedo(includeAlbedo);
+    pass->set_lightgroup(ustring(lightgroup));
     // Shader AOV passes are matched to AOV Output nodes by name
     if (type == PASS_AOV_COLOR || type == PASS_AOV_VALUE) {
       const TfToken sourceName = GetSourceName(aovBinding);
@@ -379,7 +392,9 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
         _passNames[aovBinding.aovName] = sourceName.GetString();
       }
     }
-    passOfType[type] = pass;
+    if (lightgroup.empty()) {
+      passOfType[type] = pass;
+    }
   }
 }
 
