@@ -228,6 +228,31 @@ if filters:
 """
 
 
+# Split Render Product by Render Var, like Karma's LOP: a product per render var, named
+# renderproduct_<AOV>, writing <picture>_<AOV>.<ext>.
+SPLIT_SCRIPT = """import os
+import hou
+from pxr import Usd, UsdRender
+
+top = hou.pwd().parent()
+stage = hou.pwd().editableStage()
+parent = top.evalParm("renderproductsparentprimpath")
+product = UsdRender.Product(stage.GetPrimAtPath(parent + "/renderproduct"))
+name_attr = product.GetProductNameAttr()
+time = Usd.TimeCode(hou.frame()) if name_attr.GetNumTimeSamples() else Usd.TimeCode.Default()
+stem, ext = os.path.splitext(name_attr.Get(time))
+products = []
+for var_path in product.GetOrderedVarsRel().GetTargets():
+    aov = stage.GetPrimAtPath(var_path).GetAttribute("driver:parameters:aov:husk:name").Get()
+    split = UsdRender.Product.Define(stage, "%s/renderproduct_%s" % (parent, aov))
+    split.CreateProductNameAttr().Set("%s_%s%s" % (stem, aov, ext), time)
+    split.CreateOrderedVarsRel().SetTargets([var_path])
+    products.append(split.GetPath())
+UsdRender.Settings(stage.GetPrimAtPath(top.evalParm("primpath"))).GetProductsRel().SetTargets(
+    products)
+"""
+
+
 # Cryptomatte layers: (parm, layer name). Each render var holds two ranks of a layer.
 CRYPTOMATTE = [
     ("aov_cryptomatte_object", "CryptoObject"),
@@ -265,6 +290,10 @@ def aov_passes():
 
 def aov_parameters(passes_folder):
     """Add the pass toggles and shader AOVs to the Passes folder."""
+    passes_folder.addParmTemplate(hou.ToggleParmTemplate(
+        "splitrendervars", "Split Render Product by Render Var", default_value=False,
+        help="Write each render var to its own image, named after the Output Picture with "
+             "_<AOV> added, instead of one image with all of them (like the Karma LOP)."))
     for folder_label, rows in AOV_FOLDERS:
         if folder_label == "Light Path Expressions":
             passes_folder.addParmTemplate(cryptomatte_folder())
@@ -372,8 +401,17 @@ def build_contents(subnet, sockets, ds_dir):
 
     # Like Karma's LOP: husk, TOPs and the viewport use the stage's default render settings when
     # none is chosen, which would otherwise be any other render settings upstream.
+    split = subnet.createNode("pythonscript", "split_rendervars")
+    split.setInput(0, settings)
+    split.parm("python").set(SPLIT_SCRIPT)
+    # Only with Split Render Product by Render Var
+    split_switch = subnet.createNode("switch", "split_switch")
+    split_switch.setInput(0, settings)
+    split_switch.setInput(1, split)
+    split_switch.parm("input").setExpression('ch("../splitrendervars")')
+
     default = subnet.createNode("configurelayer", "default_rendersettings")
-    default.setInput(0, settings)
+    default.setInput(0, split_switch)
     default.parm("setrendersettings").setExpression('ch("../setlayerrendersettings")')
     default.parm("rendersettings").set(string_ref("primpath"))
 
@@ -512,6 +550,15 @@ def main():
                for t in product.GetRelationship("orderedVars").GetTargets()]
     if targets != ["beauty", "DiffDir", "combineddiffuse", "AOV", "Combined_key"]:
         raise RuntimeError("Unexpected render vars %r" % targets)
+    test.parm("splitrendervars").set(True)
+    stage_prims = test.stage()
+    settings_prim = stage_prims.GetPrimAtPath("/Render/%s" % test.name())
+    products = [str(t).rsplit("/", 1)[1]
+                for t in settings_prim.GetRelationship("products").GetTargets()]
+    if products != ["renderproduct_color", "renderproduct_DiffDir",
+                    "renderproduct_combineddiffuse", "renderproduct_AOV",
+                    "renderproduct_Combined_key"]:
+        raise RuntimeError("Unexpected split render products %r" % products)
     log("Wrote %s (%d settings)" % (hda_path, len(list(rendersettings2ds.settings()))))
     return 0
 
