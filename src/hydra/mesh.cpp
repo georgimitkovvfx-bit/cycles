@@ -334,7 +334,7 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         continue;
       }
 
-      VtValue value = ReadPrimvar(primvars, primvarName);
+      VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
       if (value.IsEmpty()) {
         continue;
       }

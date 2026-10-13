@@ -129,7 +129,7 @@ void HdCyclesPoints::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         continue;
       }
 
-      const VtValue value = ReadPrimvar(primvars, primvarName);
+      const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
       if (value.IsEmpty()) {
         continue;
       }

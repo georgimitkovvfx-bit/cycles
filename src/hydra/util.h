@@ -102,7 +102,11 @@ PXR_NS::TfToken ReadPrimvarRole(const PXR_NS::HdPrimvarsSchema &primvars,
 PXR_NS::TfTokenVector PrimvarNamesAtInterpolation(const PXR_NS::HdPrimvarsSchema &primvars,
                                                   PXR_NS::HdInterpolation interpolation);
 
-/* Convert a Hydra primvar value to a Cycles attribute. */
+/* Primvar value as a float, float2, float3 or float4 array (scalars become 1-element arrays), or
+ * empty for values without a float conversion, like matrices and strings. */
+PXR_NS::VtValue PrimvarAsFloats(const PXR_NS::VtValue &value);
+
+/* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size. */
 void ApplyPrimvars(CCL_NS::AttributeSet &attributes,
                    const CCL_NS::ustring &name,
                    PXR_NS::VtValue value,
