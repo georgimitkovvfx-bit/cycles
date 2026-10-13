@@ -303,6 +303,8 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (wrapS)
     (wrapT)
     (periodic)
+    (specularColor)
+    (useSpecularWorkflow)
 );
 // clang-format on
 
@@ -325,6 +327,16 @@ class UsdToCyclesMapping {
   bool hasParameterMapping(const TfToken &name) const
   {
     return _paramMap.find(name) != _paramMap.end();
+  }
+
+  /* Set the values where the USD and Cycles defaults differ, on a new node. */
+  virtual void initialize(ShaderNode * /*node*/) const {}
+
+  /* Whether a USD input applies, given the other parameters of the node. */
+  virtual bool isInputUsed(const TfToken & /*name*/,
+                           const HdMaterialNodeParameterContainerSchema & /*params*/) const
+  {
+    return true;
   }
 
   virtual std::string parameterName(const TfToken &name,
@@ -401,15 +413,44 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
   }
 };
 
+class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
+ public:
+  using UsdToCyclesMapping::UsdToCyclesMapping;
+
+  void initialize(ShaderNode *node) const override
+  {
+    /* emissiveColor is the emitted radiance and defaults to black. */
+    PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
+    bsdf->set_emission_color(zero_float3());
+    bsdf->set_emission_strength(1.0f);
+  }
+
+  bool isInputUsed(const TfToken &name,
+                   const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* specularColor is the Specular Tint like in Blender's USD import, but only in the specular
+     * workflow like in USD and Karma (Blender always uses it).
+     * shortcut: Karma reflects specularColor at normal incidence, the tint only colors the
+     * reflectance of the IOR (0.04); also map it to the IOR if specular workflow assets look
+     * too dull. */
+    if (name == CyclesMaterialTokens->specularColor) {
+      const HdSampledDataSourceHandle ds =
+          params.Get(CyclesMaterialTokens->useSpecularWorkflow).GetValue();
+      return ds && VtValue::Cast<int>(ds->GetValue(0.0f)).GetWithDefault(0) != 0;
+    }
+    return true;
+  }
+};
+
 namespace {
 
 class UsdToCycles {
-  const UsdToCyclesMapping UsdPreviewSurface = {
+  const UsdToCyclesPreviewSurface UsdPreviewSurface = {
       "principled_bsdf",
       {
           {TfToken("diffuseColor"), ustring("base_color")},
-          {TfToken("emissiveColor"), ustring("emission")},
-          {TfToken("specularColor"), ustring("specular")},
+          {TfToken("emissiveColor"), ustring("emission_color")},
+          {CyclesMaterialTokens->specularColor, ustring("specular_tint")},
           {TfToken("clearcoatRoughness"), ustring("coat_roughness")},
           {TfToken("opacity"), ustring("alpha")},
           /* opacityThreshold */
@@ -667,6 +708,9 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
 
     /* See if the parameter name is in USDPreviewSurface terms, and needs to be converted .*/
     const UsdToCyclesMapping *inputMapping = nodeDesc.mapping;
+    if (inputMapping && !inputMapping->isInputUsed(paramName, params)) {
+      continue;
+    }
     const std::string inputName = inputMapping ?
                                       inputMapping->parameterName(paramName, nullptr, &value) :
                                       paramName.GetString();
@@ -750,6 +794,9 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
     }
 
     const UsdToCyclesMapping *inputMapping = nodeDesc.mapping;
+    if (inputMapping && !inputMapping->isInputUsed(dstSocketName, nodeSchema.GetParameters())) {
+      continue;
+    }
     const std::string inputName = inputMapping ?
                                       inputMapping->parameterName(dstSocketName, nullptr) :
                                       dstSocketName.GetString();
@@ -881,6 +928,9 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       /* If it's a native Cycles' node-type, just do the lookup now. */
       else if (const NodeType *nodeType = NodeType::find(cyclesType)) {
         nodeDesc.node = graph->create_node(nodeType);
+        if (nodeDesc.mapping) {
+          nodeDesc.mapping->initialize(nodeDesc.node);
+        }
         /* Image nodes start with scene linear, detect the color space unless one is set. */
         if (const SocketType *colorspace = nodeType->find_input(ustring("colorspace"))) {
           nodeDesc.node->set(*colorspace, u_colorspace_auto);
