@@ -311,6 +311,7 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (ior)
     (scale)
     (bias)
+    (metallic)
 );
 // clang-format on
 
@@ -496,12 +497,12 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
                    const HdMaterialNodeParameterContainerSchema &params) const override
   {
     /* specularColor only applies in the specular workflow, like in USD and Karma (Blender's USD
-     * import always uses it). There the IOR only shapes the Fresnel curve: keep the default, so
-     * that the Specular Tint scale in finalize() is fixed. */
+     * import always uses it). There metallic does not apply, and the IOR only shapes the Fresnel
+     * curve: keep the default, so that the Specular Tint scale in finalize() is fixed. */
     if (name == CyclesMaterialTokens->specularColor) {
       return isSpecularWorkflow(params);
     }
-    if (name == CyclesMaterialTokens->ior) {
+    if (name == CyclesMaterialTokens->ior || name == CyclesMaterialTokens->metallic) {
       return !isSpecularWorkflow(params);
     }
     return true;
@@ -527,7 +528,9 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
         graph->connect(math->output("Vector"), tint);
       }
       else {
-        bsdf->set_specular_tint(bsdf->get_specular_tint() * scale);
+        /* An unauthored specularColor is black, unlike the white Specular Tint default. */
+        const bool authored = bool(params.Get(CyclesMaterialTokens->specularColor).GetValue());
+        bsdf->set_specular_tint(authored ? bsdf->get_specular_tint() * scale : zero_float3());
       }
     }
 
