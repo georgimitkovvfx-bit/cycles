@@ -97,12 +97,16 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
     rebuild = true;
   }
 
-  if (dirtyBits & HdChangeTracker::DirtyPrimvar) {
+  /* Also when the instance primvars replaced the object attributes (HdCyclesGeometry::Sync). */
+  if (dirtyBits & (HdChangeTracker::DirtyPrimvar | HdChangeTracker::DirtyInstancer |
+                   HdChangeTracker::DirtyMaterialId))
+  {
     const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
     const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
 
     /* Constant primvars are object attributes: Cycles clears the other attributes of a volume when
-     * it builds the volume mesh. Fields of the same name win, like any geometry attribute. */
+     * it builds the volume mesh. Fields of the same name win, like any geometry attribute. Set
+     * after the instance primvars, so they win over those like any prototype primvar. */
     for (const TfToken &primvarName :
          PrimvarNamesAtInterpolation(primvars, HdInterpolationConstant))
     {

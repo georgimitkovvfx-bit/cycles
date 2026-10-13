@@ -136,9 +136,12 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     }
   }
 
-  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
-      HdChangeTracker::IsInstancerDirty(*dirtyBits, id))
-  {
+  /* Shader and AOV changes (DirtyMaterialId, DirtyPrimvar) change which instance primvars are
+   * needed. */
+  const bool instancePrimvarsDirty = HdChangeTracker::IsInstancerDirty(*dirtyBits, id) ||
+                                     (*dirtyBits & (HdChangeTracker::DirtyPrimvar |
+                                                    HdChangeTracker::DirtyMaterialId));
+  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) || instancePrimvarsDirty) {
     auto *const instancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
 
@@ -147,8 +150,10 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
            _instances[0]->attributes.front().name() == HdAovTokens->instanceId.GetString());
 
     VtMatrix4dArray transforms;
+    std::vector<HdCyclesInstancer::Primvar> instancePrimvars;
     if (instancer) {
-      transforms = instancer->ComputeInstanceTransforms(id);
+      transforms = instancer->ComputeInstanceTransforms(
+          id, instancePrimvarsDirty ? &instancePrimvars : nullptr);
       _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(), +0.0f);
     }
     else {
@@ -185,6 +190,10 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
                        convert_transform(_geomTransformMotion[step] * transforms[i]);
       }
       _instances[i]->set_motion(motion);
+    }
+
+    if (instancePrimvarsDirty) {
+      SetInstancePrimvars(lock.scene, primDs, instancePrimvars);
     }
   }
 
@@ -279,6 +288,68 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     }
     for (const auto &[socket, value] : values) {
       SetNodeValue(instance, *socket, value);
+    }
+  }
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetInstancePrimvars(
+    Scene *scene,
+    const HdContainerDataSourceHandle &primDs,
+    const std::vector<HdCyclesInstancer::Primvar> &primvars)
+{
+  static const TfToken Cd("Cd");
+  const auto find = [&](const TfToken &name) -> const HdCyclesInstancer::Primvar * {
+    for (const HdCyclesInstancer::Primvar &pv : primvars) {
+      if (pv.name == name) {
+        assert(pv.values.size() == _instances.size() * pv.width);
+        return &pv;
+      }
+    }
+    return nullptr;
+  };
+
+  /* Instance primvars are object attributes, only the names that shaders read. Cycles uses one
+   * only where the prototype has no attribute of that name, so the prototype's own primvar wins,
+   * like Karma. */
+  std::vector<std::pair<ustring, const HdCyclesInstancer::Primvar *>> attributes;
+  for (const HdCyclesInstancer::Primvar &pv : primvars) {
+    for (const ustring &name : RequestedPrimvarNames(
+             _geom,
+             scene,
+             [&](const TfToken &primvarName) { return find(primvarName) != nullptr; },
+             pv.name,
+             ATTR_STD_NONE))
+    {
+      attributes.emplace_back(name, &pv);
+    }
+  }
+
+  /* The Object Info color from a per-instance displayColor (or Cd), unless the prototype has its
+   * own constant color (SetInstanceColor). */
+  const HdPrimvarsSchema ownPrimvars = HdPrimvarsSchema::GetFromParent(primDs);
+  bool ownColor = false;
+  for (const TfToken &name : {HdTokens->displayColor, Cd}) {
+    ownColor |= ReadPrimvarInterpolation(ownPrimvars, name) == HdInterpolationConstant &&
+                PrimvarStandard(ownPrimvars, name, TfToken()) == ATTR_STD_VERTEX_COLOR;
+  }
+  const HdCyclesInstancer::Primvar *color = find(HdTokens->displayColor);
+  if (!color) {
+    color = find(Cd);
+  }
+
+  for (size_t i = 0; i < _instances.size(); ++i) {
+    Object *instance = _instances[i];
+    if (!ownColor) {
+      instance->set_color((color && color->width == 3) ? make_float3(color->values[i * 3],
+                                                                     color->values[i * 3 + 1],
+                                                                     color->values[i * 3 + 2]) :
+                                                         make_float3(0.8f, 0.8f, 0.8f));
+    }
+
+    instance->attributes.resize(1); /* Keep the instanceId. */
+    for (const auto &[name, pv] : attributes) {
+      SetObjectAttribute(instance, name, pv->width, &pv->values[i * pv->width]);
     }
   }
 }

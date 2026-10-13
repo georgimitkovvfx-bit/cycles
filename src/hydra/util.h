@@ -17,6 +17,7 @@
 #include <pxr/imaging/hd/timeSampleArray.h>
 #include <pxr/imaging/hd/types.h>
 
+#include <functional>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -136,11 +137,25 @@ std::vector<CCL_NS::ustring> RequestedPrimvarNames(CCL_NS::Geometry *geom,
                                                    const PXR_NS::TfToken &name,
                                                    CCL_NS::AttributeStandard std);
 
+/* Same, with `hasPrimvar` telling which primvar names exist. */
+std::vector<CCL_NS::ustring> RequestedPrimvarNames(
+    CCL_NS::Geometry *geom,
+    CCL_NS::Scene *scene,
+    const std::function<bool(const PXR_NS::TfToken &)> &hasPrimvar,
+    const PXR_NS::TfToken &name,
+    CCL_NS::AttributeStandard std);
+
 /* Set an object attribute (replacing one of the same name) from a 1-element float array primvar
  * value. Shaders read it when the geometry has no attribute of that name. */
 void SetObjectAttribute(CCL_NS::Object *object,
                         const CCL_NS::ustring &name,
                         const PXR_NS::VtValue &value);
+
+/* Same, from `width` (1 to 4) floats. */
+void SetObjectAttribute(CCL_NS::Object *object,
+                        const CCL_NS::ustring &name,
+                        size_t width,
+                        const float *data);
 
 /* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size. */
 void ApplyPrimvars(CCL_NS::AttributeSet &attributes,

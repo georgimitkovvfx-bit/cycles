@@ -6,6 +6,7 @@
 #pragma once
 
 #include "hydra/config.h"
+#include "hydra/instancer.h"
 
 #include <pxr/imaging/hd/rprim.h>
 
@@ -47,6 +48,9 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
 
   void InitializeInstance(const int index);
   void UpdateObjectSettings(const PXR_NS::HdContainerDataSourceHandle &primDs);
+  void SetInstancePrimvars(CCL_NS::Scene *scene,
+                           const PXR_NS::HdContainerDataSourceHandle &primDs,
+                           const std::vector<HdCyclesInstancer::Primvar> &primvars);
 
   PXR_NS::GfMatrix4d _geomTransform;
   // Transforms at the motion steps when moving over the shutter, else empty

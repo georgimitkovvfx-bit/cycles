@@ -226,6 +226,20 @@ std::vector<ustring> RequestedPrimvarNames(Geometry *geom,
                                            const TfToken &name,
                                            const AttributeStandard std)
 {
+  return RequestedPrimvarNames(
+      geom,
+      scene,
+      [&](const TfToken &primvarName) { return bool(primvars.GetPrimvar(primvarName)); },
+      name,
+      std);
+}
+
+std::vector<ustring> RequestedPrimvarNames(Geometry *geom,
+                                           Scene *scene,
+                                           const std::function<bool(const TfToken &)> &hasPrimvar,
+                                           const TfToken &name,
+                                           const AttributeStandard std)
+{
   /* Houdini SOP Import renames these attributes to the USD names. */
   static const std::pair<TfToken, TfToken> aliases[] = {
       {HdTokens->displayColor, TfToken("Cd")},
@@ -244,7 +258,7 @@ std::vector<ustring> RequestedPrimvarNames(Geometry *geom,
     const TfToken alias = (name == usdName)     ? houdiniName :
                           (name == houdiniName) ? usdName :
                                                   TfToken();
-    if (!alias.IsEmpty() && !primvars.GetPrimvar(alias) &&
+    if (!alias.IsEmpty() && !hasPrimvar(alias) &&
         geom->need_attribute(scene, ustring(alias.GetString())))
     {
       names.emplace_back(alias.GetString());
@@ -262,11 +276,16 @@ void SetObjectAttribute(Object *object, const ustring &name, const VtValue &valu
   if (value.GetArraySize() != 1) {
     return;
   }
+  SetObjectAttribute(object,
+                     name,
+                     HdGetComponentCount(HdGetValueTupleType(value).type),
+                     static_cast<const float *>(HdGetValueData(value)));
+}
+
+void SetObjectAttribute(Object *object, const ustring &name, size_t width, const float *data)
+{
   static const TypeDesc types[] = {TypeFloat, TypeFloat2, TypeVector, TypeFloat4};
-  const ParamValue param(name,
-                         types[HdGetComponentCount(HdGetValueTupleType(value).type) - 1],
-                         1,
-                         HdGetValueData(value));
+  const ParamValue param(name, types[width - 1], 1, data);
 
   for (ParamValue &attribute : object->attributes) {
     if (attribute.name() == name) {
