@@ -353,9 +353,16 @@ def build_contents(subnet, sockets, ds_dir):
         else:
             parm.setExpression('ch("../%s")' % parm_name)
 
+    # Like Karma's LOP: husk, TOPs and the viewport use the stage's default render settings when
+    # none is chosen, which would otherwise be any other render settings upstream.
+    default = subnet.createNode("configurelayer", "default_rendersettings")
+    default.setInput(0, settings)
+    default.parm("setrendersettings").setExpression('ch("../setlayerrendersettings")')
+    default.parm("rendersettings").set(string_ref("primpath"))
+
     outputs = [c for c in subnet.children() if c.type().name() == "output"]
     output = outputs[0] if outputs else subnet.createNode("output", "output0")
-    output.setInput(0, settings)
+    output.setInput(0, default)
     output.setDisplayFlag(True)
     subnet.layoutChildren()
 
@@ -377,6 +384,10 @@ def top_parameters(sockets, reference):
         "rendervarsparentprimpath", "Render Vars Parent Path", 1,
         default_value=("/Render/$OS/Vars",),
         help="Parent path of the render var primitives."))
+    prims.addParmTemplate(hou.ToggleParmTemplate(
+        "setlayerrendersettings", "Set as Default Render Settings Prim", default_value=True,
+        help="Make these the stage's render settings, used by husk, TOPs and the viewport when "
+             "no render settings are chosen."))
     group.append(prims)
 
     picture = hou.StringParmTemplate(
@@ -470,6 +481,9 @@ def main():
         prim = stage_prims.GetPrimAtPath("/Render/%s/%s" % (test.name(), path))
         if not prim or prim.GetTypeName() != type_name:
             raise RuntimeError("%s prim %s not created" % (type_name, path))
+    default = stage_prims.GetMetadata("renderSettingsPrimPath")
+    if default != settings_prim.GetPath().pathString:
+        raise RuntimeError("Default render settings prim is %r" % default)
     test.parm("aov_diffuse_direct").set(True)
     test.parm("aov_lpe_combineddiffuse").set(True)
     test.parm("shader_aovs").set(1)
