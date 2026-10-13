@@ -678,14 +678,21 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       AddInstanceIdAOV(graph.get());
       AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
+      const bool existed = _shader != nullptr;
       if (!_shader) {
         _shader = lock.scene->create_node<Shader>();
         // Cryptomatte material name
         _shader->name = id.GetString();
       }
 
+      const AttributeRequestSet attributes = _shader->attributes;
       _shader->set_graph(std::move(graph));
       _shader->tag_update(lock.scene);
+
+      /* Geometry only exports the primvars that shaders read when it is synced. */
+      if (existed && _shader->attributes.modified(attributes)) {
+        static_cast<HdCyclesSession *>(renderParam)->RequestResync(false, true);
+      }
     }
   }
 
