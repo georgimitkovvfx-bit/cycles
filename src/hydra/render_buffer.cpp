@@ -16,6 +16,17 @@ HdCyclesRenderBuffer::HdCyclesRenderBuffer(const SdfPath &bprimId) : HdRenderBuf
 
 HdCyclesRenderBuffer::~HdCyclesRenderBuffer() = default;
 
+void HdCyclesRenderBuffer::Sync(HdSceneDelegate *sceneDelegate,
+                                HdRenderParam *renderParam,
+                                HdDirtyBits *dirtyBits)
+{
+  // husk writes integer render vars ("primid", ...) as zero, but reads float buffers. Outside the
+  // viewport (which needs integer IDs for selection), IDs are floats: object pass index, 0 = none.
+  _floatIds = !static_cast<const HdCyclesSession *>(renderParam)->IsViewport();
+
+  HdRenderBuffer::Sync(sceneDelegate, renderParam, dirtyBits);
+}
+
 void HdCyclesRenderBuffer::Finalize(HdRenderParam *renderParam)
 {
   // Remove this render buffer from AOV bindings
@@ -34,9 +45,12 @@ bool HdCyclesRenderBuffer::Allocate(const GfVec3i &dimensions,
     return false;
   }
 
-  const size_t oldSize = _dataSize;
-  const size_t newSize = dimensions[0] * dimensions[1] * HdDataSizeOfFormat(format);
-  if (oldSize == newSize) {
+  if (format == HdFormatInt32 && _floatIds) {
+    format = HdFormatFloat32;
+  }
+
+  if (unsigned(dimensions[0]) == _width && unsigned(dimensions[1]) == _height && format == _format)
+  {
     return true;
   }
 
@@ -48,7 +62,7 @@ bool HdCyclesRenderBuffer::Allocate(const GfVec3i &dimensions,
   _width = dimensions[0];
   _height = dimensions[1];
   _format = format;
-  _dataSize = newSize;
+  _dataSize = dimensions[0] * dimensions[1] * HdDataSizeOfFormat(format);
   _resourceUsed = false;
 
   return true;

@@ -64,15 +64,16 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _projectionMatrix = projectionMatrix;
   }
 
-  // The Houdini viewport reads the depth AOV as window depth (0..1), final renders keep distance
-  bool GetDepthToWindow() const
+  // Rendering for the Houdini viewport: it reads the depth AOV as window depth (0..1) and needs
+  // integer IDs, final renders keep distance and float IDs
+  bool IsViewport() const
   {
-    return _depthToWindow;
+    return _viewport;
   }
 
-  void SetDepthToWindow(const bool depthToWindow)
+  void SetViewport(const bool viewport)
   {
-    _depthToWindow = depthToWindow;
+    _viewport = viewport;
   }
 
   PXR_NS::HdRenderPassAovBinding GetDisplayAovBinding() const
@@ -105,7 +106,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   double _stageMetersPerUnit = 0.01;
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
   mutable CCL_NS::thread_mutex _projectionMutex;
-  bool _depthToWindow = false;
+  bool _viewport = false;
   std::optional<bool> _transparentBackground;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;

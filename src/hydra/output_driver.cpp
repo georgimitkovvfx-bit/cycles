@@ -88,7 +88,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         TF_VERIFY(
             tile.get_pass_pixels(_renderParam->GetPassName(aovBinding.aovName), channels, data));
         if (aovBinding.aovName == HdAovTokens->depth && channels == 1 &&
-            _renderParam->GetDepthToWindow()) {
+            _renderParam->IsViewport()) {
           convert_depth(data,
                         tile.size.x * tile.size.y,
                         _renderParam->GetProjectionMatrix(),
@@ -102,15 +102,14 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
                 _renderParam->GetPassName(aovBinding.aovName), channels, pixels.data()))
         {
           if (aovBinding.aovName == HdAovTokens->depth && channels == 1 &&
-            _renderParam->GetDepthToWindow()) {
+            _renderParam->IsViewport()) {
             convert_depth(pixels.data(),
                           tile.size.x * tile.size.y,
                           _renderParam->GetProjectionMatrix(),
                           _renderParam->GetStageMetersPerUnit());
           }
-          const bool isId = aovBinding.aovName == HdAovTokens->primId ||
-                            aovBinding.aovName == HdAovTokens->elementId ||
-                            aovBinding.aovName == HdAovTokens->instanceId;
+          // Integer buffers hold IDs (Hydra's primId/instanceId/elementId, Karma's primid)
+          const bool isId = format == HdFormatInt32;
           renderBuffer->Map();
           renderBuffer->WritePixels(pixels.data(),
                                     GfVec2i(tile.offset.x, tile.offset.y),
