@@ -8,9 +8,7 @@
         "needsdepth" : false,
         "needsselection" : true,
         "depthstyle" : "opengl",
-        "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system",
-                                    "cycles:integrator:motion_blur", "disableMotionBlur" ],
-        "restartcamerasettings" : [ "shutter:open", "shutter:close" ],
+        "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system" ],
         "husk.default_output" : "cycles.exr"
     }
 }

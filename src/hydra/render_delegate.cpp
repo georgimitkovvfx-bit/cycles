@@ -605,6 +605,7 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
 {
   Scene *const scene = _renderParam->session->scene.get();
   Session *const session = _renderParam->session;
+  const std::vector<float> motionTimes = _renderParam->GetMotionTimes();
 
   if (key == HdCyclesRenderSettingsTokens->stageMetersPerUnit) {
     _renderParam->SetStageMetersPerUnit(
@@ -636,8 +637,6 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur) {
     _renderParam->SetMotionBlurDisabled(VtValue::Cast<bool>(value).GetWithDefault(false));
   }
-  // Changing these restarts the render delegate (UsdRenderers.json): the motion steps of the
-  // geometry would need a sync, which scene indices don't do for prims the delegate marks dirty.
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
            key == HdCyclesRenderSettingsTokens->shutterClose)
   {
@@ -668,6 +667,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
         }
       }
     }
+  }
+
+  /* Motion blur on or off, or a new shutter: geometry and cameras need their motion steps. */
+  if (_renderParam->GetMotionTimes() != motionTimes) {
+    _renderParam->RequestResync(false, true);
   }
 }
 

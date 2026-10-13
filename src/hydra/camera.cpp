@@ -80,7 +80,11 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
   _shutterClose = shutterClose;
 
   auto *const session = static_cast<HdCyclesSession *>(renderParam);
+  const std::vector<float> motionTimes = session->GetMotionTimes();
   session->SetCameraShutter(shutterOpen, shutterClose);
+  if (session->GetMotionTimes() != motionTimes) {
+    session->RequestResync(false, true);
+  }
 
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     HdXformSchema xformSchema = HdXformSchema::GetFromParent(primDs);
