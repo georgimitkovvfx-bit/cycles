@@ -561,6 +561,7 @@ class UsdToCycles {
           {TfToken("diffuseColor"), ustring("base_color")},
           {TfToken("emissiveColor"), ustring("emission_color")},
           {CyclesMaterialTokens->specularColor, ustring("specular_tint")},
+          {TfToken("clearcoat"), ustring("coat_weight")},
           {TfToken("clearcoatRoughness"), ustring("coat_roughness")},
           {TfToken("opacity"), ustring("alpha")},
           /* opacityThreshold */
