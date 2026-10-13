@@ -5,6 +5,7 @@
 
 #include "hydra/session.h"
 #include "hydra/material.h"
+#include "hydra/render_buffer.h"
 #include "scene/object.h"
 #include "scene/shader.h"
 // Have to include shader.h before background.h so that 'set_shader' uses the correct 'set'
@@ -482,6 +483,30 @@ const string &HdCyclesSession::GetPassName(const TfToken &aovName) const
 {
   const auto it = _passNames.find(aovName);
   return it != _passNames.end() ? it->second : aovName.GetString();
+}
+
+void HdCyclesSession::ResetConverged()
+{
+  for (const HdRenderPassAovBinding &aovBinding : _aovBindings) {
+    if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(aovBinding.renderBuffer)) {
+      renderBuffer->SetConverged(false);
+    }
+  }
+}
+
+void HdCyclesSession::RequestResync(const bool materials, const bool rprims)
+{
+  if (!_resyncEnabled) {
+    return;
+  }
+  if (materials) {
+    resyncMaterials = true;
+  }
+  if (rprims) {
+    resyncRprims = true;
+  }
+  /* husk and the viewport only sync again while the render is not converged. */
+  ResetConverged();
 }
 
 void HdCyclesSession::RemoveAovBinding(HdRenderBuffer *renderBuffer)

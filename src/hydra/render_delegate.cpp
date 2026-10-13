@@ -34,6 +34,10 @@
 #include <array>
 
 #include <pxr/base/tf/getenv.h>
+#include <pxr/imaging/hd/materialSchema.h>
+#include <pxr/imaging/hd/primvarsSchema.h>
+#include <pxr/imaging/hd/renderIndex.h>
+#include <pxr/imaging/hd/xformSchema.h>
 #include <pxr/imaging/hgi/tokens.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -188,6 +192,21 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   return params;
 }
 
+HdCyclesResyncSceneIndexPtr FindResyncSceneIndex(const HdSceneIndexBaseRefPtr &sceneIndex)
+{
+  if (auto resync = TfDynamic_cast<HdCyclesResyncSceneIndexRefPtr>(sceneIndex)) {
+    return resync;
+  }
+  if (auto filtering = TfDynamic_cast<HdFilteringSceneIndexBaseRefPtr>(sceneIndex)) {
+    for (const HdSceneIndexBaseRefPtr &input : filtering->GetInputScenes()) {
+      if (HdCyclesResyncSceneIndexPtr resync = FindResyncSceneIndex(input)) {
+        return resync;
+      }
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
@@ -277,6 +296,7 @@ bool HdCyclesDelegate::Resume()
 HdRenderPassSharedPtr HdCyclesDelegate::CreateRenderPass(HdRenderIndex *index,
                                                          const HdRprimCollection &collection)
 {
+  _renderIndex = index;
   return HdRenderPassSharedPtr(new HdCyclesRenderPass(index, collection, _renderParam.get()));
 }
 
@@ -386,6 +406,53 @@ void HdCyclesDelegate::CommitResources(HdChangeTracker *tracker)
   const SceneLock lock(_renderParam.get());
 
   _renderParam->UpdateScene();
+}
+
+/* Called at the start of HdRenderIndex::SyncAll: the prims that HdCyclesSession::RequestResync
+ * asked for are dirtied here and synced by the same SyncAll. */
+void HdCyclesDelegate::Update()
+{
+  const bool materials = _renderParam->resyncMaterials.exchange(false);
+  const bool rprims = _renderParam->resyncRprims.exchange(false);
+  if (!(materials || rprims) || !_renderIndex) {
+    return;
+  }
+
+  if (!_resyncSceneIndex) {
+    _resyncSceneIndex = FindResyncSceneIndex(_renderIndex->GetTerminalSceneIndex());
+    if (!_resyncSceneIndex) {
+      TF_WARN("No Cycles resync scene index, changed render settings may need a render restart");
+      return;
+    }
+  }
+
+  const SdfPath &root = SdfPath::AbsoluteRootPath();
+  HdSceneIndexObserver::DirtiedPrimEntries entries;
+  if (materials) {
+    const HdDataSourceLocatorSet locators = {HdMaterialSchema::GetDefaultLocator()};
+    for (const SdfPath &id : _renderIndex->GetSprimSubtree(HdPrimTypeTokens->material, root)) {
+      entries.emplace_back(id, locators);
+    }
+  }
+  if (rprims) {
+    /* Transforms and points at the motion steps, and the primvars shaders read.
+     * shortcut: every rprim, also when one material reads new attributes; filter by the bound
+     * materials if re-reading the primvars of big scenes gets slow. */
+    const HdDataSourceLocatorSet locators = {HdXformSchema::GetDefaultLocator(),
+                                             HdPrimvarsSchema::GetDefaultLocator()};
+    for (const SdfPath &id : _renderIndex->GetRprimSubtree(root)) {
+      entries.emplace_back(id, locators);
+    }
+    const HdDataSourceLocatorSet cameraLocators = {HdXformSchema::GetDefaultLocator()};
+    for (const SdfPath &id : _renderIndex->GetSprimSubtree(HdPrimTypeTokens->camera, root)) {
+      entries.emplace_back(id, cameraLocators);
+    }
+  }
+  _resyncSceneIndex->Resync(entries);
+
+  /* Restart the render with the synced prims. The session thread takes scene changes into the
+   * running render without restarting it, which the render pass could miss. */
+  ++_settingsVersion;
 }
 
 TfToken HdCyclesDelegate::GetMaterialBindingPurpose() const

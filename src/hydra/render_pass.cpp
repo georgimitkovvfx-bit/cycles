@@ -20,8 +20,6 @@
 
 #include "session/session.h"
 
-#include <pxr/imaging/hd/changeTracker.h>
-#include <pxr/imaging/hd/material.h>
 #include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/renderPassState.h>
 
@@ -35,6 +33,8 @@ HdCyclesRenderPass::HdCyclesRenderPass(HdRenderIndex *index,
   Session *const session = _renderParam->session;
   // Reset cancel state so session thread can continue rendering
   session->progress.reset();
+
+  _renderParam->EnableResync();
 
   session->set_output_driver(make_unique<HdCyclesOutputDriver>(renderParam));
 
@@ -56,6 +56,11 @@ HdCyclesRenderPass::~HdCyclesRenderPass()
 
 bool HdCyclesRenderPass::IsConverged() const
 {
+  /* Changed settings or re-synced prims restart the render at the next execute. */
+  if (GetRenderIndex()->GetRenderDelegate()->GetRenderSettingsVersion() != _lastSettingsVersion) {
+    return false;
+  }
+
   for (const HdRenderPassAovBinding &aovBinding : _renderParam->GetAovBindings()) {
     if (aovBinding.renderBuffer && !aovBinding.renderBuffer->IsConverged()) {
       return false;
@@ -63,15 +68,6 @@ bool HdCyclesRenderPass::IsConverged() const
   }
 
   return true;
-}
-
-void HdCyclesRenderPass::ResetConverged()
-{
-  for (const HdRenderPassAovBinding &aovBinding : _renderParam->GetAovBindings()) {
-    if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(aovBinding.renderBuffer)) {
-      renderBuffer->SetConverged(false);
-    }
-  }
 }
 
 void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassState,
@@ -99,14 +95,7 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       if (_renderParam->SyncAovBindings(aovBindings)) {
         // Every shader writes the primvar AOVs: rebuild the shaders, then export the primvars
         // the geometry did not need before.
-        HdRenderIndex *const renderIndex = GetRenderIndex();
-        HdChangeTracker &changeTracker = renderIndex->GetChangeTracker();
-        for (const SdfPath &path : renderIndex->GetSprimSubtree(HdPrimTypeTokens->material,
-                                                                SdfPath::AbsoluteRootPath()))
-        {
-          changeTracker.MarkSprimDirty(path, HdMaterial::DirtyResource);
-        }
-        changeTracker.MarkAllRprimsDirty(HdChangeTracker::DirtyPrimvar);
+        _renderParam->RequestResync(true, true);
         _renderParam->UpdateDefaultSurface();
       }
 
@@ -177,7 +166,7 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       _lastSettingsVersion = settingsVersion;
 
       // Reset convergence state of all render buffers
-      ResetConverged();
+      _renderParam->ResetConverged();
 
       BufferParams buffer_params;
       buffer_params.full_x = static_cast<int>(framing.displayWindow.GetMin()[0]);

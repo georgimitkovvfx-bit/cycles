@@ -11,6 +11,7 @@
 
 #include <pxr/imaging/hd/renderDelegate.h>
 
+#include <atomic>
 #include <map>
 #include <optional>
 #include <string>
@@ -162,10 +163,30 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
+  // Mark the render buffers as not converged, so that the render pass is executed again
+  void ResetConverged();
+
+  // With scene indices, Hydra only syncs a prim again when the scene changes it, not when the
+  // render delegate marks it dirty. Changes only the delegate knows about request a sync here,
+  // sent by HdCyclesDelegate::Update() at the start of the next sync: materials are rebuilt,
+  // rprims and cameras read their transforms and primvars again.
+  void RequestResync(bool materials, bool rprims);
+
+  // Requests before the first render pass come from the first sync, which syncs the prims they
+  // concern after them (render settings, cameras and materials before geometry)
+  void EnableResync()
+  {
+    _resyncEnabled = true;
+  }
+
   CCL_NS::Session *session;
   bool keep_nodes;
 
+  std::atomic<bool> resyncMaterials = false;
+  std::atomic<bool> resyncRprims = false;
+
  private:
+  bool _resyncEnabled = false;
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);

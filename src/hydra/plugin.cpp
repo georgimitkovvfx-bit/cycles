@@ -6,6 +6,7 @@
 #include "hydra/plugin.h"
 #include "hydra/implicit_mesh.h"
 #include "hydra/render_delegate.h"
+#include "hydra/resync_scene_index.h"
 #include "util/log.h"
 #include "util/path.h"
 
@@ -115,6 +116,19 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
       HdRetainedContainerDataSource::New(std::size(names), names, values),
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+
+  /* Last in the chain, after every scene index that adds prims, so that the render delegate can
+   * have any prim synced again (HdCyclesDelegate::Update). */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HD_CYCLES_NS::HdCyclesResyncSceneIndex::New(inputScene);
+      },
+      nullptr,
+      1000,
+      HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
 }
 #endif
 

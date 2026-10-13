@@ -6,6 +6,7 @@
 #pragma once
 
 #include "hydra/config.h"
+#include "hydra/resync_scene_index.h"
 
 #include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hgi/hgi.h>
@@ -85,6 +86,8 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
 
   void CommitResources(PXR_NS::HdChangeTracker *tracker) override;
 
+  void Update() override;
+
   PXR_NS::TfToken GetMaterialBindingPurpose() const override;
 
   PXR_NS::TfTokenVector GetMaterialRenderContexts() const override;
@@ -100,6 +103,8 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
  private:
   PXR_NS::Hgi *_hgi = nullptr;
   std::unique_ptr<HdCyclesSession> _renderParam;
+  PXR_NS::HdRenderIndex *_renderIndex = nullptr;
+  HdCyclesResyncSceneIndexPtr _resyncSceneIndex;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

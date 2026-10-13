@@ -41,6 +41,7 @@ set(SRC_HD_CYCLES_HEADERS
   render_delegate.h
   render_pass.h
   render_settings.h
+  resync_scene_index.h
   session.h
   util.h
   volume.h
@@ -64,6 +65,7 @@ set(SRC_HD_CYCLES
   render_delegate.cpp
   render_pass.cpp
   render_settings.cpp
+  resync_scene_index.cpp
   session.cpp
   util.cpp
   volume.cpp

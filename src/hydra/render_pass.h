@@ -21,8 +21,6 @@ class HdCyclesRenderPass final : public PXR_NS::HdRenderPass {
   bool IsConverged() const override;
 
  private:
-  void ResetConverged();
-
   void _Execute(const PXR_NS::HdRenderPassStateSharedPtr &renderPassState,
                 const PXR_NS::TfTokenVector &renderTags) override;
 
