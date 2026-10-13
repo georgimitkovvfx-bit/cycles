@@ -44,6 +44,10 @@ class OIIOImageLoader : public ImageLoader {
   const string &get_filepath() const;
 
   string original_filepath_;
+  /* The file as it was on disk when the image was added, so that an image is loaded again when
+   * the file changed (written again or created after the image was added). */
+  uint64_t file_mtime_ = 0;
+  size_t file_size_ = 0;
   string texture_cache_filepath_;
   CacheHandle<ImageInput> texture_cache_file_handle;
   bool texture_cache_file_handle_failed = false;

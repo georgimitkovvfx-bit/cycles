@@ -24,7 +24,12 @@ CCL_NAMESPACE_BEGIN
  * need careful testing as other parts of the software uses file handles too. */
 static CacheLimiter<ImageInput> cache_limiter_image_input(128);
 
-OIIOImageLoader::OIIOImageLoader(const string &filepath) : original_filepath_(filepath) {}
+OIIOImageLoader::OIIOImageLoader(const string &filepath)
+    : original_filepath_(filepath),
+      file_mtime_(path_modified_time(filepath)),
+      file_size_(path_file_size(filepath))
+{
+}
 
 OIIOImageLoader::~OIIOImageLoader() = default;
 
@@ -451,7 +456,9 @@ const string &OIIOImageLoader::get_filepath() const
 bool OIIOImageLoader::equals(const ImageLoader &other) const
 {
   const OIIOImageLoader &other_loader = (const OIIOImageLoader &)other;
-  return original_filepath_ == other_loader.original_filepath_;
+  /* shortcut: st_mtime has 1 s resolution, the size covers most rewrites within a second. */
+  return original_filepath_ == other_loader.original_filepath_ &&
+         file_mtime_ == other_loader.file_mtime_ && file_size_ == other_loader.file_size_;
 }
 
 CCL_NAMESPACE_END
