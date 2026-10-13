@@ -488,7 +488,9 @@ HdAovDescriptor HdCyclesDelegate::GetDefaultAovDescriptor(const TfToken &name) c
     }
   }
 
-  return HdAovDescriptor();
+  // Render vars are queried by prim name ("Normal", "DiffDir", ...); the pass comes from their
+  // source name in the binding settings. Houdini leaves out AOVs without a valid descriptor.
+  return HdAovDescriptor(HdFormatFloat32Vec3, false, VtValue(GfVec3f(0.0f)));
 }
 
 HdRenderSettingDescriptorList HdCyclesDelegate::GetRenderSettingDescriptors() const
