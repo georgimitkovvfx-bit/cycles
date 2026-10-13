@@ -32,6 +32,13 @@ const std::unordered_map<TfToken, PassType, TfToken::HashFunctor> kAovToPass = {
     {HdAovTokens->normal, PASS_NORMAL},
     {HdAovTokens->primId, PASS_OBJECT_ID},
     {HdAovTokens->instanceId, PASS_AOV_VALUE},
+    // Source names of Karma's render vars (Karma Render Settings LOP)
+    {TfToken("ray:hitP"), PASS_POSITION},
+    {TfToken("ray:hitPz"), PASS_DEPTH},
+    {TfToken("ray:hitN"), PASS_NORMAL},
+    {TfToken("ray:primid"), PASS_OBJECT_ID},
+    {TfToken("st"), PASS_UV},
+    {TfToken("AO"), PASS_AO},
 };
 
 // Light path expressions of Karma's AOVs, matched to the Cycles light passes holding the same
@@ -133,8 +140,8 @@ PassType AovToPassType(const HdRenderPassAovBinding &aovBinding)
 
   const string &name = sourceName.GetString();
 
-  // Primvars are not supported
-  if (TfStringStartsWith(name, "primvars:")) {
+  // Primvars and other Karma ray values are not supported
+  if (TfStringStartsWith(name, "primvars:") || TfStringStartsWith(name, "ray:")) {
     return PASS_NONE;
   }
 
