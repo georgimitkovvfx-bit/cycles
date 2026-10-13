@@ -6,11 +6,11 @@ Blender's [Cycles](https://www.cycles-renderer.org) path tracer as a **Hydra ren
 Blender, and Blender-style render settings.
 
 This is a fork of [cjhosken/hdCycles](https://projects.blender.org/cjhosken/hdCycles) (itself based on Blender's
-Cycles repository). The work for Houdini 22 lives on the `houdini-22` branch.
+Cycles repository). The work for Houdini 22 lives on the `hdCycles-H22` branch.
 
 > **Status: work in progress.** Daily lookdev with Cycles shaders, Karma/MaterialX materials, USD lights,
-> volumes, AOVs, light groups, per-object and per-light settings, motion blur and OSL works, in the viewport,
-> husk and TOPs; see [Known issues](#known-issues).
+> volumes, primvars as shader attributes, AOVs, light groups, per-object and per-light settings, motion blur and
+> OSL works, in the viewport, husk and TOPs; see [Known issues](#known-issues).
 
 ## Tested with
 
@@ -39,6 +39,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Stability | No crash on quit, renderer switch or device change |
 | Units | Stages with `metersPerUnit` 1 and 0.01 |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
+| Primvars | USD primvars are Cycles attributes for the Attribute, UV Map, Vertex Color, Normal Map/Tangent and USD Primvar Reader nodes, MaterialX geometry nodes and OSL `getattribute`: every interpolation on meshes (also subdivided), curves and points, constant primvars on volumes, float/double/half/int/bool scalars, vectors and arrays. Houdini's attribute names work too: `Cd`, `Alpha`, `uv`, `v`, `accel` find `displayColor`, `displayOpacity`, `st`, `velocities`, `accelerations` and the other way round. Face-varying normals (Houdini vertex `N`) are used |
 | Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as smooth meshes |
 | Motion blur | Object transforms, mesh deformation (time samples or velocities) and the camera, over the camera shutter (Motion Blur in the render settings) |
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
@@ -61,14 +62,17 @@ Linux and macOS builds have not been tested on Houdini 22.
   motion vector pass. LOP expressions give no motion: cache samples with the Motion Blur LOP, as for Karma.
   Changing the shutter or Motion Blur restarts the viewport render.
 - **MaterialX:** a user reported image textures not refreshing after a file path change; not reproduced yet.
+- **Primvars:** matrix, string and int64 primvars are not exported. Per-instance primvars of point instancers
+  and native instances do not reach the prototypes' shaders yet (in progress). A material that starts reading a
+  new primvar while the viewport renders needs a render restart.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
   are not supported. Editing a parameter rebuilds the whole shader.
 - **OSL:** on the GPU only OptiX supports it, and shaders cannot trace rays there: the Ambient Occlusion and
   Raycast nodes do nothing (Blender has the same limits). The first OptiX render compiles every OSL shader and
   can take minutes. Without a color attribute the Vertex Color node differs from SVM (also in Blender). Builds
-  need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). With OSL, a Principled Volume in a
-  mesh renders inconsistently (CPU vs OptiX vs SVM), sometimes only.
+  need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). `getattribute` in a Script
+  node finds attributes named by a string constant or a parameter default, not names computed at run time.
 - The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
 
 ### Viewport
@@ -87,11 +91,14 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 ## Roadmap
 
-Roughly in this order:
+In progress, roughly in this order:
 
-1. Confirm the orbit fix in the GUI.
-2. Shader node ports, Render Settings LOP touch-ups, ramps and degrees.
-3. Motion blur for curves, points, volumes and instancers; the motion vector pass.
+1. Instance primvars (point instancers, native instances) for the prototypes' shaders.
+2. Texture refresh (files changed on disk, UDIM), re-syncing prims without restarting the render.
+3. Motion blur for curves, points, volumes and instancers; the motion vector pass; Fast GI method.
+4. Texture coordinates on implicit shapes, the viewport resolution divider, Blender render defaults, curve shape.
+5. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
+6. Confirm the orbit fix in the GUI.
 
 ## Building
 
@@ -182,6 +189,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Implicit spheres, cylinders, cones and capsules were faceted** 10-segment meshes (a sphere 8% small). A scene index meshes them with 64 segments and normals; a radius 1 sphere matches the analytic size within 0.2%. | `5ef0a65ff` |
 | **Orbiting the viewport pivoted at the camera:** `UsdRenderers.json` declared the depth as camera distance while the viewport gets window depth. | `fa48caaca` |
 | **Render vars were missing from the Houdini viewport** and its slap comps: Houdini only binds render vars with a valid default AOV descriptor, queried by prim name. | `d1a7ddf18` |
+| **OSL attribute lookups with an empty name read garbage** (core Cycles): the hash of `""` is the id of attribute map terminators, so e.g. the Principled Volume's default Color Attribute made OSL mesh volumes render 0 on the CPU, 0.135 on OptiX instead of the SVM result, and change between runs (Blender 5.2 crashes in the same path). | `2f851d714` |
+| **Scalar constant primvars rendered garbage** (how Houdini writes detail attributes), other numeric types rendered 0, and primvar values were copied without a size check (Houdini array attributes overflowed). | `c3b4eb536` |
+| **USD Primvar Reader float output** into a float input read the constant alpha (1); normal/point/vector readers were dropped. | `45a5dafeb` |
+| **UsdPreviewSurface emission and specular color were ignored** (mapped to Principled BSDF sockets that no longer exist). | `7071a7f7f` |
 | **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
@@ -205,6 +216,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Light groups and per-light settings:** `lightgroup:<name>` render vars, `inputs:cycles:light:*` light attributes (max bounces, MIS, shadow caustics, ray visibility, light group). | `4b97f56e6` |
 | **Primvar AOVs:** render vars with source type `primvar`, written by every shader; the list comes from the render settings prim, which Hydra syncs before materials. | `cd9120fca` |
 | **Motion blur:** three evenly spaced motion steps over the camera shutter for transforms, mesh points (time samples or velocities) and the camera. | `acb24e055` |
+| **Primvars as attributes:** all numeric types and scalar constants (`c3b4eb536`); all interpolations on points and curves, constant primvars on volumes as object attributes (`6d86055d6`); Houdini attribute names as aliases made only when a shader asks for them, the UV map as face-varying float2, `displayColor`/`Cd` as the vertex color at every interpolation, volume standard names, the constant color on every instance (`0c7b5de34`); face-varying normals as corner normals (`a77312a17`). | `c3b4eb536`, `6d86055d6`, `0c7b5de34`, `a77312a17` |
+| **OSL script nodes request the attributes they read** (core Cycles): `getattribute` names found in the byte code (string constants and parameter defaults), so a Script node reading a primvar no longer needs another node requesting it. | `888453431` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
 ### Houdini user interface
@@ -256,13 +269,13 @@ src/hydra/houdini/
 New Houdini-only source: `src/hydra/houdini_volume.{h,cpp}` (volumes from SOPs and native Houdini volumes).
 New source built with `hdMtlx`: `src/hydra/materialx.{h,cpp}` (MaterialX translation).
 
-Modified upstream files: `src/hydra/{camera,display_driver,field,geometry,light,material,output_driver,plugin,render_delegate,render_pass,session,volume}`,
+Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry,light,material,mesh,output_driver,plugin,pointcloud,render_delegate,render_pass,session,util,volume}`,
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/scene/shader_nodes.cpp`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/kernel/geom/attribute.h`, `src/scene/{osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
-Full history: `git log main..houdini-22`.
+Full history: `git log main..hdCycles-H22`.
 
 ## License and credits
 
