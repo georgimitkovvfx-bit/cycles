@@ -5174,7 +5174,8 @@ void VertexColorNode::compile(SVMCompiler &compiler)
   int layer_id = 0;
 
   if (!layer_name.empty()) {
-    layer_id = compiler.attribute(layer_name);
+    /* Standard names like "uv" are requested as standard attributes in attributes(). */
+    layer_id = compiler.attribute_standard(layer_name);
   }
   else {
     layer_id = compiler.attribute(ATTR_STD_VERTEX_COLOR);
@@ -5209,7 +5210,7 @@ void VertexColorNode::compile(OSLCompiler &compiler)
   }
   else {
     if (Attribute::name_standard(layer_name.c_str()) != ATTR_STD_NONE) {
-      compiler.parameter("name", (string("geom:") + layer_name.c_str()).c_str());
+      compiler.parameter("layer_name", (string("geom:") + layer_name.c_str()).c_str());
     }
     else {
       compiler.parameter("layer_name", layer_name.c_str());
