@@ -12,6 +12,29 @@
 
 CCL_NAMESPACE_BEGIN
 
+/* Color of a float, float2 or float3 attribute, read from the device array of its type. Float3Type
+ * is float3 or dual3. */
+template<typename Float3Type>
+ccl_device_inline Float3Type svm_vertex_color_attribute(KernelGlobals kg,
+                                                        const ccl_private ShaderData *sd,
+                                                        const AttributeDescriptor desc)
+{
+  using FloatType = dual_scalar_t<Float3Type>;
+  if (desc.type == NODE_ATTR_FLOAT) {
+    const FloatType f = primitive_surface_attribute<FloatType>(kg, sd, desc);
+    return make_float3(f, f, f);
+  }
+  if (desc.type == NODE_ATTR_FLOAT2) {
+    if constexpr (is_dual_v<Float3Type>) {
+      return make_float3(primitive_surface_attribute<dual2>(kg, sd, desc));
+    }
+    else {
+      return make_float3(primitive_surface_attribute<float2>(kg, sd, desc));
+    }
+  }
+  return primitive_surface_attribute<Float3Type>(kg, sd, desc);
+}
+
 ccl_device_noinline void svm_node_vertex_color(KernelGlobals kg,
                                                ccl_private ShaderData *sd,
                                                ccl_private float *ccl_restrict stack,
@@ -29,7 +52,7 @@ ccl_device_noinline void svm_node_vertex_color(KernelGlobals kg,
       alpha = vertex_color.w;
     }
     else {
-      color = primitive_surface_attribute<float3>(kg, sd, descriptor);
+      color = svm_vertex_color_attribute<float3>(kg, sd, descriptor);
       alpha = 1.0f;
     }
   }
@@ -69,7 +92,7 @@ ccl_device_noinline void svm_node_vertex_color_derivative(
       alpha = vertex_color.val.w;
     }
     else {
-      dual3 vertex_color = primitive_surface_attribute<dual3>(kg, sd, descriptor);
+      dual3 vertex_color = svm_vertex_color_attribute<dual3>(kg, sd, descriptor);
       if (node.bump_offset == NODE_BUMP_OFFSET_DX) {
         vertex_color.val += vertex_color.dx * node.bump_filter_width;
       }
