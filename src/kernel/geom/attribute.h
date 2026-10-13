@@ -43,6 +43,13 @@ ccl_device bool find_attr_offset(const ccl_global AttributeMap *attributes_map,
                                  ccl_private uint &attr_offset,
                                  const uint64_t id)
 {
+  /* ATTR_STD_NONE is the id of the map terminators and OSL's hash of an empty name (e.g. the
+   * Principled Volume default Color Attribute). Matching it would stop at a terminator, and an
+   * object table's chained terminator reads as a found object float at a map offset. */
+  if (id == ATTR_STD_NONE) {
+    return false;
+  }
+
   /* For SVM, find attribute by unique id. */
   AttributeMap attr_map = attributes_map[attr_offset];
 
