@@ -7,7 +7,7 @@
         "drawmodesupport" : false,
         "needsdepth" : false,
         "needsselection" : true,
-        "depthstyle" : "linear",
+        "depthstyle" : "opengl",
         "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system" ],
         "husk.default_output" : "cycles.exr"
     }
