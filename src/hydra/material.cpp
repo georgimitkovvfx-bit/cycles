@@ -530,6 +530,22 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
         bsdf->set_specular_tint(bsdf->get_specular_tint() * scale);
       }
     }
+
+    /* normal is in tangent space in [-1, 1] (a normal map unpacked with the texture's scale and
+     * bias), the Principled Normal in world space: convert with a Normal Map node, which reads
+     * the normal packed into [0, 1]. */
+    ShaderInput *normal = bsdf->input("Normal");
+    if (ShaderOutput *link = normal->link) {
+      VectorMathNode *pack = graph->create_node<VectorMathNode>();
+      pack->set_math_type(NODE_VECTOR_MATH_MULTIPLY_ADD);
+      pack->set_vector2(make_float3(0.5f));
+      pack->set_vector3(make_float3(0.5f));
+      NormalMapNode *normalMap = graph->create_node<NormalMapNode>();
+      graph->disconnect(normal);
+      graph->connect(link, pack->input("Vector1"));
+      graph->connect(pack->output("Vector"), normalMap->input("Color"));
+      graph->connect(normalMap->output("Normal"), normal);
+    }
   }
 };
 
