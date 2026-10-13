@@ -96,6 +96,25 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
 
     rebuild = true;
   }
+
+  if (dirtyBits & HdChangeTracker::DirtyPrimvar) {
+    const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
+    const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+
+    /* Constant primvars are object attributes: Cycles clears the other attributes of a volume when
+     * it builds the volume mesh. Fields of the same name win, like any geometry attribute. */
+    for (const TfToken &primvarName :
+         PrimvarNamesAtInterpolation(primvars, HdInterpolationConstant))
+    {
+      const ustring name(primvarName.GetString());
+      if (_geom->need_attribute(scene, name)) {
+        const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
+        for (Object *instance : _instances) {
+          SetObjectAttribute(instance, name, value);
+        }
+      }
+    }
+  }
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

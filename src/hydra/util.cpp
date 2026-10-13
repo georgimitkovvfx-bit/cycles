@@ -5,6 +5,7 @@
 
 #include "hydra/util.h"
 #include "scene/attribute.h"
+#include "scene/object.h"
 
 #include <pxr/base/gf/half.h>
 #include <pxr/base/gf/vec2f.h>
@@ -167,6 +168,26 @@ VtValue PrimvarAsFloats(const VtValue &value)
     default:
       return convert(VtVec4fArray(tupleType.count));
   }
+}
+
+void SetObjectAttribute(Object *object, const ustring &name, const VtValue &value)
+{
+  if (value.GetArraySize() != 1) {
+    return;
+  }
+  static const TypeDesc types[] = {TypeFloat, TypeFloat2, TypeVector, TypeFloat4};
+  const ParamValue param(name,
+                         types[HdGetComponentCount(HdGetValueTupleType(value).type) - 1],
+                         1,
+                         HdGetValueData(value));
+
+  for (ParamValue &attribute : object->attributes) {
+    if (attribute.name() == name) {
+      attribute = param;
+      return;
+    }
+  }
+  object->attributes.push_back(param);
 }
 
 void ApplyPrimvars(AttributeSet &attributes,

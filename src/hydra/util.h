@@ -22,6 +22,10 @@ class SdfPath;
 class TfToken;
 PXR_NAMESPACE_CLOSE_SCOPE
 
+CCL_NAMESPACE_BEGIN
+class Object;
+CCL_NAMESPACE_END
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 /* Prim data source from the scene index, or empty if none is reachable. */
@@ -105,6 +109,12 @@ PXR_NS::TfTokenVector PrimvarNamesAtInterpolation(const PXR_NS::HdPrimvarsSchema
 /* Primvar value as a float, float2, float3 or float4 array (scalars become 1-element arrays), or
  * empty for values without a float conversion, like matrices and strings. */
 PXR_NS::VtValue PrimvarAsFloats(const PXR_NS::VtValue &value);
+
+/* Set an object attribute (replacing one of the same name) from a 1-element float array primvar
+ * value. Shaders read it when the geometry has no attribute of that name. */
+void SetObjectAttribute(CCL_NS::Object *object,
+                        const CCL_NS::ustring &name,
+                        const PXR_NS::VtValue &value);
 
 /* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size. */
 void ApplyPrimvars(CCL_NS::AttributeSet &attributes,

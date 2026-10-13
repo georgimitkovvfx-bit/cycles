@@ -119,6 +119,9 @@ void HdCyclesPoints::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
 
   const std::pair<HdInterpolation, AttributeElement> interpolations[] = {
       std::make_pair(HdInterpolationVertex, ATTR_ELEMENT_VERTEX),
+      std::make_pair(HdInterpolationVarying, ATTR_ELEMENT_VERTEX),
+      std::make_pair(HdInterpolationFaceVarying, ATTR_ELEMENT_VERTEX),
+      std::make_pair(HdInterpolationUniform, ATTR_ELEMENT_OBJECT),
       std::make_pair(HdInterpolationConstant, ATTR_ELEMENT_OBJECT),
   };
 
