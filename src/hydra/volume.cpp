@@ -106,9 +106,13 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
     for (const TfToken &primvarName :
          PrimvarNamesAtInterpolation(primvars, HdInterpolationConstant))
     {
-      const ustring name(primvarName.GetString());
-      if (_geom->need_attribute(scene, name)) {
-        const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
+      const std::vector<ustring> names = RequestedPrimvarNames(
+          _geom, scene, primvars, primvarName, ATTR_STD_NONE);
+      if (names.empty()) {
+        continue;
+      }
+      const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
+      for (const ustring &name : names) {
         for (Object *instance : _instances) {
           SetObjectAttribute(instance, name, value);
         }

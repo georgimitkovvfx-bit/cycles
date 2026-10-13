@@ -284,6 +284,17 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
 }
 
 template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetInstanceColor(const VtValue &value)
+{
+  if (value.IsHolding<VtVec3fArray>() && value.GetArraySize() == 1) {
+    const GfVec3f color = value.UncheckedGet<VtVec3fArray>()[0];
+    for (Object *instance : _instances) {
+      instance->set_color(make_float3(color[0], color[1], color[2]));
+    }
+  }
+}
+
+template<typename Base, typename CyclesBase>
 void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
 {
   if (!_geom && _instances.empty()) {
@@ -334,7 +345,7 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
   instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(),
                                     _instances.size() == 1 ? -1.0f : static_cast<float>(index));
 
-  instance->set_color(make_float3(0.8f, 0.8f, 0.8f));
+  instance->set_color(index > 0 ? _instances[0]->get_color() : make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));
 
   // Cryptomatte object and asset names: the prim and its parent

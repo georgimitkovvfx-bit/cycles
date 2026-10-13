@@ -35,6 +35,9 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
                         PXR_NS::HdDirtyBits dirtyBits,
                         bool &rebuild) = 0;
 
+  /* Object color of every instance, from a constant displayColor value. */
+  void SetInstanceColor(const PXR_NS::VtValue &value);
+
   CyclesBase *_geom = nullptr;
   std::vector<CCL_NS::Object *> _instances;
   const HdCyclesSession *_session = nullptr;

@@ -57,6 +57,34 @@ VtValue ComputeTriangulatedUniformPrimvar(VtValue value,
   }
 }
 
+/* Cycles reads the UV map as float2 per face corner (mikktspace tangents, primitive_uv), so expand
+ * UVs at other interpolations to face-varying. */
+VtVec2fArray ComputeFaceVaryingUV(const VtVec2fArray &uv,
+                                  const HdInterpolation interpolation,
+                                  const HdMeshTopology &topology)
+{
+  if (interpolation == HdInterpolationFaceVarying) {
+    return uv;
+  }
+  const VtIntArray &counts = topology.GetFaceVertexCounts();
+  const VtIntArray &indices = topology.GetFaceVertexIndices();
+  VtVec2fArray result;
+  result.reserve(indices.size());
+  for (size_t face = 0, corner = 0; face < counts.size(); ++face) {
+    for (int i = 0; i < counts[face]; ++i, ++corner) {
+      const size_t index = (interpolation == HdInterpolationUniform)  ? face :
+                           (interpolation == HdInterpolationConstant) ? 0 :
+                           (corner < indices.size())                  ? size_t(indices[corner]) :
+                                                                        uv.size();
+      if (index >= uv.size()) {
+        return {};
+      }
+      result.push_back(uv[index]);
+    }
+  }
+  return result;
+}
+
 VtValue ComputeTriangulatedFaceVaryingPrimvar(VtValue value,
                                               const HdType valueType,
                                               HdMeshUtil &meshUtil)
@@ -318,6 +346,7 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
 
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+  const TfToken uvName = FindUVPrimvar(primvars);
 
   const std::pair<HdInterpolation, AttributeElement> interpolations[] = {
       std::make_pair(HdInterpolationFaceVarying, ATTR_ELEMENT_CORNER),
@@ -339,53 +368,52 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         continue;
       }
 
-      const TfToken role = ReadPrimvarRole(primvars, primvarName);
-      const ustring name(primvarName.GetString());
-
-      AttributeStandard std = ATTR_STD_NONE;
-      if (role == HdPrimvarRoleTokens->textureCoordinate) {
-        std = ATTR_STD_UV;
-      }
-      else if (interpolation.first == HdInterpolationVertex) {
-        if (primvarName == HdTokens->displayColor || role == HdPrimvarRoleTokens->color) {
-          std = ATTR_STD_VERTEX_COLOR;
-        }
-        else if (primvarName == HdTokens->normals) {
-          std = ATTR_STD_VERTEX_NORMAL;
-        }
-      }
-      else if (primvarName == HdTokens->displayColor &&
-               interpolation.first == HdInterpolationConstant)
-      {
-        if (value.IsHolding<VtVec3fArray>() && value.GetArraySize() == 1) {
-          const GfVec3f color = value.UncheckedGet<VtVec3fArray>()[0];
-          _instances[0]->set_color(make_float3(color[0], color[1], color[2]));
-        }
+      const AttributeStandard std = PrimvarStandard(primvars, primvarName, uvName);
+      if (std == ATTR_STD_VERTEX_COLOR && interpolation.first == HdInterpolationConstant) {
+        SetInstanceColor(value);
       }
 
       // Skip attributes that are not needed
-      if ((std != ATTR_STD_NONE && _geom->need_attribute(scene, std)) ||
-          _geom->need_attribute(scene, name))
-      {
-        const HdType valueType = HdGetValueTupleType(value).type;
+      const std::vector<ustring> names = RequestedPrimvarNames(
+          _geom, scene, primvars, primvarName, std);
+      if (names.empty()) {
+        continue;
+      }
 
-        if (!subdivision) {
-          // Adjust attributes for polygons that were triangulated
-          if (interpolation.first == HdInterpolationUniform) {
-            value = ComputeTriangulatedUniformPrimvar(value, valueType, _primitiveParams);
-            if (value.IsEmpty()) {
-              continue;
-            }
-          }
-          else if (interpolation.first == HdInterpolationFaceVarying) {
-            value = ComputeTriangulatedFaceVaryingPrimvar(value, valueType, _util);
-            if (value.IsEmpty()) {
-              continue;
-            }
+      HdInterpolation primvarInterpolation = interpolation.first;
+      AttributeElement elem = interpolation.second;
+      if (std == ATTR_STD_UV) {
+        const VtVec2fArray uv = ComputeFaceVaryingUV(
+            PrimvarAsFloat2(value), primvarInterpolation, _topology);
+        if (uv.empty()) {
+          continue;
+        }
+        value = uv;
+        primvarInterpolation = HdInterpolationFaceVarying;
+        elem = ATTR_ELEMENT_CORNER;
+      }
+
+      const HdType valueType = HdGetValueTupleType(value).type;
+
+      if (!subdivision) {
+        // Adjust attributes for polygons that were triangulated
+        if (primvarInterpolation == HdInterpolationUniform) {
+          value = ComputeTriangulatedUniformPrimvar(value, valueType, _primitiveParams);
+          if (value.IsEmpty()) {
+            continue;
           }
         }
+        else if (primvarInterpolation == HdInterpolationFaceVarying) {
+          value = ComputeTriangulatedFaceVaryingPrimvar(value, valueType, _util);
+          if (value.IsEmpty()) {
+            continue;
+          }
+        }
+      }
 
-        ApplyPrimvars(attributes, name, value, interpolation.second, std);
+      const ustring ownName(primvarName.GetString());
+      for (const ustring &name : names) {
+        ApplyPrimvars(attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE);
       }
     }
   }

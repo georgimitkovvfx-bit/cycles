@@ -8,6 +8,7 @@
 #include "hydra/config.h"
 #include "scene/attribute.h"
 
+#include <pxr/base/vt/types.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/dataSource.h>
 #include <pxr/imaging/hd/enums.h>
@@ -16,6 +17,8 @@
 #include <pxr/imaging/hd/timeSampleArray.h>
 #include <pxr/imaging/hd/types.h>
 
+#include <vector>
+
 PXR_NAMESPACE_OPEN_SCOPE
 class HdSceneDelegate;
 class SdfPath;
@@ -23,7 +26,9 @@ class TfToken;
 PXR_NAMESPACE_CLOSE_SCOPE
 
 CCL_NAMESPACE_BEGIN
+class Geometry;
 class Object;
+class Scene;
 CCL_NAMESPACE_END
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -109,6 +114,27 @@ PXR_NS::TfTokenVector PrimvarNamesAtInterpolation(const PXR_NS::HdPrimvarsSchema
 /* Primvar value as a float, float2, float3 or float4 array (scalars become 1-element arrays), or
  * empty for values without a float conversion, like matrices and strings. */
 PXR_NS::VtValue PrimvarAsFloats(const PXR_NS::VtValue &value);
+
+/* Float array primvar value as float2 array, dropping or zero-filling components. */
+PXR_NS::VtVec2fArray PrimvarAsFloat2(const PXR_NS::VtValue &value);
+
+/* The primvar Cycles uses as the UV map: "st", else "uv", else the first texture coordinate. */
+PXR_NS::TfToken FindUVPrimvar(const PXR_NS::HdPrimvarsSchema &primvars);
+
+/* Standard attribute of a primvar: the UV map, displayColor (or Cd without a displayColor) as the
+ * vertex color, and names that shaders request as volume standard attributes (color, density). */
+CCL_NS::AttributeStandard PrimvarStandard(const PXR_NS::HdPrimvarsSchema &primvars,
+                                          const PXR_NS::TfToken &name,
+                                          const PXR_NS::TfToken &uvName);
+
+/* Attribute names a primvar is exported as, only those that shaders request: its own name (also
+ * when its standard attribute is requested), its Houdini name or USD name (Cd and displayColor,
+ * Alpha, uv, v, accel) when no primvar has that name, and its name with a "primvars:" prefix. */
+std::vector<CCL_NS::ustring> RequestedPrimvarNames(CCL_NS::Geometry *geom,
+                                                   CCL_NS::Scene *scene,
+                                                   const PXR_NS::HdPrimvarsSchema &primvars,
+                                                   const PXR_NS::TfToken &name,
+                                                   CCL_NS::AttributeStandard std);
 
 /* Set an object attribute (replacing one of the same name) from a 1-element float array primvar
  * value. Shaders read it when the geometry has no attribute of that name. */

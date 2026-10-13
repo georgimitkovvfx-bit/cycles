@@ -5,6 +5,7 @@
 
 #include "hydra/util.h"
 #include "scene/attribute.h"
+#include "scene/geometry.h"
 #include "scene/object.h"
 
 #include <pxr/base/gf/half.h>
@@ -168,6 +169,92 @@ VtValue PrimvarAsFloats(const VtValue &value)
     default:
       return convert(VtVec4fArray(tupleType.count));
   }
+}
+
+VtVec2fArray PrimvarAsFloat2(const VtValue &value)
+{
+  const HdTupleType tupleType = HdGetValueTupleType(value);
+  const size_t numComponents = HdGetComponentCount(tupleType.type);
+  const float *data = static_cast<const float *>(HdGetValueData(value));
+  VtVec2fArray result(tupleType.count, GfVec2f(0.0f));
+  for (size_t i = 0; i < result.size(); ++i) {
+    for (size_t c = 0; c < std::min<size_t>(numComponents, 2); ++c) {
+      result[i][c] = data[i * numComponents + c];
+    }
+  }
+  return result;
+}
+
+TfToken FindUVPrimvar(const HdPrimvarsSchema &primvars)
+{
+  static const TfToken st("st"), uv("uv");
+  if (primvars.GetPrimvar(st)) {
+    return st;
+  }
+  if (primvars.GetPrimvar(uv)) {
+    return uv;
+  }
+  for (const TfToken &name : primvars.GetPrimvarNames()) {
+    if (ReadPrimvarRole(primvars, name) == HdPrimvarRoleTokens->textureCoordinate) {
+      return name;
+    }
+  }
+  return {};
+}
+
+AttributeStandard PrimvarStandard(const HdPrimvarsSchema &primvars,
+                                  const TfToken &name,
+                                  const TfToken &uvName)
+{
+  static const TfToken Cd("Cd");
+  if (name == uvName) {
+    return ATTR_STD_UV;
+  }
+  if (name == HdTokens->displayColor ||
+      (name == Cd && !primvars.GetPrimvar(HdTokens->displayColor)))
+  {
+    return ATTR_STD_VERTEX_COLOR;
+  }
+  /* The Attribute node requests these names as standard attributes. */
+  const AttributeStandard std = Attribute::name_standard(name.GetText());
+  return (std >= ATTR_STD_VOLUME_DENSITY && std <= ATTR_STD_VOLUME_VELOCITY) ? std : ATTR_STD_NONE;
+}
+
+std::vector<ustring> RequestedPrimvarNames(Geometry *geom,
+                                           Scene *scene,
+                                           const HdPrimvarsSchema &primvars,
+                                           const TfToken &name,
+                                           const AttributeStandard std)
+{
+  /* Houdini SOP Import renames these attributes to the USD names. */
+  static const std::pair<TfToken, TfToken> aliases[] = {
+      {HdTokens->displayColor, TfToken("Cd")},
+      {HdTokens->displayOpacity, TfToken("Alpha")},
+      {TfToken("st"), TfToken("uv")},
+      {HdTokens->velocities, TfToken("v")},
+      {HdTokens->accelerations, TfToken("accel")},
+  };
+
+  std::vector<ustring> names;
+  const ustring ownName(name.GetString());
+  if (geom->need_attribute(scene, ownName) || geom->need_attribute(scene, std)) {
+    names.push_back(ownName);
+  }
+  for (const auto &[usdName, houdiniName] : aliases) {
+    const TfToken alias = (name == usdName)     ? houdiniName :
+                          (name == houdiniName) ? usdName :
+                                                  TfToken();
+    if (!alias.IsEmpty() && !primvars.GetPrimvar(alias) &&
+        geom->need_attribute(scene, ustring(alias.GetString())))
+    {
+      names.emplace_back(alias.GetString());
+    }
+  }
+  const ustring prefixedName("primvars:" + name.GetString());
+  if (geom->need_attribute(scene, prefixedName)) {
+    names.push_back(prefixedName);
+  }
+  return names;
 }
 
 void SetObjectAttribute(Object *object, const ustring &name, const VtValue &value)

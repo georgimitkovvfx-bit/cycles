@@ -119,6 +119,7 @@ void HdCyclesCurves::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
 
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+  const TfToken uvName = FindUVPrimvar(primvars);
 
   const std::pair<HdInterpolation, AttributeElement> interpolations[] = {
       std::make_pair(HdInterpolationVertex, ATTR_ELEMENT_CURVE_KEY),
@@ -135,39 +136,37 @@ void HdCyclesCurves::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         continue;
       }
 
-      const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
+      VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
       if (value.IsEmpty()) {
         continue;
       }
 
-      const TfToken role = ReadPrimvarRole(primvars, primvarName);
-      const ustring name(primvarName.GetString());
-
-      AttributeStandard std = ATTR_STD_NONE;
-      if (role == HdPrimvarRoleTokens->textureCoordinate) {
-        std = ATTR_STD_UV;
-      }
-      else if (primvarName == HdTokens->normals && interpolation.first == HdInterpolationVertex) {
+      AttributeStandard std = PrimvarStandard(primvars, primvarName, uvName);
+      if (primvarName == HdTokens->normals && interpolation.first == HdInterpolationVertex) {
         std = ATTR_STD_VERTEX_NORMAL;
       }
-      else if (primvarName == HdTokens->displayColor &&
-               interpolation.first == HdInterpolationConstant)
-      {
-        if (value.IsHolding<VtVec3fArray>() && value.GetArraySize() == 1) {
-          const GfVec3f color = value.UncheckedGet<VtVec3fArray>()[0];
-          _instances[0]->set_color(make_float3(color[0], color[1], color[2]));
-        }
+      else if (std == ATTR_STD_VERTEX_COLOR && interpolation.first == HdInterpolationConstant) {
+        SetInstanceColor(value);
       }
 
       // Skip attributes that are not needed
-      if ((std != ATTR_STD_NONE && _geom->need_attribute(scene, std)) ||
-          _geom->need_attribute(scene, name))
-      {
-        AttributeElement elem = interpolation.second;
-        if (std == ATTR_STD_VERTEX_NORMAL) {
-          elem = ATTR_ELEMENT_CURVE_KEY_NORMAL;
-        }
-        ApplyPrimvars(_geom->attributes, name, value, elem, std);
+      const std::vector<ustring> names = RequestedPrimvarNames(
+          _geom, scene, primvars, primvarName, std);
+      if (names.empty()) {
+        continue;
+      }
+
+      AttributeElement elem = interpolation.second;
+      if (std == ATTR_STD_VERTEX_NORMAL) {
+        elem = ATTR_ELEMENT_CURVE_KEY_NORMAL;
+      }
+      else if (std == ATTR_STD_UV) {
+        value = PrimvarAsFloat2(value); /* Cycles stores UVs as float2. */
+      }
+
+      const ustring ownName(primvarName.GetString());
+      for (const ustring &name : names) {
+        ApplyPrimvars(_geom->attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE);
       }
     }
   }
