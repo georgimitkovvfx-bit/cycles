@@ -336,6 +336,13 @@ LAYOUT = [
           range=(2, 65536, True, False),
           hidewhen="{ cycles:integrator:volume_ray_marching == 0 }"),
     ]),
+    P("Motion Blur", [
+        S("cycles:integrator:motion_blur", "Motion Blur",
+          "Render motion blur over the shutter of the camera (Shutter Open and Close on the "
+          "Camera LOP, in frames), from animated transforms, animated points and point "
+          "velocities.",
+          viewport=True),
+    ], toggle="cycles:integrator:motion_blur"),
     P("Film", [
         S("cycles:film:exposure", "Exposure",
           "Image brightness scale.",
