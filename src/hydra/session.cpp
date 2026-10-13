@@ -443,6 +443,8 @@ void HdCyclesSession::SetRenderSettingsPrimvarAovs(const SdfPath &id,
   if (primvarAovs != _primvarAovs) {
     _primvarAovs = std::move(primvarAovs);
     UpdateDefaultSurface();
+    /* Every shader writes the primvar AOVs, and geometry exports the primvars shaders read. */
+    RequestResync(true, true);
   }
 }
 
