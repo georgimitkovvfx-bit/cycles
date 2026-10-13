@@ -493,7 +493,7 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:max_bounces": {"type": "int", "default": 1024},
     "inputs:cycles:light:use_mis": {"type": "boolean", "default": True},
     "inputs:cycles:light:use_caustics": {"type": "boolean", "default": False},
-    "inputs:cycles:light:visible_camera": {"type": "boolean", "default": True},
+    "inputs:cycles:light:visible_camera": {"type": "boolean", "default": False},
     "inputs:cycles:light:visible_diffuse": {"type": "boolean", "default": True},
     "inputs:cycles:light:visible_glossy": {"type": "boolean", "default": True},
     "inputs:cycles:light:visible_transmission": {"type": "boolean", "default": True},
@@ -517,7 +517,8 @@ LIGHT_LAYOUT = [
     P("Visibility", [
         P("Ray Visibility", [
             S("inputs:cycles:light:visible_camera", "Camera",
-              "Light visibility for camera rays."),
+              "Light visibility for camera rays. Off by default, like with Karma (in Blender it is "
+              "on)."),
             S("inputs:cycles:light:visible_diffuse", "Diffuse",
               "Light contribution to diffuse reflection."),
             S("inputs:cycles:light:visible_glossy", "Glossy",

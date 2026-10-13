@@ -32,6 +32,7 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (visibleInPrimaryRay)
     (treatAsPoint)
     (falloff)
+    ((visibleCamera, "inputs:cycles:light:visible_camera"))
     ((useMis, "inputs:cycles:light:use_mis"))
     ((useCaustics, "inputs:cycles:light:use_caustics"))
     ((maxBounces, "inputs:cycles:light:max_bounces"))
@@ -106,18 +107,22 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     _light->set_normalize(normalize);
 
     // Cycles light settings from "inputs:cycles:light:<setting>" attributes, like Blender's light
-    // and object Visibility panels; unauthored settings use Blender's defaults.
+    // and object Visibility panels; unauthored settings use Blender's defaults, except that the
+    // camera doesn't see lights unless asked to, like with Karma.
     static const std::pair<TfToken, uint> rayVisibility[] = {
-        {TfToken("inputs:cycles:light:visible_camera"), PATH_RAY_VISIBILITY_CAMERA},
         {TfToken("inputs:cycles:light:visible_diffuse"), PATH_RAY_VISIBILITY_DIFFUSE},
         {TfToken("inputs:cycles:light:visible_glossy"), PATH_RAY_VISIBILITY_GLOSSY},
         {TfToken("inputs:cycles:light:visible_transmission"), PATH_RAY_VISIBILITY_TRANSMIT},
         {TfToken("inputs:cycles:light:visible_volume_scatter"),
          PATH_RAY_VISIBILITY_VOLUME_SCATTER},
     };
-    uint visibility = PATH_RAY_VISIBILITY_ALL;
-    if (!GetTypedValue<bool>(lightDs, _tokens->visibleInPrimaryRay, true)) {
-      visibility &= ~PATH_RAY_VISIBILITY_CAMERA;
+    uint visibility = PATH_RAY_VISIBILITY_ALL & ~PATH_RAY_VISIBILITY_CAMERA;
+    if (GetTypedValue<bool>(
+            lightDs,
+            _tokens->visibleCamera,
+            GetTypedValue<bool>(lightDs, _tokens->visibleInPrimaryRay, false)))
+    {
+      visibility |= PATH_RAY_VISIBILITY_CAMERA;
     }
     for (const auto &[token, ray] : rayVisibility) {
       if (!GetTypedValue<bool>(lightDs, token, true)) {
