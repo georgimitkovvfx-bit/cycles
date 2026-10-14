@@ -15,7 +15,8 @@ TF_DECLARE_REF_PTRS(HdCyclesImplicitMeshSceneIndex);
 /* Turns the implicit USD shapes (Sphere, Cylinder, Cone, Capsule, Cube, Plane) into meshes. The
  * curved shapes get enough segments to look smooth in a ray traced render: the 10 segments around
  * of HdsiImplicitSurfaceSceneIndex are made for a rasterizer that subdivides them. The cube gets
- * its own points per face, so it renders flat. */
+ * its own points per face, so it renders flat. All shapes get texture coordinates (st) in the
+ * layout of Blender's primitives, unless they have authored ones. */
 class HdCyclesImplicitMeshSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
  public:
   static HdCyclesImplicitMeshSceneIndexRefPtr New(const HdSceneIndexBaseRefPtr &inputSceneIndex);
