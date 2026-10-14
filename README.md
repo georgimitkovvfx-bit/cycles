@@ -35,7 +35,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
 | Interactive edits | Moving/editing lights, objects, materials and settings updates the render. Motion blur, the shutter and primvar AOVs change without restarting the render. Texture files changed on disk reload on the next material edit or with **Reload Textures** in the viewport's renderer menu; UDIM (`<UDIM>`) textures |
-| Viewport | Free view and looking through a camera. Starts each change at a lower resolution like Blender (**Start at Low Resolution** in Performance > Viewport) |
+| Viewport | Free view and looking through a camera. Starts each change at a lower resolution like Blender (**Start at Low Resolution** in Performance > Viewport). Image updates every 0.2 s (Cycles slows to 2 s after a while); on a 2K viewport about 15 images per second while tumbling |
 | Stability | No crash on quit, renderer switch or device change |
 | Units | Stages with `metersPerUnit` 1 and 0.01 |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
@@ -82,9 +82,10 @@ Linux and macOS builds have not been tested on Houdini 22.
   devices by noise only: its stochastic evaluation makes the sample paths diverge.
 
 ### Viewport
-- Responsiveness: each viewport image update copies the depth and ID passes from the GPU (35-50 ms on a 2K
-  viewport), which limits how often the image refreshes; being worked on. The thread count setting only applies
-  to husk (Cycles sets it for the whole process).
+- Depth, ID and slap comp AOVs the viewport does not show refresh about 0.25 s after a change and then once per
+  second (the displayed image updates every 0.2 s); final renders write all of them. Houdini redraws an
+  unconverged viewport about every 0.22 s, which bounds the latency. The thread count setting only applies to
+  husk (Cycles sets it for the whole process).
 - Orbiting pivoted at the camera (like a first-person camera); fixed by declaring the depth AOV as OpenGL
   style depth, still to be confirmed in the GUI.
 
@@ -102,8 +103,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 In progress, roughly in this order:
 
-1. Viewport responsiveness: cheaper depth/ID updates, then more frequent image updates.
-2. Confirm the orbit fix and the Reload Textures command in the GUI.
+1. Confirm the orbit fix and the Reload Textures command in the GUI.
 
 ## Building
 
@@ -245,6 +245,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Texture coordinates on implicit shapes:** `st` like Blender's primitives (UV sphere layout, revolved shapes around their axis with planar caps, the cube's cross layout, the plane); an authored UV primvar wins. | `073f4cf13` |
 | **More motion blur:** velocities, accelerations and angular velocities resolved by USD's `HdsiVelocityMotionResolvingSceneIndex` (with the stage frame rate from Houdini, `b44112557`); curves and points (`ee5261a9b`); point instancers incl. nested ones (`95683248f`); volumes from velocity fields with Houdini's names and a per-second velocity scale (`8dba7bd95`); the motion vector pass at the previous and next frame like Blender, added or removed without restarting (`4a0d66d39`). | `b44112557`, `ee5261a9b`, `95683248f`, `8dba7bd95`, `4a0d66d39` |
 | **Viewport resolution divider:** output drivers are skipped while the render is at reduced resolution (core Cycles, `0cc07a34e`), the OpenGL display driver scales small renders up with a framebuffer blit (`6d4f3782b`), and `cycles:use_resolution_divider` turns it on (default, `a902cdda8`). | `0cc07a34e`, `6d4f3782b`, `a902cdda8` |
+| **Viewport responsiveness:** in the Houdini viewport the AOVs it does not show (depth, IDs, slap comp inputs) are refreshed 0.25 s after a change and then once per second instead of on every image update (33-59 ms each on a 2K viewport), and the display updates at least every 0.2 s (a new `SessionParams::max_display_update_interval` in core Cycles). Measured: 46 instead of 13 new images in the first 10 s, 15 instead of 10 per second while tumbling, no loss of samples. | `c8dce51e3`, `a000a4798`, `722523e32` |
 | **Curve shape** render setting (`cycles:curve_shape`: ribbon / thick, Blender's Rounded Ribbons / 3D Curves). | `d2eff57b6` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
@@ -310,7 +311,7 @@ Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/integrator/path_trace.cpp`, `src/scene/mesh`, `src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/integrator/{path_trace,render_scheduler}.cpp`, `src/session/session`, `src/scene/mesh`, `src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..hdCycles-H22`.
 
