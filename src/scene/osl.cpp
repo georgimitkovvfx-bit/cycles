@@ -1587,6 +1587,12 @@ void OSLCompiler::compile(Shader *shader)
 
     current_shader = shader;
 
+    /* The textures of the previous compile hold their images until the render services are
+     * freed otherwise, also images the shader no longer uses (a changed file path). */
+    for (const ustring &texture : shader->osl_cache[device].textures) {
+      services->textures.erase(OSLUStringHash(texture));
+    }
+
     Shader::OSLCache cache;
 
     if (shader->reference_count()) {
@@ -1604,6 +1610,7 @@ void OSLCompiler::compile(Shader *shader)
       }
     }
 
+    cache.textures = std::move(textures_);
     shader->osl_cache[device] = std::move(cache);
 
     /* Estimate emission for MIS. */
@@ -1619,6 +1626,7 @@ void OSLCompiler::parameter_texture(const char *name, const ImageHandle &handle)
    * render sessions as the render services are shared. */
   const ustring filename(string_printf("@svm%d", texture_shared_unique_id++).c_str());
   services->textures.insert(OSLUStringHash(filename), OSLTextureHandle(handle));
+  textures_.push_back(filename);
   parameter(name, filename);
 }
 
@@ -1628,6 +1636,7 @@ void OSLCompiler::parameter_texture_ies(const char *name, const int svm_slot)
   const ustring filename(string_printf("@svm%d", texture_shared_unique_id++).c_str());
   services->textures.insert(OSLUStringHash(filename),
                             OSLTextureHandle(OSLTextureHandleType::IES, svm_slot));
+  textures_.push_back(filename);
   parameter(name, filename);
 }
 

@@ -228,6 +228,7 @@ class OSLCompiler {
   OSL::ShaderGroupRef current_group;
 
   map<LayerParam, LayerParam> remapped_outputs_;
+  vector<ustring> textures_;
 #endif
 
   Device *device;

@@ -142,6 +142,8 @@ class Shader : public Node {
     OSL::ShaderGroupRef bump;
     OSL::ShaderGroupRef displacement;
     OSL::ShaderGroupRef volume;
+    /* Textures the compile added to the render services, which hold their images. */
+    vector<ustring> textures;
   };
   map<Device *, OSLCache> osl_cache;
 #endif
