@@ -711,6 +711,9 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniViewport) {
     _renderParam->SetViewport(VtValue::Cast<bool>(value).GetWithDefault(false));
+    /* Houdini redraws a viewport render that has not converged about every 0.2 s: show new
+     * samples at each redraw, instead of every 2 s after a few seconds. */
+    session->params.max_display_update_interval = _renderParam->IsViewport() ? 0.2 : 0.0;
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniFps) {
     const double fps = _renderParam->GetFramesPerSecond();
