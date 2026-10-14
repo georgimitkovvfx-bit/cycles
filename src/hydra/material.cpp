@@ -756,14 +756,25 @@ void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
     if (udim == string::npos) {
       continue;
     }
-    const string prefix = path_filename(filename.substr(0, udim));
-    const string suffix = filename.substr(udim + strlen("<UDIM>"));
+    /* Windows file names are case insensitive. */
+    auto fold = [](const string &name) {
+#ifdef _WIN32
+      return string_to_lower(name);
+#else
+      return name;
+#endif
+    };
+    /* The prefix is empty for a file name that starts with the token. */
+    const size_t slash = filename.find_last_of("/\\", udim);
+    const size_t start = (slash == string::npos) ? 0 : slash + 1;
+    const string prefix = fold(filename.substr(start, udim - start));
+    const string suffix = fold(filename.substr(udim + strlen("<UDIM>")));
     std::vector<string> files;
     OIIO::Filesystem::get_directory_entries(path_dirname(filename), files);
 
     array<int> tiles;
     for (const string &file : files) {
-      const string name = path_filename(file);
+      const string name = fold(path_filename(file));
       if (name.size() != prefix.size() + 4 + suffix.size() || !string_startswith(name, prefix) ||
           !string_endswith(name, suffix))
       {
@@ -776,8 +787,11 @@ void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
         tiles.push_back_slow(std::stoi(number));
       }
     }
-    std::sort(tiles.begin(), tiles.end());
-    image->set_tiles(tiles);
+    /* Keep the tiles a native network authored when none are found. */
+    if (!tiles.empty()) {
+      std::sort(tiles.begin(), tiles.end());
+      image->set_tiles(tiles);
+    }
   }
 }
 
