@@ -30,7 +30,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | GPU rendering | OptiX and CUDA, chosen automatically (OptiX > CUDA > CPU), results match the CPU |
 | Denoising | OpenImageDenoise (GPU or CPU) and OptiX |
 | Shaders | All 96 user-facing Cycles shader nodes, as Houdini VOP nodes inside a **USD Cycles Material Builder** |
-| Shader node UI | Blender 5.2 order, labels, menus, collapsible panels, hide rules and default values |
+| Shader node UI | Blender 5.2 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
@@ -90,7 +90,9 @@ Linux and macOS builds have not been tested on Houdini 22.
 ### UI
 - Port locations are wrong on some shader nodes (the Principled BSDF inputs listed last is fixed).
 - The Cycles Render Settings LOP needs UX touch-ups.
-- Color Ramp and the curve nodes expose raw arrays instead of Houdini ramp parameters; angles are in radians.
+- Ramps and curves: Houdini's monotone cubic keys approximate Blender's curve handles; Min X / Max X stay visible.
+  Animated angles in hip files saved before the degree change stay in radians. The Raycast node has 4 fixed
+  attribute slots.
 
 ### Missing features
 - HIP (AMD) and oneAPI (Intel) devices are disabled; NVIDIA and CPU only.
@@ -100,8 +102,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 In progress, roughly in this order:
 
 1. Viewport responsiveness: cheaper depth/ID updates, then more frequent image updates.
-2. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
-3. Confirm the orbit fix and the Reload Textures command in the GUI.
+2. Confirm the orbit fix and the Reload Textures command in the GUI.
 
 ## Building
 
@@ -260,6 +261,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Render passes on the Cycles Render Settings LOP** like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, with Blender's EXR names) plus Karma-named light path expressions. | `f7d18bc95`, `fc3d31d29` |
 | **Image Filters** on the Cycles Render Settings LOP: husk slap comps from the Image Filter LOP. | `86ab0b082` |
 | **AOV Output node in Cycles material builders:** a pass-through between the shader and the material output, so Houdini exports it. | `44ada1aaf` |
+| **Ramps and curves as Houdini ramp parameters:** a Cycles shader translator (`husdplugins/shadertranslators/cycles.py`) bakes Color Ramp and Float/RGB/Vector Curves ramps into Cycles' 256-entry tables when Houdini writes the material, with per-key interpolation (Houdini's own USD ramp convention keeps only the first key's basis). | `f39574203` |
+| **Angles in degrees** like Blender (Mapping, Vector Rotate, Sky, Gabor, Hair offsets, texture mapping rotation): the translator writes radians, so USD files are unchanged; hip files from before are converted when loaded. | `adc9917c3` |
+| **Raycast Attributes panel** (4 attribute names with color, factor and alpha outputs) and the delegate creating the matching Cycles outputs. | `3bcf46f90`, `87caa982b` |
+| **Parameters hidden by menu values with spaces** (Principled Hair BSDF's parametrization) showed the wrong inputs. | `355c42869` |
 | **Cycles Script node** for OSL shaders, like Blender's Script node: Load Shader compiles the file with the installed `oslc` and turns the node into a type with the shader's ports, embedded in the hip file. | `afb0980ee` |
 | **Default render settings:** the Cycles Render Settings LOP sets itself as the stage's render settings (on by default, like Karma's), so husk, ROPs and TOPs no longer render upstream Karma settings without the Cycles passes. | `bd4a5b6d2` |
 | **Light settings and light groups:** Cycles tab on the Light LOP (`HdCyclesPlugin_Light.ds`), Light Group for objects, Light Groups on the Cycles Render Settings LOP. | `a9c2a8a5a` |
@@ -291,6 +296,7 @@ src/hydra/houdini/
   src/rendersettings2ds.py          Cycles tabs (render settings, geometry) + viewport options (.ds)
   src/cyclesrendersettings2hda.py   Cycles Render Settings LOP
   src/script2hda.py, script_node.py Cycles Script node (OSL)
+  husdplugins/shadertranslators/cycles.py  bakes ramps, writes angles in radians (Houdini shader translator)
 ```
 
 New Houdini-only source: `src/hydra/houdini_volume.{h,cpp}` (volumes from SOPs and native Houdini volumes).
