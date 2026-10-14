@@ -43,6 +43,9 @@ HdCyclesDisplayDriver::~HdCyclesDisplayDriver()
     if (gl_pbo_id_) {
       glDeleteBuffers(1, &gl_pbo_id_);
     }
+    if (gl_small_texture_id_) {
+      glDeleteTextures(1, &gl_small_texture_id_);
+    }
     gl_context_disable();
   }
 
@@ -131,12 +134,14 @@ void HdCyclesDisplayDriver::gl_context_dispose()
 void HdCyclesDisplayDriver::next_tile_begin() {}
 
 bool HdCyclesDisplayDriver::update_begin(const Params &params,
-                                         int /*texture_width*/,
-                                         int /*texture_height*/)
+                                         const int texture_width,
+                                         const int texture_height)
 {
   if (!gl_context_enable()) {
     return false;
   }
+
+  texture_size_ = make_int2(texture_width, texture_height);
 
   if (gl_render_sync_) {
     glWaitSync((GLsync)gl_render_sync_, 0, GL_TIMEOUT_IGNORED);
@@ -292,12 +297,83 @@ void HdCyclesDisplayDriver::draw(const Params &params)
     glWaitSync((GLsync)gl_upload_sync_, 0, GL_TIMEOUT_IGNORED);
   }
 
-  glBindTexture(GL_TEXTURE_2D, texture->GetTextureId());
+  /* This runs in Houdini's context while it draws the viewport: restore what is changed here. */
+  GLint texture_binding = 0;
+  GLint unpack_buffer_binding = 0;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture_binding);
+  glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack_buffer_binding);
+
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, gl_pbo_id_);
-  glTexSubImage2D(
-      GL_TEXTURE_2D, 0, 0, 0, pbo_size_.x, pbo_size_.y, GL_RGBA, GL_HALF_FLOAT, nullptr);
-  glBindTexture(GL_TEXTURE_2D, 0);
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+  if (texture_size_ == params.size) {
+    glBindTexture(GL_TEXTURE_2D, texture->GetTextureId());
+    glTexSubImage2D(
+        GL_TEXTURE_2D, 0, 0, 0, pbo_size_.x, pbo_size_.y, GL_RGBA, GL_HALF_FLOAT, nullptr);
+  }
+  else {
+    /* Viewport renders start at a lower resolution, packed at the start of the PBO. Upload it to
+     * a texture of its size, then scale it up to the display texture, with nearest filtering
+     * like Blender. */
+    if (!gl_small_texture_id_) {
+      glGenTextures(1, &gl_small_texture_id_);
+    }
+    glBindTexture(GL_TEXTURE_2D, gl_small_texture_id_);
+    if (!(small_texture_size_ == texture_size_)) {
+      glTexImage2D(GL_TEXTURE_2D,
+                   0,
+                   GL_RGBA16F,
+                   texture_size_.x,
+                   texture_size_.y,
+                   0,
+                   GL_RGBA,
+                   GL_HALF_FLOAT,
+                   nullptr);
+      small_texture_size_ = texture_size_;
+    }
+    glTexSubImage2D(
+        GL_TEXTURE_2D, 0, 0, 0, texture_size_.x, texture_size_.y, GL_RGBA, GL_HALF_FLOAT, nullptr);
+
+    GLint read_framebuffer = 0;
+    GLint draw_framebuffer = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_framebuffer);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_framebuffer);
+    const GLboolean scissor_test = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean color_mask[4];
+    glGetBooleani_v(GL_COLOR_WRITEMASK, 0, color_mask);
+
+    /* Framebuffers are not shared between contexts, so they live only during this draw. */
+    GLuint framebuffers[2];
+    glGenFramebuffers(2, framebuffers);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffers[0]);
+    glFramebufferTexture2D(
+        GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl_small_texture_id_, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[1]);
+    glFramebufferTexture2D(
+        GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture->GetTextureId(), 0);
+
+    /* The scissor test and color mask apply to blits. */
+    glDisable(GL_SCISSOR_TEST);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBlitFramebuffer(0,
+                      0,
+                      texture_size_.x,
+                      texture_size_.y,
+                      0,
+                      0,
+                      params.size.x,
+                      params.size.y,
+                      GL_COLOR_BUFFER_BIT,
+                      GL_NEAREST);
+
+    glColorMaski(0, color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+    if (scissor_test) {
+      glEnable(GL_SCISSOR_TEST);
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
+    glDeleteFramebuffers(2, framebuffers);
+  }
+  glBindTexture(GL_TEXTURE_2D, texture_binding);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer_binding);
 
   if (gl_render_sync_) {
     glDeleteSync((GLsync)gl_render_sync_);

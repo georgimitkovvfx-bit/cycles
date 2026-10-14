@@ -59,6 +59,10 @@ class HdCyclesDisplayDriver final : public CCL_NS::DisplayDriver {
   PXR_NS::HgiTextureHandle texture_;
   unsigned int gl_pbo_id_ = 0;
   CCL_NS::int2 pbo_size_ = CCL_NS::make_int2(0, 0);
+  /* Size of the render in the PBO, smaller than the texture at the start of viewport renders. */
+  CCL_NS::int2 texture_size_ = CCL_NS::make_int2(0, 0);
+  unsigned int gl_small_texture_id_ = 0;
+  CCL_NS::int2 small_texture_size_ = CCL_NS::make_int2(0, 0);
   bool need_update_ = false;
   std::atomic_bool need_zero_ = false;
   std::atomic_bool need_recreate_interop_ = false;
