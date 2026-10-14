@@ -51,6 +51,14 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 ## Known issues
 
+### Open review findings (fixes written, not yet verified)
+A review of the latest work found problems whose fixes are written but not tested yet:
+- **Crash risk:** turning motion blur on for an already rendered scene on the CPU device can crash (Embree refits
+  the BVH with freed motion buffers). Two Raycast nodes reading different attributes in one material can crash.
+- Promoted angle parameters are authored in degrees but read as radians; Vector Curves' Min X default of -1
+  changes unauthored or old Vector Curves; the volume `vel`/`v` aliases hide those fields from shaders; old hip
+  files lose their Fast GI AO settings; a clearcoat gets Cycles' coat roughness instead of USD's default.
+
 ### Rendering
 - **AOVs:** Cycles has no light path expression engine: only Karma's common LPEs (diffuse, glossy reflection,
   glossy transmission and volume; combined, direct, indirect; the beauty, direct emission, albedo) map to Cycles
@@ -78,10 +86,15 @@ Linux and macOS builds have not been tested on Houdini 22.
   need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). `getattribute` in a Script
   node finds attributes named by a string constant or a parameter default, not names computed at run time.
 - **Hair:** with Curves > Shape = 3D Curves, hair BSDFs render 0.3-1.1% brighter on OptiX than on the CPU
-  (ribbons and meshes match; under investigation). Same-seed images of the Huang hair model differ between
+  (ribbons and meshes match). The CPU is wrong: the Embree 4 port of Cycles dropped back-face culling for 3D
+  curves (and point clouds), so rays inside overlapping strands hit their inner walls. Fix pending; upstream
+  Blender has the same bug. Same-seed images of the Huang hair model differ between
   devices by noise only: its stochastic evaluation makes the sample paths diverge.
 
 ### Viewport
+- Re-syncing prims (motion blur or shutter changes, primvar AOVs) is requested inside Hydra's sync, which USD
+  reports as a coding error ("Unsafe scene index invalidation detected during SyncAll()"); the update still
+  works.
 - Depth, ID and slap comp AOVs the viewport does not show refresh about 0.25 s after a change and then once per
   second (the displayed image updates every 0.2 s); final renders write all of them. Houdini redraws an
   unconverged viewport about every 0.22 s, which bounds the latency. The thread count setting only applies to
@@ -101,9 +114,12 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 ## Roadmap
 
-In progress, roughly in this order:
+Next, roughly in this order:
 
-1. Confirm the orbit fix and the Reload Textures command in the GUI.
+1. Verify and commit the fixes for the open review findings above.
+2. CPU back-face culling for 3D curves and points (Embree); re-sync outside Hydra's sync.
+3. A test hip file that runs every feature check, and a full test run.
+4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness.
 
 ## Building
 
