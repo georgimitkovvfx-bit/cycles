@@ -39,6 +39,7 @@
 #include <pxr/imaging/hd/materialSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/renderIndex.h>
+#include <pxr/imaging/hd/volumeFieldBindingSchema.h>
 #include <pxr/imaging/hd/xformSchema.h>
 #include <pxr/imaging/hgi/tokens.h>
 
@@ -472,11 +473,13 @@ void HdCyclesDelegate::Update()
     }
   }
   if (rprims) {
-    /* Transforms and points at the motion steps, and the primvars shaders read.
+    /* Transforms and points at the motion steps, and the primvars and volume fields shaders read
+     * (the fields only dirty volumes).
      * shortcut: every rprim, also when one material reads new attributes; filter by the bound
      * materials if re-reading the primvars of big scenes gets slow. */
     const HdDataSourceLocatorSet locators = {HdXformSchema::GetDefaultLocator(),
-                                             HdPrimvarsSchema::GetDefaultLocator()};
+                                             HdPrimvarsSchema::GetDefaultLocator(),
+                                             HdVolumeFieldBindingSchema::GetDefaultLocator()};
     for (const SdfPath &id : _renderIndex->GetRprimSubtree(root)) {
       entries.emplace_back(id, locators);
     }
