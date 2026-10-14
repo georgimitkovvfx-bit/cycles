@@ -9,17 +9,21 @@ except for the parameters that shader2hda.py lays out like Blender: ramp paramet
 cycles_socket) are baked to the Cycles lookup table socket they edit, sampled at 256 positions
 like Blender. The channels of RGB and Vector Curves (tag cycles_channel r/g/b/c or x/y/z) are
 combined into one table, RGB Curves applying the combined curve "c" first like Blender.
+Parameters tagged cycles_units=degrees are shown in degrees and authored in radians.
 
 Houdini's own ramp convention (key count, first key basis, keys and values) cannot be used: it
 loses per-key and monotone cubic interpolation, and its key count input has the name of the
 Cycles socket.
 """
 
+import math
+
 import hou
 from pxr import Gf, Sdf, Vt
 
 from husd import shaderutils
-from husd.shadertranslator import RampParmTranslator, ShaderTranslator, ShaderTranslatorHelper
+from husd.shadertranslator import (RampParmTranslator, ShaderTranslator, ShaderTranslatorHelper,
+                                   SimpleParmTranslator)
 
 # RAMP_TABLE_SIZE in Cycles (kernel/types.h), the size Blender bakes color ramps and curves to.
 TABLE_SIZE = 256
@@ -79,11 +83,21 @@ class TableParmTranslator(RampParmTranslator):
                                              Sdf.ValueTypeNames.Bool).Set(not constant, time_code)
 
 
+class RadiansParmTranslator(SimpleParmTranslator):
+    """Angles shown in degrees, Cycles takes radians."""
+
+    def valueFromParm(self, parm_tuple, usd_time_code):
+        return tuple(math.radians(v) for v in
+                     SimpleParmTranslator.valueFromParm(self, parm_tuple, usd_time_code))
+
+
 class CyclesShaderTranslatorHelper(ShaderTranslatorHelper):
     def parameterTranslator(self, parm_tuple):
         tags = parm_tuple.parmTemplate().tags()
         if "cycles_socket" in tags:
             return TableParmTranslator(parm_tuple)
+        if tags.get("cycles_units") == "degrees":
+            return RadiansParmTranslator(parm_tuple)
         return ShaderTranslatorHelper.parameterTranslator(self, parm_tuple)
 
 

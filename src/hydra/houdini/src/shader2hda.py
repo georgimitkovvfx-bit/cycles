@@ -16,6 +16,7 @@ the Cycles socket defaults are written to --defaults-out, for the render delegat
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -97,10 +98,24 @@ def ramp_parm_template(name, param):
     return pt
 
 
+def to_degrees(value):
+    if isinstance(value, (list, tuple)):
+        return [to_degrees(v) for v in value]
+    return round(math.degrees(value), 6) if isinstance(value, (int, float)) else value
+
+
 def create_parm_template(name, param):
     """Create a Houdini ParmTemplate for a laid out Cycles socket."""
     if param.get("ramp"):
         return ramp_parm_template(name, param)
+    if param.get("degrees"):
+        # Shown in degrees like in Blender, the Cycles shader translator authors radians.
+        limits = param["range"]
+        pt = create_parm_template(name, dict(
+            param, degrees=False, default=to_degrees(param["default"]),
+            range=limits and (*to_degrees(limits[:2]), *limits[2:])))
+        pt.setTags({"cycles_units": "degrees"})
+        return pt
     socket = param["socket"]
     label = param["label"]
     type_name = socket["type"]
@@ -317,11 +332,18 @@ def apply_layout(hda_def, label, panels, params):
 
 
 # Converts nodes saved with the HDAs before version 2, when a scene is loaded: their ramp sockets
-# were float parameters, whose value loads as a one key ramp.
-SYNC_NODE_VERSION = """if not kwargs["old_version"]:
+# were float parameters, whose value loads as a one key ramp, and their angles were in radians.
+SYNC_NODE_VERSION = """import math
+if not kwargs["old_version"]:
     node = kwargs["node"]
     for name in %(ramps)r:
         node.parm(name).revertToRampDefaults()
+    for name in %(angles)r:
+        for parm in node.parmTuple(name):
+            # shortcut: animated angles stay in radians, convert keyframes too if users need it.
+            if not parm.keyframes():
+                # Rounded, so the 6 digit radian defaults (0.261799) give the degree defaults.
+                parm.set(round(math.degrees(parm.eval()), 4))
 """
 
 
@@ -371,9 +393,11 @@ def create_hda(node_data, install_dir, layouts, problems):
     if layouts:
         apply_layout(hda_def, label, panels, params)
     ramps = [p["parm_ui"] for p in params if p.get("ramp")]
-    if ramps:
+    angles = [p["parm_ui"] for p in params if p.get("degrees")]
+    if ramps or angles:
         hda_def.setVersion("2")
-        hda_def.addSection("SyncNodeVersion", SYNC_NODE_VERSION % {"ramps": ramps})
+        hda_def.addSection("SyncNodeVersion",
+                           SYNC_NODE_VERSION % {"ramps": ramps, "angles": angles})
         hda_def.setExtraFileOption("SyncNodeVersion/IsPython", True)
         hda_def.setExtraFileOption("SyncNodeVersion/IsScript", True)
     hda_def.save(hda_path)

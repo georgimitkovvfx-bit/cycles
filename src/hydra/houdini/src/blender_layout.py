@@ -105,6 +105,11 @@ RAMPS = {
 # Defaults of Cycles sockets that Blender does not show, where Blender uses other values.
 SOCKET_DEFAULTS = {"vector_curves": {"min_x": -1.0}}
 
+# Cycles sockets in radians that Blender shows in degrees: items with an angle subtype, and the
+# texture mapping rotation (not in the layout dump).
+ANGLE_SUBTYPES = ("ANGLE", "EULER")
+ANGLE_SOCKETS = {"tex_mapping.rotation"}
+
 TEXTURE_MAPPING_PANEL = "Texture Mapping"
 TEXTURE_MAPPING_LABELS = {
     "translation": "Location", "rotation": "Rotation", "scale": "Scale", "min": "Minimum",
@@ -336,7 +341,8 @@ def node_layout(cycles_node, layouts, problems):
     "default", "menu" (list of (token, label)), "range", "panel", "hidden" (always hidden),
     "hidewhen" (list of {socket name: token} conditions any of which hides it) and "help", plus
     the parameter "name" where it is not the socket name, "linkable" False for parameters without
-    an input connector and "ramp" (channel, is color, default keys, new key basis) for ramps.
+    an input connector, "ramp" (channel, is color, default keys, new key basis) for ramps and
+    "degrees" for angles shown in degrees (default and range stay in radians).
     """
     name = cycles_node["name"]
     sockets = {s["name"]: s for s in cycles_node["inputs"]}
@@ -349,7 +355,8 @@ def node_layout(cycles_node, layouts, problems):
     def add(socket, **kwargs):
         param = {"socket": socket, "label": title(socket.get("ui_name") or socket["name"]),
                  "default": socket.get("default"), "menu": None, "range": None, "panel": None,
-                 "hidden": False, "hidewhen": [], "help": ""}
+                 "hidden": False, "hidewhen": [], "help": "",
+                 "degrees": socket["name"] in ANGLE_SOCKETS}
         if socket["type"] == "menu":
             param["menu"] = [(t, title(l)) for t, l in (socket.get("enum_values") or {}).items()]
         param.update(kwargs)
@@ -398,7 +405,8 @@ def node_layout(cycles_node, layouts, problems):
                 default = socket.get("default")
             param = add(socket, label=item["label"], default=default, menu=menu,
                         range=ui_range(name, item, socket), panel=item.get("panel"),
-                        help=item.get("description", ""))
+                        help=item.get("description", ""),
+                        degrees=item.get("subtype") in ANGLE_SUBTYPES)
             mapped.append((param, item))
 
         # Visibility conditions, translated to Cycles socket names and menu tokens.

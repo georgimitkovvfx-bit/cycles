@@ -124,6 +124,7 @@ def property_info(node, prop):
         if prop.type in ("INT", "FLOAT"):
             info["soft_range"] = [prop.soft_min, prop.soft_max]
             info["hard_range"] = [prop.hard_min, prop.hard_max]
+            info["subtype"] = prop.subtype
     return info
 
 

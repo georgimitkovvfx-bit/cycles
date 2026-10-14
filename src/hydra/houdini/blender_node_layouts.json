@@ -148,6 +148,7 @@
       1,
       128
      ],
+     "subtype": "UNSIGNED",
      "type": "INT"
     },
     {
@@ -387,6 +388,7 @@
       2,
       16
      ],
+     "subtype": "UNSIGNED",
      "type": "INT"
     },
     {
@@ -7615,6 +7617,7 @@
       0.0,
       1.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -7631,6 +7634,7 @@
       1,
       99
      ],
+     "subtype": "NONE",
      "type": "INT"
     },
     {
@@ -7647,6 +7651,7 @@
       0.0,
       99.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -7663,6 +7668,7 @@
       1,
       99
      ],
+     "subtype": "NONE",
      "type": "INT"
     },
     {
@@ -8517,6 +8523,7 @@
       0.0,
       1.0
      ],
+     "subtype": "FACTOR",
      "type": "FLOAT"
     },
     {
@@ -8605,6 +8612,7 @@
       0,
       10
      ],
+     "subtype": "NONE",
      "type": "INT"
     },
     {
@@ -9028,6 +9036,7 @@
       0.0,
       1.5707963705062866
      ],
+     "subtype": "ANGLE",
      "type": "FLOAT"
     },
     {
@@ -9044,6 +9053,7 @@
       0.0,
       1000.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -9060,6 +9070,7 @@
       -10000.0,
       10000.0
      ],
+     "subtype": "ANGLE",
      "type": "FLOAT"
     },
     {
@@ -9076,6 +9087,7 @@
       -10000.0,
       10000.0
      ],
+     "subtype": "ANGLE",
      "type": "FLOAT"
     },
     {
@@ -9092,6 +9104,7 @@
       0.0,
       100000.0
      ],
+     "subtype": "DISTANCE",
      "type": "FLOAT"
     },
     {
@@ -9108,6 +9121,7 @@
       0.0,
       1000.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -9124,6 +9138,7 @@
       0.0,
       1000.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -9140,6 +9155,7 @@
       0.0,
       1000.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -9160,6 +9176,7 @@
       -10000.0,
       10000.0
      ],
+     "subtype": "DIRECTION",
      "type": "FLOAT"
     },
     {
@@ -9176,6 +9193,7 @@
       1.0,
       10.0
      ],
+     "subtype": "NONE",
      "type": "FLOAT"
     },
     {
@@ -9192,6 +9210,7 @@
       0.0,
       1.0
      ],
+     "subtype": "FACTOR",
      "type": "FLOAT"
     },
     {
