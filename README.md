@@ -61,7 +61,6 @@ Linux and macOS builds have not been tested on Houdini 22.
   get no motion; a volume field named `vel` or `v` is taken as velocity. LOP expressions give no motion: cache
   samples with the Motion Blur LOP, as for Karma. The Vector pass needs samples at the previous and next frame
   and is empty with motion blur on (like Blender); animated focal length gives no zoom vectors.
-- **UV pass:** the `uv` render var is empty in husk unless a shader reads the UV map (being fixed).
 - **Textures:** a texture file overwritten in place, with nothing changed in the scene, updates after
   **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
   (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
@@ -209,6 +208,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Vertex Color node read float and float2 attributes from the float3 array** (core Cycles, SVM): wrong values, CPU and OptiX differed. | `88c9261a2` |
 | **Point instancer orientations and scales were applied in the wrong order** (also nested instancers): instances with orient or pscale, e.g. from the Instancer LOP or SOP Import, landed in the wrong place. | `dfcda7df8` |
 | **Crash re-tessellating a subdivision mesh** when only its points changed. | `459f60fb3` |
+| **Review fixes for re-sync and textures:** vertex primvars dropped when subdivision mesh points change (`aa46db848`); volume fields a changed material reads were not loaded (`8944a2733`); OSL kept the images of recompiled shaders loaded (core Cycles, `70adce657`) and Reload Textures skipped files read by OSL (`cf8f76782`); a second rprim re-sync after re-synced materials (`779c913ad`); UDIM tiles not found for some file names or after Reload Textures (`f4e53da8f`, `0d9d4bffa`); the `uv` pass was empty unless a shader read the UV map (`eda3a3c27`). | `aa46db848`, `8944a2733`, `70adce657`, `cf8f76782`, `779c913ad`, `0d9d4bffa`, `f4e53da8f`, `eda3a3c27` |
 | **Session settings were ignored in the Houdini viewport:** Houdini creates the delegate with no settings and sends them afterwards, so Device, Open Shading Language and other settings fixed at session creation never applied there (husk was fine). The session is now recreated when such a setting arrives before rendering starts. | `4248759a9` |
 | **Volume velocity motion blur was cut off at the density's edge** (core Cycles): the volume octree only looked at the density at the shutter center, so advected density outside it was skipped. | `2bf5ae95b` |
 | **Motion pass zoom from the default camera field of view** (the previous/next frame projections used 45 degrees). | `acaab9cb4` |
@@ -310,7 +310,7 @@ Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/integrator/path_trace.cpp`, `src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/integrator/path_trace.cpp`, `src/scene/mesh`, `src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..hdCycles-H22`.
 
