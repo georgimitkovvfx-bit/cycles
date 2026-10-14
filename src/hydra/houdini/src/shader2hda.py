@@ -151,6 +151,7 @@ def hide_condition(param, parm_names, all_params):
     conditions = param["hidewhen"]
     if not conditions:
         return ""
+    # Menu tokens are quoted, as some contain spaces ("Direct coloring").
     keys = set(k for c in conditions for k in c)
     if len(keys) == 1:
         # Use the shorter form: hide for these values, or hide unless one of the others.
@@ -160,10 +161,10 @@ def hide_condition(param, parm_names, all_params):
         shown = [token for token, _ in menu if token not in hidden]
         parm = parm_names[key]
         if len(shown) < len(hidden):
-            return "{ " + " ".join("%s != %s" % (parm, token) for token in shown) + " }"
-        return " ".join("{ %s == %s }" % (parm, token) for token in hidden)
+            return "{ " + " ".join("%s != \"%s\"" % (parm, token) for token in shown) + " }"
+        return " ".join("{ %s == \"%s\" }" % (parm, token) for token in hidden)
     return " ".join(
-        "{ " + " ".join("%s == %s" % (parm_names[k], v) for k, v in sorted(c.items())) + " }"
+        "{ " + " ".join("%s == \"%s\"" % (parm_names[k], v) for k, v in sorted(c.items())) + " }"
         for c in conditions)
 
 
