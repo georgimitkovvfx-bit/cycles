@@ -78,7 +78,9 @@ Linux and macOS builds have not been tested on Houdini 22.
   can take minutes. Without a color attribute the Vertex Color node differs from SVM (also in Blender). Builds
   need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). `getattribute` in a Script
   node finds attributes named by a string constant or a parameter default, not names computed at run time.
-- The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
+- **Hair:** with Curves > Shape = 3D Curves, hair BSDFs render 0.3-1.1% brighter on OptiX than on the CPU
+  (ribbons and meshes match; under investigation). Same-seed images of the Huang hair model differ between
+  devices by noise only: its stochastic evaluation makes the sample paths diverge.
 
 ### Viewport
 - Responsiveness: each viewport image update copies the depth and ID passes from the GPU (35-50 ms on a 2K
