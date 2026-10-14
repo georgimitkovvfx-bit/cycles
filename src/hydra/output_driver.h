@@ -21,6 +21,8 @@ class HdCyclesOutputDriver final : public CCL_NS::OutputDriver {
   void update_render_buffers(const Tile &tile, bool final);
 
   HdCyclesSession *const _renderParam;
+  // Time of the last progressive viewport update of the AOVs that are not displayed
+  double _aovsUpdateTime = 0.0;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

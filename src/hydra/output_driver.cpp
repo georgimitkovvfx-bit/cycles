@@ -7,6 +7,9 @@
 #include "hydra/render_buffer.h"
 #include "hydra/session.h"
 
+#include "session/session.h"
+#include "util/time.h"
+
 #include <algorithm>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -63,13 +66,36 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
 {
   std::vector<float> pixels;
 
+  // The Cycles display driver updates the display AOV texture while rendering. The final
+  // image also goes to the buffer, which Houdini reads for slap comps and snapshots.
+  const HdRenderPassAovBinding displayAovBinding = _renderParam->GetDisplayAovBinding();
+  const auto *const displayBuffer = static_cast<HdCyclesRenderBuffer *>(
+      displayAovBinding.renderBuffer);
+  const bool skipDisplayAov = !final && displayBuffer && displayBuffer->IsResourceUsed();
+
+  /* The Houdini viewport reads the AOVs it does not display only on demand: depth for the tumble
+   * pivot, IDs for picking, slap comp inputs. Reading them back takes 30-50 ms per update of a 2K
+   * render, longer than the path tracing between the first updates after a reset. Depth and IDs
+   * are final after the first sample, so update them once the render ran for 0.25 s (camera
+   * changes of a tumble come faster, so tumbling does not wait for them), then at most once a
+   * second. The final update writes all of them. */
+  bool skipOtherAovs = false;
+  if (skipDisplayAov && _renderParam->IsViewport()) {
+    double totalTime, renderTime;
+    _renderParam->session->progress.get_time(totalTime, renderTime);
+    const double time = time_dt();
+    const bool updatedSinceReset = time - _aovsUpdateTime <= renderTime;
+    if (renderTime < 0.25 || (updatedSinceReset && time - _aovsUpdateTime < 1.0)) {
+      skipOtherAovs = true;
+    }
+    else {
+      _aovsUpdateTime = time;
+    }
+  }
+
   for (const HdRenderPassAovBinding &aovBinding : _renderParam->GetAovBindings()) {
     if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(aovBinding.renderBuffer)) {
-      // The Cycles display driver updates the display AOV texture while rendering. The final
-      // image also goes to the buffer, which Houdini reads for slap comps and snapshots.
-      if (!final && aovBinding == _renderParam->GetDisplayAovBinding() &&
-          renderBuffer->IsResourceUsed())
-      {
+      if (aovBinding == displayAovBinding ? skipDisplayAov : skipOtherAovs) {
         continue;
       }
 
