@@ -312,6 +312,7 @@ void HdCyclesSession::SetTransparentBackground(const std::optional<bool> transpa
 bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBindings)
 {
   Scene *const scene = session->scene.get();
+  const bool neededUV = scene->need_global_attribute(ATTR_STD_UV);
 
   // Delete all existing passes
   const vector<Pass *> &scene_passes = scene->passes;
@@ -431,6 +432,12 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   const std::vector<float> motionTimes = GetMotionTimes();
   _motionPassBound = motionPassBound;
   if (GetMotionTimes() != motionTimes) {
+    RequestResync(false, true);
+  }
+
+  /* Geometry only exports the UV map for the UV pass when synced with the pass, which husk binds
+   * after the first sync (Scene::need_global_attribute). */
+  if (scene->need_global_attribute(ATTR_STD_UV) && !neededUV) {
     RequestResync(false, true);
   }
 
