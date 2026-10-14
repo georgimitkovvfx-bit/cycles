@@ -33,9 +33,9 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Shader node UI | Blender 5.2 order, labels, menus, collapsible panels, hide rules and default values |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
-| Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties |
+| Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
 | Interactive edits | Moving/editing lights, objects, materials and settings updates the render. Motion blur, the shutter and primvar AOVs change without restarting the render. Texture files changed on disk reload on the next material edit or with **Reload Textures** in the viewport's renderer menu; UDIM (`<UDIM>`) textures |
-| Viewport | Free view and looking through a camera |
+| Viewport | Free view and looking through a camera. Starts each change at a lower resolution like Blender (**Start at Low Resolution** in Performance > Viewport) |
 | Stability | No crash on quit, renderer switch or device change |
 | Units | Stages with `metersPerUnit` 1 and 0.01 |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
@@ -81,6 +81,9 @@ Linux and macOS builds have not been tested on Houdini 22.
 - The Principled Hair BSDF needs a recheck of OptiX vs CPU output.
 
 ### Viewport
+- Responsiveness: each viewport image update copies the depth and ID passes from the GPU (35-50 ms on a 2K
+  viewport), which limits how often the image refreshes; being worked on. The thread count setting only applies
+  to husk (Cycles sets it for the whole process).
 - Orbiting pivoted at the camera (like a first-person camera); fixed by declaring the depth AOV as OpenGL
   style depth, still to be confirmed in the GUI.
 
@@ -90,17 +93,15 @@ Linux and macOS builds have not been tested on Houdini 22.
 - Color Ramp and the curve nodes expose raw arrays instead of Houdini ramp parameters; angles are in radians.
 
 ### Missing features
-- Viewport resolution divider (the viewport always renders at full resolution).
 - HIP (AMD) and oneAPI (Intel) devices are disabled; NVIDIA and CPU only.
 
 ## Roadmap
 
 In progress, roughly in this order:
 
-1. The viewport resolution divider, Blender render defaults, curve shape.
-2. Viewport responsiveness (start at low resolution, more frequent updates).
-3. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
-4. Confirm the orbit fix and the Reload Textures command in the GUI.
+1. Viewport responsiveness: cheaper depth/ID updates, then more frequent image updates.
+2. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
+3. Confirm the orbit fix and the Reload Textures command in the GUI.
 
 ## Building
 
@@ -205,6 +206,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Vertex Color node read float and float2 attributes from the float3 array** (core Cycles, SVM): wrong values, CPU and OptiX differed. | `88c9261a2` |
 | **Point instancer orientations and scales were applied in the wrong order** (also nested instancers): instances with orient or pscale, e.g. from the Instancer LOP or SOP Import, landed in the wrong place. | `dfcda7df8` |
 | **Crash re-tessellating a subdivision mesh** when only its points changed. | `459f60fb3` |
+| **Session settings were ignored in the Houdini viewport:** Houdini creates the delegate with no settings and sends them afterwards, so Device, Open Shading Language and other settings fixed at session creation never applied there (husk was fine). The session is now recreated when such a setting arrives before rendering starts. | `4248759a9` |
 | **Volume velocity motion blur was cut off at the density's edge** (core Cycles): the volume octree only looked at the density at the shutter center, so advected density outside it was skipped. | `2bf5ae95b` |
 | **Motion pass zoom from the default camera field of view** (the previous/next frame projections used 45 degrees). | `acaab9cb4` |
 | **Review fixes for the primvar and instance work:** crash syncing a prototype with no instances (`e1601b67c`); vertex primvars dropped on meshes with unused trailing points (`44220246f`); out of bounds read of short uniform primvars (`f8564cb24`); UV map aliases interpolated linearly on subdivision surfaces (`289d73167`); OSL `getattribute` requested the parameter default instead of the node's value (`b20dd4dfd`); Vertex Color node with standard names (`uv`, `density`) read nothing and attribute ids above 255 wrapped (`c2b98f277`, `3ce37f642`). | `e1601b67c`, `44220246f`, `f8564cb24`, `289d73167`, `b20dd4dfd`, `c2b98f277`, `3ce37f642` |
@@ -239,6 +241,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **OSL script nodes request the attributes they read** (core Cycles): `getattribute` names found in the byte code (string constants and parameter defaults), so a Script node reading a primvar no longer needs another node requesting it. | `888453431` |
 | **Texture coordinates on implicit shapes:** `st` like Blender's primitives (UV sphere layout, revolved shapes around their axis with planar caps, the cube's cross layout, the plane); an authored UV primvar wins. | `073f4cf13` |
 | **More motion blur:** velocities, accelerations and angular velocities resolved by USD's `HdsiVelocityMotionResolvingSceneIndex` (with the stage frame rate from Houdini, `b44112557`); curves and points (`ee5261a9b`); point instancers incl. nested ones (`95683248f`); volumes from velocity fields with Houdini's names and a per-second velocity scale (`8dba7bd95`); the motion vector pass at the previous and next frame like Blender, added or removed without restarting (`4a0d66d39`). | `b44112557`, `ee5261a9b`, `95683248f`, `8dba7bd95`, `4a0d66d39` |
+| **Viewport resolution divider:** output drivers are skipped while the render is at reduced resolution (core Cycles, `0cc07a34e`), the OpenGL display driver scales small renders up with a framebuffer blit (`6d4f3782b`), and `cycles:use_resolution_divider` turns it on (default, `a902cdda8`). | `0cc07a34e`, `6d4f3782b`, `a902cdda8` |
+| **Curve shape** render setting (`cycles:curve_shape`: ribbon / thick, Blender's Rounded Ribbons / 3D Curves). | `d2eff57b6` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
 ### Houdini user interface
@@ -261,6 +265,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Light settings and light groups:** Cycles tab on the Light LOP (`HdCyclesPlugin_Light.ds`), Light Group for objects, Light Groups on the Cycles Render Settings LOP. | `a9c2a8a5a` |
 | **Split Render Product by Render Var** and **Primvar AOVs** on the Cycles Render Settings LOP. | `46182e5a1`, `4cca27455` |
 | **Motion Blur** in the render settings (since `b128d02b8` motion blur and the camera shutter no longer restart the delegate). | `3f3fd20e3` |
+| **Blender Defaults** button on the Cycles Render Settings LOP: Blackman-Harris 1.5, bounces 12/4/4/12/0/8, light threshold 0.01, 4096 samples, denoising, blue-noise sampling, 3D curves (GPU denoising kept). | `1a40ca353` |
 | **Fast GI** panel like Blender's: header toggle, Method (Replace / Add), Bounces, AO Factor, AO Distance (`cycles:fast_gi`, `cycles:fast_gi_method`, `cycles:ao_bounces`, `cycles:ao_factor`). | `08668d687` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
@@ -297,7 +302,7 @@ Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/integrator/path_trace.cpp`, `src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..hdCycles-H22`.
 
