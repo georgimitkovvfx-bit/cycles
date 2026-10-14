@@ -19,6 +19,8 @@ delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "UsdRenderers.json" "${CMAKE_INSTA
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/icons/ DESTINATION houdini/icons)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/toolbar/ DESTINATION houdini/toolbar)
+# Shader translator for the Cycles shader nodes, found through the package's HOUDINI_PATH.
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/husdplugins/ DESTINATION houdini/husdplugins)
 
 # The Cycles Script node compiles OSL shaders with oslc to read their parameters.
 if(WITH_CYCLES_OSL AND OSL_COMPILER)

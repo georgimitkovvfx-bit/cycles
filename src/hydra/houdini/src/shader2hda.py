@@ -76,8 +76,31 @@ def set_range(pt, param):
     pt.setMaxIsStrict(high_strict)
 
 
+def ramp_parm_template(name, param):
+    """Houdini ramp for a Cycles lookup table socket, baked by the Cycles shader translator."""
+    channel, is_color, keys, basis = param["ramp"]
+    points = []
+    for i, (pos, value) in enumerate(keys, 1):
+        if is_color:
+            value = "%dc ( %s )" % (i, " ".join("%g" % v for v in value))
+        else:
+            value = "%dvalue ( %g )" % (i, value)
+        points.append("%dpos ( %g ) %s %dinterp ( linear )" % (i, pos, value, i))
+    pt = hou.RampParmTemplate(
+        name, param["label"], hou.rampParmType.Color if is_color else hou.rampParmType.Float,
+        default_value=len(keys))
+    tags = {"rampcolordefault" if is_color else "rampfloatdefault": " ".join(points),
+            "rampbasisdefault": basis, "cycles_socket": param["socket"]["name"]}
+    if channel:
+        tags["cycles_channel"] = channel
+    pt.setTags(tags)
+    return pt
+
+
 def create_parm_template(name, param):
     """Create a Houdini ParmTemplate for a laid out Cycles socket."""
+    if param.get("ramp"):
+        return ramp_parm_template(name, param)
     socket = param["socket"]
     label = param["label"]
     type_name = socket["type"]
@@ -182,7 +205,7 @@ def node_params(node_data, layouts, problems):
                   for s in node_data["inputs"]]
     used = set()
     for param in params:
-        name = param["socket"]["name"]
+        name = param.get("name") or param["socket"]["name"]
         base = name
         i = 1
         while name in used:
@@ -205,7 +228,7 @@ def create_shader_signature(node_data, shader_name, label, params):
             vop_type(param["socket"]["type"]),
             ui_parm,
             None,
-            True,
+            param.get("linkable", True),
             shaderhda.ShaderParameterExtraInfos(),
         ))
 
@@ -293,6 +316,15 @@ def apply_layout(hda_def, label, panels, params):
     hda_def.setParmTemplateGroup(layout)
 
 
+# Converts nodes saved with the HDAs before version 2, when a scene is loaded: their ramp sockets
+# were float parameters, whose value loads as a one key ramp.
+SYNC_NODE_VERSION = """if not kwargs["old_version"]:
+    node = kwargs["node"]
+    for name in %(ramps)r:
+        node.parm(name).revertToRampDefaults()
+"""
+
+
 def create_hda(node_data, install_dir, layouts, problems):
     """Create an HDA for a single Cycles node."""
     node_name = node_data["name"]
@@ -338,6 +370,12 @@ def create_hda(node_data, install_dir, layouts, problems):
     hda_def.setIcon("$CYCLES_ICON")
     if layouts:
         apply_layout(hda_def, label, panels, params)
+    ramps = [p["parm_ui"] for p in params if p.get("ramp")]
+    if ramps:
+        hda_def.setVersion("2")
+        hda_def.addSection("SyncNodeVersion", SYNC_NODE_VERSION % {"ramps": ramps})
+        hda_def.setExtraFileOption("SyncNodeVersion/IsPython", True)
+        hda_def.setExtraFileOption("SyncNodeVersion/IsScript", True)
     hda_def.save(hda_path)
 
     log("Created: " + hda_path)

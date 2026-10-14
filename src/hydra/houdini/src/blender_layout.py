@@ -78,7 +78,32 @@ INTERNAL_SOCKETS = {
     "bump": {"use_object_space", "sample_center", "sample_x", "sample_y"},
     "texture_coordinate": {"use_transform", "ob_tfm"},
     "ies_light": {"ies"},
+    # Set from the ramp interpolation (Constant or not), like in Blender.
+    "rgb_ramp": {"interpolate"},
 }
+
+# Lookup table sockets that Blender edits with a color ramp or curve widget, as Houdini ramp
+# parameters: {node: {socket: [(parm, label, channel, is color, default keys, new key basis)]}}.
+# The Cycles shader translator (husdplugins/shadertranslators/cycles.py) bakes them to the table,
+# combining the channels of RGB and Vector Curves. New curve keys are smooth like Blender's
+# curve points, the default keys are linear (two monotone cubic keys make an S-curve).
+CURVE_KEYS = [(0.0, 0.0), (1.0, 1.0)]
+RAMPS = {
+    "rgb_ramp": {
+        "ramp": [("ramp", "Color Ramp", None, True,
+                  [(0.0, (0.0, 0.0, 0.0)), (1.0, (1.0, 1.0, 1.0))], "linear")],
+        "ramp_alpha": [("ramp_alpha", "Alpha", None, False, [(0.0, 1.0), (1.0, 1.0)], "linear")],
+    },
+    "float_curve": {"curve": [("curve", "Curve", None, False, CURVE_KEYS, "monotonecubic")]},
+    "rgb_curves": {"curves": [("curves_" + c, c.upper(), c, False, CURVE_KEYS, "monotonecubic")
+                              for c in "crgb"]},
+    # Blender's Vector Curves map -1..1 (Min X to Max X) to -1..1.
+    "vector_curves": {"curves": [("curves_" + c, c.upper(), c, False, [(0.0, -1.0), (1.0, 1.0)],
+                                  "monotonecubic") for c in "xyz"]},
+}
+
+# Defaults of Cycles sockets that Blender does not show, where Blender uses other values.
+SOCKET_DEFAULTS = {"vector_curves": {"min_x": -1.0}}
 
 TEXTURE_MAPPING_PANEL = "Texture Mapping"
 TEXTURE_MAPPING_LABELS = {
@@ -309,7 +334,9 @@ def node_layout(cycles_node, layouts, problems):
 
     Returns (label, panels, params). Each param is a dict with the Cycles "socket", "label",
     "default", "menu" (list of (token, label)), "range", "panel", "hidden" (always hidden),
-    "hidewhen" (list of {socket name: token} conditions any of which hides it) and "help".
+    "hidewhen" (list of {socket name: token} conditions any of which hides it) and "help", plus
+    the parameter "name" where it is not the socket name, "linkable" False for parameters without
+    an input connector and "ramp" (channel, is color, default keys, new key basis) for ramps.
     """
     name = cycles_node["name"]
     sockets = {s["name"]: s for s in cycles_node["inputs"]}
@@ -333,6 +360,13 @@ def node_layout(cycles_node, layouts, problems):
     for socket_name, label in LEADING_SOCKETS.get(name, []):
         if socket_name in sockets:
             add(sockets[socket_name], label=label)
+
+    # Ramp and curve widgets, drawn above the inputs like in Blender. Not linkable: tables are no
+    # shader inputs.
+    for socket_name, ramps in RAMPS.get(name, {}).items():
+        for parm, label, channel, is_color, keys, basis in ramps:
+            add(sockets[socket_name], name=parm, label=label, default=None, linkable=False,
+                ramp=(channel, is_color, keys, basis))
 
     if blender is None:
         label = title(cycles_node.get("label", name))
@@ -396,7 +430,8 @@ def node_layout(cycles_node, layouts, problems):
             if TEXTURE_MAPPING_PANEL not in panels:
                 panels.append(TEXTURE_MAPPING_PANEL)
         else:
-            add(socket, hidden=socket["name"] in internal)
+            add(socket, hidden=socket["name"] in internal,
+                default=SOCKET_DEFAULTS.get(name, {}).get(socket["name"], socket.get("default")))
 
     # Panel parameters go after the others, in panel order.
     top = [p for p in params if not p["panel"]]
