@@ -160,8 +160,8 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   ray.P = make_float3(__int_as_float(in.prim), in.u, in.v);
   ray.D = zero_float3();
   ray.tmin = 0.0f;
-  /* Motion blur is ignored when computing the extrema of the density, but we also don't expect the
-   * value to change a lot in one frame. */
+  /* Object motion is ignored when computing the extrema of the density, but we also don't expect
+   * the value to change a lot in one frame. Velocity is not, see below. */
   ray.time = 0.5f;
 
   /* Setup shader data. */
@@ -197,6 +197,10 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   const Transform tfm = need_transformation ?
                             object_fetch_transform(kg, sd.object, OBJECT_TRANSFORM) :
                             Transform();
+  /* Velocity moves the density in object space over the shutter (volume_shader_motion_blur), also
+   * where there is none at the center time: take the extrema over the shutter. */
+  const bool volume_motion = kernel_data_fetch(object_flag, sd.object) &
+                             SD_OBJECT_HAS_VOLUME_MOTION;
   for (int sample = 0; sample < num_samples; sample++) {
     /* Blue noise indexing. The sequence length is the number of samples. */
     const uint3 index = make_uint3(sample + offset * num_samples, 0, 0xffffffff);
@@ -205,9 +209,16 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
     const float3 rand_p = sobol_burley_sample_3D(
         index.x, PRNG_BAKE_VOLUME_DENSITY_EVAL, index.y, index.z);
     sd.P = ray.P + rand_p * voxel_size;
+    if (volume_motion) {
+      sd.time = (float(sample) + 0.5f) / float(num_samples);
+    }
     if (need_transformation) {
-      /* Convert to world space. */
-      sd.P = transform_point(&tfm, sd.P);
+      /* Convert to world space, at the time the shader converts back to object space at. */
+      const Transform object_tfm = volume_motion ?
+                                       object_fetch_transform_motion_test(
+                                           kg, sd.object, sd.time, nullptr) :
+                                       tfm;
+      sd.P = transform_point(&object_tfm, sd.P);
     }
     sd.closure_transparent_extinction = zero_float3();
     sd.closure_emission_background = zero_float3();
