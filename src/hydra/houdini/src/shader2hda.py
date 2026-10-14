@@ -249,7 +249,7 @@ def create_shader_signature(node_data, shader_name, label, params):
 
     used_output_names = set()
     shader_outputs = []
-    for out in node_data.get("outputs", []):
+    for out in node_data.get("outputs", []) + blender_layout.extra_outputs(node_data):
         name = sanitize_parm_name(out["name"])
         base = name
         i = 1

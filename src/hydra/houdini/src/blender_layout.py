@@ -80,6 +80,8 @@ INTERNAL_SOCKETS = {
     "ies_light": {"ies"},
     # Set from the ramp interpolation (Constant or not), like in Blender.
     "rgb_ramp": {"interpolate"},
+    # Unlinked, Cycles uses the shading position and normal (Blender hides the values).
+    "raycast": {"position", "direction"},
 }
 
 # Lookup table sockets that Blender edits with a color ramp or curve widget, as Houdini ramp
@@ -109,6 +111,12 @@ SOCKET_DEFAULTS = {"vector_curves": {"min_x": -1.0}}
 # texture mapping rotation (not in the layout dump).
 ANGLE_SUBTYPES = ("ANGLE", "EULER")
 ANGLE_SOCKETS = {"tex_mapping.rotation"}
+
+# Raycast "Attributes" panel: Blender adds an attribute name and outputs per sampled attribute,
+# the render delegate adds the outputs from the names.
+# shortcut: a fixed number of attributes (VOP outputs are fixed per HDA), raise it if users need.
+RAYCAST_ATTRIBUTES = 4
+RAYCAST_PANEL = "Attributes"
 
 TEXTURE_MAPPING_PANEL = "Texture Mapping"
 TEXTURE_MAPPING_LABELS = {
@@ -405,7 +413,7 @@ def node_layout(cycles_node, layouts, problems):
                 default = socket.get("default")
             param = add(socket, label=item["label"], default=default, menu=menu,
                         range=ui_range(name, item, socket), panel=item.get("panel"),
-                        help=item.get("description", ""),
+                        help=item.get("description", ""), hidden=socket["name"] in internal,
                         degrees=item.get("subtype") in ANGLE_SUBTYPES)
             mapped.append((param, item))
 
@@ -441,10 +449,27 @@ def node_layout(cycles_node, layouts, problems):
             add(socket, hidden=socket["name"] in internal,
                 default=SOCKET_DEFAULTS.get(name, {}).get(socket["name"], socket.get("default")))
 
+    if name == "raycast":
+        for i in range(1, RAYCAST_ATTRIBUTES + 1):
+            add({"name": "attribute%d" % i, "type": "string"}, label="Attribute %d" % i,
+                default=None, panel=RAYCAST_PANEL, linkable=False,
+                help="Name of an attribute to read at the hit point")
+        panels.append(RAYCAST_PANEL)
+
     # Panel parameters go after the others, in panel order.
     top = [p for p in params if not p["panel"]]
     in_panels = [p for panel in panels for p in params if p["panel"] == panel]
     return label, panels, top + in_panels
+
+
+def extra_outputs(cycles_node):
+    """Outputs the render delegate adds to a node: the color (or vector), value and alpha of each
+    Raycast attribute, like the Attribute node."""
+    if cycles_node["name"] != "raycast":
+        return []
+    return [{"name": "attribute%d%s" % (i, suffix), "type": type_name}
+            for i in range(1, RAYCAST_ATTRIBUTES + 1)
+            for suffix, type_name in (("", "color"), ("_fac", "float"), ("_alpha", "float"))]
 
 
 def changed_defaults(cycles_node, params):
