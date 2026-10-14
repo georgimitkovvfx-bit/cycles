@@ -192,6 +192,7 @@ class Mesh : public Geometry {
 
   void resize_mesh(const int numverts, const int numtris);
   void resize_subd_faces(const int numfaces, const int numcorners);
+  void clear_tessellation();
   void reserve_subd_creases(const size_t num_creases);
   void clear_non_sockets();
   void clear(bool preserve_shaders = false) override;

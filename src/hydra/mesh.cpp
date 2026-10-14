@@ -206,7 +206,7 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
   if (subdivision) {
     /* Drop the previous tessellation, like the topology update: Mesh::tessellate takes every
      * vertex of the mesh as a base vertex, and reads the positions past their end otherwise. */
-    _geom->resize_mesh(int(numPoints), 0);
+    _geom->clear_tessellation();
   }
   AttributeSet &attributes = (subdivision) ? _geom->subd_attributes : _geom->attributes;
   SetPositions(attributes.add(ATTR_STD_POSITION), primvars, points, numPoints);

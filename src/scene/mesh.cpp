@@ -376,6 +376,14 @@ void Mesh::resize_subd_faces(const int numfaces, const int numcorners)
   subd_attributes.resize();
 }
 
+/* Keep only the base vertices of a subdivision mesh, to update them without clearing the mesh.
+ * The count of added vertices goes with the vertices, the base vertex count is wrong otherwise. */
+void Mesh::clear_tessellation()
+{
+  resize_mesh(get_num_subd_base_verts(), 0);
+  num_subd_added_verts = 0;
+}
+
 void Mesh::reserve_subd_creases(const size_t num_creases)
 {
   subd_creases_edge.reserve(num_creases * 2);
