@@ -744,7 +744,7 @@ void HdCyclesMaterial::AddPrimvarAOVs(ShaderGraph *graph,
 
 /* Image textures with "<UDIM>" in the file name (native and MaterialX) read the tiles found next
  * to it on disk. shortcut: only the <UDIM> token, add <UVTILE> when a scene uses it. */
-static void SetUdimTiles(ShaderGraph *graph)
+void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
 {
   for (ShaderNode *node : graph->nodes) {
     if (node->type != ImageTextureNode::get_node_type()) {

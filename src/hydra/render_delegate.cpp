@@ -863,6 +863,8 @@ bool HdCyclesDelegate::InvokeCommand(const TfToken &command, const HdCommandArgs
   const SceneLock lock(_renderParam.get());
   lock.scene->osl_manager->free_textures(lock.scene);
   for (Shader *shader : lock.scene->shaders) {
+    /* UDIM tiles added or removed on disk. */
+    HdCyclesMaterial::SetUdimTiles(shader->graph.get());
     for (ShaderNode *node : shader->graph->nodes) {
       if (node->special_type == SHADER_SPECIAL_TYPE_IMAGE_SLOT) {
         static_cast<ImageSlotTextureNode *>(node)->handle.clear();

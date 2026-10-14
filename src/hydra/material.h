@@ -38,6 +38,9 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
   static void AddPrimvarAOVs(CCL_NS::ShaderGraph *graph,
                              const std::vector<std::pair<std::string, std::string>> &aovs);
 
+  // Tiles of the image textures with "<UDIM>" in the file name, found on disk
+  static void SetUdimTiles(CCL_NS::ShaderGraph *graph);
+
  private:
   struct NodeDesc {
     CCL_NS::ShaderNode *node;
