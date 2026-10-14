@@ -16,10 +16,7 @@
 #include <pxr/base/tf/envSetting.h>
 #include <pxr/imaging/hd/rendererPluginRegistry.h>
 #if PXR_VERSION >= 2408
-#  include <pxr/imaging/hd/retainedDataSource.h>
 #  include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
-#  include <pxr/imaging/hd/tokens.h>
-#  include <pxr/imaging/hdsi/implicitSurfaceSceneIndex.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -89,31 +86,19 @@ TF_REGISTRY_FUNCTION(TfType)
 
 #if PXR_VERSION >= 2408
 HdSceneIndexBaseRefPtr HdCycles_ImplicitSurfaceSceneIndexPlugin::_AppendSceneIndex(
-    const HdSceneIndexBaseRefPtr &inputScene, const HdContainerDataSourceHandle &inputArgs)
+    const HdSceneIndexBaseRefPtr &inputScene, const HdContainerDataSourceHandle & /*inputArgs*/)
 {
-  // Curved shapes as fine meshes first, then Hdsi turns the cube and plane into meshes
-  return HdsiImplicitSurfaceSceneIndex::New(
-      HD_CYCLES_NS::HdCyclesImplicitMeshSceneIndex::New(inputScene), inputArgs);
+  return HD_CYCLES_NS::HdCyclesImplicitMeshSceneIndex::New(inputScene);
 }
 
 // Cycles has no implicit surfaces, so turn USD Sphere, Cube, Cone, Cylinder, Capsule and Plane
 // into meshes before they reach the render delegate.
 TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
 {
-  const HdDataSourceBaseHandle toMesh = HdRetainedTypedSampledDataSource<TfToken>::New(
-      HdsiImplicitSurfaceSceneIndexTokens->toMesh);
-  const TfToken names[] = {HdPrimTypeTokens->sphere,
-                           HdPrimTypeTokens->cube,
-                           HdPrimTypeTokens->cone,
-                           HdPrimTypeTokens->cylinder,
-                           HdPrimTypeTokens->capsule,
-                           HdPrimTypeTokens->plane};
-  const HdDataSourceBaseHandle values[] = {toMesh, toMesh, toMesh, toMesh, toMesh, toMesh};
-
   HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
       "Cycles",
       TfToken("HdCycles_ImplicitSurfaceSceneIndexPlugin"),
-      HdRetainedContainerDataSource::New(std::size(names), names, values),
+      nullptr,
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
 

@@ -7,14 +7,18 @@
 #include <pxr/base/gf/rotation.h>
 #include <pxr/imaging/geomUtil/capsuleMeshGenerator.h>
 #include <pxr/imaging/geomUtil/coneMeshGenerator.h>
+#include <pxr/imaging/geomUtil/cuboidMeshGenerator.h>
 #include <pxr/imaging/geomUtil/cylinderMeshGenerator.h>
+#include <pxr/imaging/geomUtil/planeMeshGenerator.h>
 #include <pxr/imaging/geomUtil/sphereMeshGenerator.h>
 #include <pxr/imaging/hd/capsuleSchema.h>
 #include <pxr/imaging/hd/coneSchema.h>
+#include <pxr/imaging/hd/cubeSchema.h>
 #include <pxr/imaging/hd/cylinderSchema.h>
 #include <pxr/imaging/hd/meshSchema.h>
 #include <pxr/imaging/hd/meshTopologySchema.h>
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
+#include <pxr/imaging/hd/planeSchema.h>
 #include <pxr/imaging/hd/primvarSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
@@ -33,10 +37,11 @@ constexpr size_t kNumRadial = 64;
 constexpr size_t kNumAxial = 32;
 constexpr size_t kNumCapAxial = 16;
 
-bool IsCurvedImplicit(const TfToken &primType)
+bool IsImplicit(const TfToken &primType)
 {
   return primType == HdPrimTypeTokens->sphere || primType == HdPrimTypeTokens->cylinder ||
-         primType == HdPrimTypeTokens->cone || primType == HdPrimTypeTokens->capsule;
+         primType == HdPrimTypeTokens->cone || primType == HdPrimTypeTokens->capsule ||
+         primType == HdPrimTypeTokens->cube || primType == HdPrimTypeTokens->plane;
 }
 
 double GetDouble(const HdDoubleDataSourceHandle &ds, const double fallback)
@@ -69,7 +74,7 @@ HdContainerDataSourceHandle BuildPrimvar(const VtVec3fArray &values, const TfTok
       .Build();
 }
 
-/* Mesh topology, points and normals of a curved implicit shape. */
+/* Mesh topology, points and normals of an implicit shape. */
 HdContainerDataSourceHandle BuildMesh(const TfToken &primType,
                                       const HdContainerDataSourceHandle &primDs)
 {
@@ -111,6 +116,38 @@ HdContainerDataSourceHandle BuildMesh(const TfToken &primType,
     GeomUtilConeMeshGenerator::GeneratePoints(points.begin(), kNumRadial, radius, height, &basis);
     GeomUtilConeMeshGenerator::GenerateNormals(
         normals.begin(), kNumRadial, radius, height, &basis);
+  }
+  else if (primType == HdPrimTypeTokens->cube) {
+    const double size = GetDouble(HdCubeSchema::GetFromParent(primDs).GetSize(), 2.0);
+    const PxOsdMeshTopology cube = GeomUtilCuboidMeshGenerator::GenerateTopology();
+    VtVec3fArray corners(GeomUtilCuboidMeshGenerator::ComputeNumPoints());
+    VtVec3fArray faceNormals(GeomUtilCuboidMeshGenerator::ComputeNumNormals());
+    GeomUtilCuboidMeshGenerator::GeneratePoints(corners.begin(), size, size, size);
+    GeomUtilCuboidMeshGenerator::GenerateNormals(faceNormals.begin());
+    /* Own points per face: faces sharing the corners would get averaged, smooth normals. */
+    const VtIntArray &cornerIndices = cube.GetFaceVertexIndices();
+    VtIntArray indices(cornerIndices.size());
+    points.resize(indices.size());
+    normals.resize(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+      indices[i] = int(i);
+      points[i] = corners[cornerIndices[i]];
+      /* One normal per face, every face is a quad. */
+      normals[i] = faceNormals[i / 4];
+    }
+    topology = PxOsdMeshTopology(
+        cube.GetScheme(), cube.GetOrientation(), cube.GetFaceVertexCounts(), indices);
+  }
+  else if (primType == HdPrimTypeTokens->plane) {
+    const HdPlaneSchema schema = HdPlaneSchema::GetFromParent(primDs);
+    const double width = GetDouble(schema.GetWidth(), 2.0);
+    const double length = GetDouble(schema.GetLength(), 2.0);
+    const GfMatrix4d basis = AxisBasis(schema.GetAxis());
+    topology = GeomUtilPlaneMeshGenerator::GenerateTopology();
+    points.resize(GeomUtilPlaneMeshGenerator::ComputeNumPoints());
+    GeomUtilPlaneMeshGenerator::GeneratePoints(points.begin(), width, length, &basis);
+    /* Per point like the other shapes, instead of the generator's single normal. */
+    normals.assign(points.size(), GfVec3f(basis.TransformDir(GfVec3d::ZAxis())));
   }
   else {
     const HdCapsuleSchema schema = HdCapsuleSchema::GetFromParent(primDs);
@@ -174,7 +211,7 @@ HdCyclesImplicitMeshSceneIndex::HdCyclesImplicitMeshSceneIndex(
 HdSceneIndexPrim HdCyclesImplicitMeshSceneIndex::GetPrim(const SdfPath &primPath) const
 {
   HdSceneIndexPrim prim = _GetInputSceneIndex()->GetPrim(primPath);
-  if (IsCurvedImplicit(prim.primType)) {
+  if (IsImplicit(prim.primType)) {
     prim.dataSource = HdOverlayContainerDataSource::New(BuildMesh(prim.primType, prim.dataSource),
                                                         prim.dataSource);
     prim.primType = HdPrimTypeTokens->mesh;
@@ -192,7 +229,7 @@ void HdCyclesImplicitMeshSceneIndex::_PrimsAdded(
 {
   HdSceneIndexObserver::AddedPrimEntries added = entries;
   for (HdSceneIndexObserver::AddedPrimEntry &entry : added) {
-    if (IsCurvedImplicit(entry.primType)) {
+    if (IsImplicit(entry.primType)) {
       entry.primType = HdPrimTypeTokens->mesh;
     }
   }
@@ -208,11 +245,13 @@ void HdCyclesImplicitMeshSceneIndex::_PrimsRemoved(
 void HdCyclesImplicitMeshSceneIndex::_PrimsDirtied(
     const HdSceneIndexBase & /*sender*/, const HdSceneIndexObserver::DirtiedPrimEntries &entries)
 {
-  /* A changed shape (radius, height, axis) changes the mesh. */
+  /* A changed shape (radius, height, axis, size) changes the mesh. */
   static const HdDataSourceLocatorSet shapeLocators = {HdSphereSchema::GetDefaultLocator(),
                                                        HdCylinderSchema::GetDefaultLocator(),
                                                        HdConeSchema::GetDefaultLocator(),
-                                                       HdCapsuleSchema::GetDefaultLocator()};
+                                                       HdCapsuleSchema::GetDefaultLocator(),
+                                                       HdCubeSchema::GetDefaultLocator(),
+                                                       HdPlaneSchema::GetDefaultLocator()};
   HdSceneIndexObserver::DirtiedPrimEntries dirtied = entries;
   for (HdSceneIndexObserver::DirtiedPrimEntry &entry : dirtied) {
     if (entry.dirtyLocators.Intersects(shapeLocators)) {
