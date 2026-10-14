@@ -15,6 +15,7 @@
 #include <atomic>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -102,7 +103,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   }
 
   // Times in frames of the motion steps over the shutter when rendering with motion blur, else
-  // empty. The steps are evenly spaced, as Cycles expects, the center one at mid-shutter.
+  // empty. The steps are evenly spaced, as Cycles expects, the center one at mid-shutter. Without
+  // motion blur, the motion pass needs the previous and next frame.
   std::vector<float> GetMotionTimes() const
   {
     return GetMotionTimes(_shutterOpen, _shutterClose);
@@ -156,6 +158,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Rebuild the default surface shader with the primvar AOVs, with the scene locked
   void UpdateDefaultSurface();
 
+  // Whether a render settings prim has a motion pass render var, synced before geometry so that
+  // it is sampled at the motion pass times, with the scene locked.
+  void SetRenderSettingsMotionPass(const PXR_NS::SdfPath &id, bool motionPass);
+
   // Primvar a render var reads: source type "primvar" or a "primvars:<name>" source name, unless
   // it is a Cycles pass (Karma's "st" is the UV pass). Empty if none.
   static std::string GetPrimvar(const std::string &sourceName, const PXR_NS::TfToken &sourceType);
@@ -205,6 +211,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::vector<std::pair<std::string, std::string>> _primvarAovs;
   std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
       _renderSettingsPrimvarAovs;
+  std::set<PXR_NS::SdfPath> _motionPassSettings;
+  bool _motionPassBound = false;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
 };
 

@@ -15,6 +15,7 @@ void HdCyclesRenderSettings::Finalize(HdRenderParam *renderParam)
 {
   const SceneLock lock(renderParam);
   static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsPrimvarAovs(GetId(), false, {});
+  static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsMotionPass(GetId(), false);
 
   HdRenderSettings::Finalize(renderParam);
 }
@@ -28,8 +29,10 @@ void HdCyclesRenderSettings::_Sync(HdSceneDelegate * /*sceneDelegate*/,
   }
 
   std::vector<std::pair<std::string, std::string>> primvarAovs;
+  bool motionPass = false;
   for (const RenderProduct &product : GetRenderProducts()) {
     for (const RenderProduct::RenderVar &var : product.renderVars) {
+      motionPass |= HdCyclesSession::GetPassType(TfToken(var.sourceName)) == PASS_MOTION;
       // AOVs are bound under the name of the render var prim
       const std::string primvar = HdCyclesSession::GetPrimvar(var.sourceName, var.sourceType);
       const std::pair<std::string, std::string> aov(var.varPath.GetName(), primvar);
@@ -44,6 +47,7 @@ void HdCyclesRenderSettings::_Sync(HdSceneDelegate * /*sceneDelegate*/,
   const SceneLock lock(renderParam);
   static_cast<HdCyclesSession *>(renderParam)
       ->SetRenderSettingsPrimvarAovs(GetId(), IsActive(), std::move(primvarAovs));
+  static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsMotionPass(GetId(), motionPass);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

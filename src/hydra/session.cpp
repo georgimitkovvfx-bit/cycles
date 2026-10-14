@@ -330,6 +330,7 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 
   std::unordered_map<int, const Pass *> passOfType;
   std::vector<std::pair<string, string>> primvarAovs;
+  bool motionPassBound = false;
   for (const HdRenderPassAovBinding &aovBinding : aovBindings) {
     const string sourceName = GetSourceName(aovBinding).GetString();
     CryptomatteType cryptomatteType;
@@ -343,6 +344,20 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     if (type == PASS_NONE) {
       TF_WARN("Unknown pass %s", aovBinding.aovName.GetText());
       continue;
+    }
+    if (type == PASS_MOTION) {
+      /* Cycles writes four floats per pixel, more than a smaller buffer holds. */
+      if (aovBinding.renderBuffer &&
+          HdGetComponentCount(aovBinding.renderBuffer->GetFormat()) != 4)
+      {
+        TF_WARN("Motion pass %s needs a 4 channel format", aovBinding.aovName.GetText());
+        continue;
+      }
+      if (scene->integrator->get_motion_blur()) {
+        TF_WARN("Motion pass %s is empty with motion blur, like in Blender",
+                aovBinding.aovName.GetText());
+      }
+      motionPassBound = true;
     }
 
     const bool includeAlbedo = !GetLpe(aovBinding).empty();
@@ -394,6 +409,13 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     }
   }
 
+  /* A motion pass added or removed while rendering, which the render settings did not have. */
+  const std::vector<float> motionTimes = GetMotionTimes();
+  _motionPassBound = motionPassBound;
+  if (GetMotionTimes() != motionTimes) {
+    RequestResync(false, true);
+  }
+
   const bool primvarAovsChanged = primvarAovs != _primvarAovs;
   _primvarAovs = std::move(primvarAovs);
   return primvarAovsChanged;
@@ -402,11 +424,18 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
                                                    const float shutterClose) const
 {
+  if (!session->scene->integrator->get_motion_blur()) {
+    /* Motion pass: the previous and next frame, like Blender (Scene::motion_shutter_time() is 2
+     * frames). Cycles writes no motion pass with motion blur. */
+    if (_motionPassSettings.empty() && !_motionPassBound) {
+      return {};
+    }
+    return {-1.0f, 0.0f, 1.0f};
+  }
+
   // Three steps, like Blender's default of one motion step for objects
   constexpr int numSteps = 3;
-  if (_motionBlurDisabled || !session->scene->integrator->get_motion_blur() ||
-      !(shutterClose > shutterOpen))
-  {
+  if (_motionBlurDisabled || !(shutterClose > shutterOpen)) {
     return {};
   }
   std::vector<float> times(numSteps);
@@ -445,6 +474,20 @@ void HdCyclesSession::SetRenderSettingsPrimvarAovs(const SdfPath &id,
     UpdateDefaultSurface();
     /* Every shader writes the primvar AOVs, and geometry exports the primvars shaders read. */
     RequestResync(true, true);
+  }
+}
+
+void HdCyclesSession::SetRenderSettingsMotionPass(const SdfPath &id, const bool motionPass)
+{
+  const std::vector<float> motionTimes = GetMotionTimes();
+  if (motionPass) {
+    _motionPassSettings.insert(id);
+  }
+  else {
+    _motionPassSettings.erase(id);
+  }
+  if (GetMotionTimes() != motionTimes) {
+    RequestResync(false, true);
   }
 }
 
