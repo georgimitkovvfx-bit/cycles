@@ -9,7 +9,10 @@
 #include "hydra/util.h"
 #include "scene/volume.h"
 
+#include <pxr/imaging/hd/sceneGlobalsSchema.h>
 #include <pxr/imaging/hd/volumeFieldBindingSchema.h>
+
+#include <unordered_map>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -38,7 +41,29 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
   /* USD/Hydra convention is that volume density is in object space. */
   _geom->set_object_space(true);
 
-  if (dirtyBits & HdChangeTracker::DirtyVolumeField) {
+  /* Motion blur from a velocity field: the kernel moves the density by velocity times
+   * velocity_scale over the shutter, with velocities per second like Blender's default. The
+   * frame rate is the one velocities of points use (HdsiVelocityMotionResolvingSceneIndex). */
+  const std::vector<float> motionTimes = _session->GetMotionTimes();
+  float velocityScale = 0.0f;
+  if (!motionTimes.empty()) {
+    double fps = 24.0;
+    if (HdDoubleDataSourceHandle fpsDs =
+            HdSceneGlobalsSchema::GetFromSceneIndex(
+                sceneDelegate->GetRenderIndex().GetTerminalSceneIndex())
+                .GetTimeCodesPerSecond())
+    {
+      fps = fpsDs->GetTypedValue(0.0f);
+    }
+    velocityScale = float((motionTimes.back() - motionTimes.front()) / fps);
+  }
+  /* The velocity field is only loaded with motion blur. */
+  const bool motionChanged = (velocityScale != 0.0f) != (_geom->get_velocity_scale() != 0.0f);
+  _geom->set_velocity_scale(velocityScale);
+  /* Cycles only compiles the kernel with object motion for objects or geometry with motion. */
+  _geom->set_use_motion_blur(velocityScale != 0.0f);
+
+  if ((dirtyBits & HdChangeTracker::DirtyVolumeField) || motionChanged) {
     const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
     HdVolumeFieldBindingSchema bindings = HdVolumeFieldBindingSchema::GetFromParent(
         prim.dataSource);
@@ -58,26 +83,21 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
             renderIndex.GetBprim(_tokens->houdiniFieldAsset, fieldId));
       }
       if (openvdbAsset) {
-        const ustring name(fieldName.GetString());
+        /* Houdini's velocity is "vel" (a vector grid, or native volumes that SOP Import binds
+         * as vel_x/_y/_z, which Cycles merges into one grid) or "v" (rasterized points). */
+        static const std::unordered_map<std::string, std::string> aliases = {
+            {"vel", "velocity"},
+            {"v", "velocity"},
+            {"vel_x", "velocity_x"},
+            {"vel_y", "velocity_y"},
+            {"vel_z", "velocity_z"},
+        };
+        const auto alias = aliases.find(fieldName.GetString());
+        const ustring name(alias != aliases.end() ? alias->second : fieldName.GetString());
 
-        AttributeStandard std = ATTR_STD_NONE;
-        if (name == Attribute::standard_name(ATTR_STD_VOLUME_DENSITY)) {
-          std = ATTR_STD_VOLUME_DENSITY;
-        }
-        else if (name == Attribute::standard_name(ATTR_STD_VOLUME_COLOR)) {
-          std = ATTR_STD_VOLUME_COLOR;
-        }
-        else if (name == Attribute::standard_name(ATTR_STD_VOLUME_FLAME)) {
-          std = ATTR_STD_VOLUME_FLAME;
-        }
-        else if (name == Attribute::standard_name(ATTR_STD_VOLUME_HEAT)) {
-          std = ATTR_STD_VOLUME_HEAT;
-        }
-        else if (name == Attribute::standard_name(ATTR_STD_VOLUME_TEMPERATURE)) {
-          std = ATTR_STD_VOLUME_TEMPERATURE;
-        }
-        else if (name == Attribute::standard_name(ATTR_STD_VOLUME_VELOCITY)) {
-          std = ATTR_STD_VOLUME_VELOCITY;
+        AttributeStandard std = Attribute::name_standard(name.c_str());
+        if (std < ATTR_STD_VOLUME_DENSITY || std > ATTR_STD_VOLUME_VELOCITY_Z) {
+          std = ATTR_STD_NONE;
         }
 
         // Skip attributes that are not needed
