@@ -23,6 +23,10 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \
     ((transparentBackground, "cycles:background:transparent")) \
+    ((fastGi, "cycles:fast_gi")) \
+    ((fastGiMethod, "cycles:fast_gi_method")) \
+    ((aoBounces, "cycles:ao_bounces")) \
+    ((aoFactor, "cycles:ao_factor")) \
     ((houdiniViewport, "houdini:viewport")) \
     ((houdiniFps, "houdini:fps")) \
     (disableMotionBlur) \
@@ -111,6 +115,12 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
 
   PXR_NS::HdRenderIndex *_renderIndex = nullptr;
   HdCyclesResyncSceneIndexPtr _resyncSceneIndex;
+
+  /* Blender's Fast GI settings, which set the integrator's AO sockets together. */
+  bool _fastGi = false;
+  std::string _fastGiMethod = "replace";
+  int _aoBounces = 1;
+  float _aoFactor = 1.0f;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

@@ -53,6 +53,16 @@ SESSION_SETTINGS = {
     "cycles:samples": {"type": "int", "default": 1024},
     "cycles:time_limit": {"type": "float", "default": 0.0},
     "cycles:sample_offset": {"type": "int", "default": 0},
+    # Blender's Fast GI toggle, method, bounces and world AO factor, which the delegate maps to
+    # the integrator's ao_factor, ao_additive_factor and ao_bounces.
+    "cycles:fast_gi": {"type": "boolean", "default": False},
+    "cycles:fast_gi_method": {
+        "type": "menu",
+        "default": "replace",
+        "enum_values": {"replace": "Replace", "add": "Add"},
+    },
+    "cycles:ao_bounces": {"type": "int", "default": 1},
+    "cycles:ao_factor": {"type": "float", "default": 1.0},
 }
 
 # Menu labels and items for socket enums, where the title cased token is not good enough.
@@ -304,22 +314,25 @@ LAYOUT = [
               "realism)."),
         ], open=True),
         P("Fast GI Approximation", [
-            S("cycles:integrator:ao_bounces", "Bounces",
-              "After this number of light bounces, use approximate global illumination. "
-              "0 disables the approximation, which also needs a non-zero AO Factor.",
-              range=(0, 16, True, False)),
-            S("cycles:integrator:ao_factor", "AO Factor",
-              "Factor for the approximate global illumination replacing the indirect light "
-              "(Replace method). 0 disables the approximation.",
-              range=(0, 1, True, False)),
-            S("cycles:integrator:ao_additive_factor", "AO Additive Factor",
-              "Factor for the approximate global illumination added to the indirect light "
-              "(Add method).",
+            S("cycles:fast_gi", "Fast GI Approximation",
+              "Approximate diffuse indirect light with background tinted ambient occlusion. This "
+              "provides a fast alternative to full global illumination, for interactive viewport "
+              "rendering or final renders with reduced quality."),
+            S("cycles:fast_gi_method", "Method",
+              "Fast GI approximation method. Replace: replace global illumination with ambient "
+              "occlusion after a specified number of bounces. Add: add ambient occlusion to "
+              "diffuse surfaces."),
+            S("cycles:ao_bounces", "Bounces",
+              "After this number of light bounces, use approximate global illumination. 0 "
+              "disables this feature.",
+              range=(0, 16, True, False), hidewhen="{ cycles:fast_gi_method == add }"),
+            S("cycles:ao_factor", "AO Factor",
+              "Factor for ambient occlusion blending.",
               range=(0, 1, True, False)),
             S("cycles:integrator:ao_distance", "AO Distance",
               "Distance from shading point to trace rays for the approximation.",
               range=(0, 100, True, False)),
-        ]),
+        ], toggle="cycles:fast_gi"),
     ]),
     P("Volumes", [
         S("cycles:integrator:volume_ray_marching", "Biased",
@@ -339,8 +352,9 @@ LAYOUT = [
     P("Motion Blur", [
         S("cycles:integrator:motion_blur", "Motion Blur",
           "Render motion blur over the shutter of the camera (Shutter Open and Close on the "
-          "Camera LOP, in frames), from animated transforms, animated points and point "
-          "velocities.",
+          "Camera LOP, in frames), from animated transforms, points and instances, velocities "
+          "and accelerations of points and instances, and velocity fields of volumes (vel, v "
+          "or velocity). The Vector pass is empty with motion blur, like in Blender.",
           viewport=True),
     ], toggle="cycles:integrator:motion_blur"),
     P("Film", [

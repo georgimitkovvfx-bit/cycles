@@ -670,6 +670,32 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
                           std::optional<bool>(VtValue::Cast<bool>(value).GetWithDefault(false)));
     ++_settingsVersion;
   }
+  else if (key == HdCyclesRenderSettingsTokens->fastGi ||
+           key == HdCyclesRenderSettingsTokens->fastGiMethod ||
+           key == HdCyclesRenderSettingsTokens->aoBounces ||
+           key == HdCyclesRenderSettingsTokens->aoFactor)
+  {
+    if (key == HdCyclesRenderSettingsTokens->fastGi) {
+      _fastGi = VtValue::Cast<bool>(value).GetWithDefault(false);
+    }
+    else if (key == HdCyclesRenderSettingsTokens->fastGiMethod) {
+      _fastGiMethod = GetStringSetting(value, "replace");
+    }
+    else if (key == HdCyclesRenderSettingsTokens->aoBounces) {
+      _aoBounces = VtValue::Cast<int>(value).GetWithDefault(1);
+    }
+    else {
+      _aoFactor = VtValue::Cast<float>(value).GetWithDefault(1.0f);
+    }
+    /* Like Blender: Replace uses AO instead of indirect light after the bounces, Add adds AO to
+     * diffuse surfaces. Cycles has no bounces without the replace factor. */
+    const bool add = _fastGiMethod == "add";
+    const float factor = _fastGi ? _aoFactor : 0.0f;
+    scene->integrator->set_ao_factor(add ? 0.0f : factor);
+    scene->integrator->set_ao_additive_factor(add ? factor : 0.0f);
+    scene->integrator->set_ao_bounces(_fastGi ? _aoBounces : 0);
+    ++_settingsVersion;
+  }
   else {
     ustring socketName;
     if (Node *const node = FindSettingNode(scene, key.GetString(), socketName)) {
@@ -721,6 +747,18 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
   }
   if (key == HdCyclesRenderSettingsTokens->sampleOffset) {
     return VtValue((session->params.use_sample_subset) ? session->params.sample_subset_offset : 0);
+  }
+  if (key == HdCyclesRenderSettingsTokens->fastGi) {
+    return VtValue(_fastGi);
+  }
+  if (key == HdCyclesRenderSettingsTokens->fastGiMethod) {
+    return VtValue(TfToken(_fastGiMethod));
+  }
+  if (key == HdCyclesRenderSettingsTokens->aoBounces) {
+    return VtValue(_aoBounces);
+  }
+  if (key == HdCyclesRenderSettingsTokens->aoFactor) {
+    return VtValue(_aoFactor);
   }
 
   ustring socketName;
