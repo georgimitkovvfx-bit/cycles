@@ -129,6 +129,38 @@ static ShaderNode *CreateScriptNode(ShaderGraph *graph,
       graph, scene, valueDs ? GetFilepath(valueDs->GetValue(0.0f)) : std::string(), nodePath);
 }
 
+/* Raycast "Attributes" panel, like Blender's Raycast node: a string parameter "attribute<N>" names
+ * an attribute to read at the hit point, through the outputs "attribute<N>" (color or vector),
+ * "attribute<N>_fac" and "attribute<N>_alpha" (see shader2hda.py). The outputs depend on the
+ * parameters, so they are added when the node is created, before the connections. */
+static bool IsRaycastAttribute(const ShaderNode *node, const TfToken &name)
+{
+  return node->type == RaycastNode::get_node_type() && name.GetString().starts_with("attribute");
+}
+
+static void AddRaycastAttributeOutputs(ShaderNode *node,
+                                       HdMaterialNodeParameterContainerSchema params)
+{
+  for (const TfToken &name : params.GetNames()) {
+    if (!IsRaycastAttribute(node, name)) {
+      continue;
+    }
+    const auto valueDs = params.Get(name).GetValue();
+    const VtValue value = valueDs ? valueDs->GetValue(0.0f) : VtValue();
+    if (!value.IsHolding<std::string>() || value.UncheckedGet<std::string>().empty()) {
+      continue;
+    }
+    const ustring attribute(value.UncheckedGet<std::string>());
+    RaycastNode *raycast = static_cast<RaycastNode *>(node);
+    raycast->add_output_attribute_socket(
+        attribute, RaycastNode::ATTR_OUTPUT_FLOAT3, ustring(name.GetString()));
+    raycast->add_output_attribute_socket(
+        attribute, RaycastNode::ATTR_OUTPUT_FLOAT, ustring(name.GetString() + "_fac"));
+    raycast->add_output_attribute_socket(
+        attribute, RaycastNode::ATTR_OUTPUT_FLOAT_ALPHA, ustring(name.GetString() + "_alpha"));
+  }
+}
+
 /* A shader implemented by an OSL file (info:implementationSource = "sourceAsset" with
  * info:OSL:sourceAsset), e.g. Houdini's OSL shader nodes, is a script node too. */
 static ShaderNode *CreateSourceAssetNode(ShaderGraph *graph,
@@ -858,6 +890,9 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     if (paramName == kScriptFilepath && nodeDesc.node->special_type == SHADER_SPECIAL_TYPE_OSL) {
       continue; /* Used to create the node. */
     }
+    if (IsRaycastAttribute(nodeDesc.node, paramName)) {
+      continue; /* Used to create the outputs. */
+    }
     VtValue value = valueDs->GetValue(0.0f);
 
     /* See if the parameter name is in USDPreviewSurface terms, and needs to be converted .*/
@@ -1067,6 +1102,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       /* If it's a native Cycles' node-type, just do the lookup now. */
       else if (const NodeType *nodeType = NodeType::find(cyclesType)) {
         nodeDesc.node = graph->create_node(nodeType);
+        AddRaycastAttributeOutputs(nodeDesc.node, nodeSchema.GetParameters());
         if (nodeDesc.mapping) {
           nodeDesc.mapping->initialize(nodeDesc.node);
         }
