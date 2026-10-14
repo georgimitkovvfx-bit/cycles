@@ -214,10 +214,9 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
     }
     if (need_transformation) {
       /* Convert to world space, at the time the shader converts back to object space at. */
-      const Transform object_tfm = volume_motion ?
-                                       object_fetch_transform_motion_test(
-                                           kg, sd.object, sd.time, nullptr) :
-                                       tfm;
+      const Transform object_tfm = volume_motion ? object_fetch_transform_motion_test(
+                                                       kg, sd.object, sd.time, nullptr) :
+                                                   tfm;
       sd.P = transform_point(&object_tfm, sd.P);
     }
     sd.closure_transparent_extinction = zero_float3();
