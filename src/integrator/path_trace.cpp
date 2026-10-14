@@ -754,7 +754,12 @@ void PathTrace::update_display(const RenderWork &render_work)
 
   const double start_time = time_dt();
 
-  if (output_driver_) {
+  /* Output drivers read full resolution tiles: skip the reduced resolution start of viewport
+   * renders, they keep the previous full resolution result until then. */
+  if (output_driver_ &&
+      render_state_.effective_big_tile_params.window_width == big_tile_params_.window_width &&
+      render_state_.effective_big_tile_params.window_height == big_tile_params_.window_height)
+  {
     LOG_DEBUG << "Invoke buffer update callback.";
 
     const PathTraceTile tile(*this);
