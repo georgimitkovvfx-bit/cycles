@@ -210,6 +210,18 @@ HdCyclesSession::HdCyclesSession(Session *session_, const bool keep_nodes)
 HdCyclesSession::HdCyclesSession(const SessionParams &params, const SceneParams &scene_params)
     : keep_nodes(false), _ownCyclesSession(true)
 {
+  CreateSession(params, scene_params);
+}
+
+HdCyclesSession::~HdCyclesSession()
+{
+  if (_ownCyclesSession) {
+    delete session;
+  }
+}
+
+void HdCyclesSession::CreateSession(const SessionParams &params, const SceneParams &scene_params)
+{
   session = new Session(params, scene_params);
 
   Scene *const scene = session->scene.get();
@@ -228,13 +240,21 @@ HdCyclesSession::HdCyclesSession(const SessionParams &params, const SceneParams 
   }
 
   UpdateDefaultSurface();
+
+  _numDefaultShaders = scene->shaders.size();
 }
 
-HdCyclesSession::~HdCyclesSession()
+bool HdCyclesSession::IsSessionUnused() const
 {
-  if (_ownCyclesSession) {
-    delete session;
-  }
+  const Scene *const scene = session->scene.get();
+  return _ownCyclesSession && scene->geometry.empty() && scene->objects.empty() &&
+         scene->shaders.size() == _numDefaultShaders;
+}
+
+void HdCyclesSession::RecreateSession(const SessionParams &params, const SceneParams &scene_params)
+{
+  delete session;
+  CreateSession(params, scene_params);
 }
 
 void HdCyclesSession::UpdateScene()

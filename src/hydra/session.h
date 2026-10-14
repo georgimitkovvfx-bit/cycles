@@ -187,6 +187,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _resyncEnabled = true;
   }
 
+  // Settings fixed when the Cycles session is created can arrive after the render delegate was
+  // created (Houdini's viewport). Replace the session for them while nothing uses it yet.
+  bool IsSessionUnused() const;
+  void RecreateSession(const CCL_NS::SessionParams &params,
+                       const CCL_NS::SceneParams &scene_params);
+
   CCL_NS::Session *session;
   bool keep_nodes;
 
@@ -194,6 +200,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::atomic<bool> resyncRprims = false;
 
  private:
+  void CreateSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);
+
+  size_t _numDefaultShaders = 0;
   bool _resyncEnabled = false;
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;

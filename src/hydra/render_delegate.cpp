@@ -117,6 +117,16 @@ Node *FindSettingNode(Scene *scene, const std::string &key, ustring &socketName)
   return nullptr;
 }
 
+// Settings fixed when the session is created
+bool IsSessionSetting(const TfToken &key)
+{
+  return key == HdCyclesRenderSettingsTokens->device ||
+         key == HdCyclesRenderSettingsTokens->threads ||
+         key == HdCyclesRenderSettingsTokens->shadingSystem ||
+         key == HdCyclesRenderSettingsTokens->useResolutionDivider ||
+         key == HdCyclesRenderSettingsTokens->curveShape;
+}
+
 SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
 {
   SessionParams params;
@@ -244,14 +254,10 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
     _renderParam = std::make_unique<HdCyclesSession>(params, GetSceneParams(settingsMap, params));
   }
 
+  _settingsMap = settingsMap;
   for (const auto &setting : settingsMap) {
     // Skip over the settings known to be used for initialization only
-    if (setting.first == HdCyclesRenderSettingsTokens->device ||
-        setting.first == HdCyclesRenderSettingsTokens->threads ||
-        setting.first == HdCyclesRenderSettingsTokens->shadingSystem ||
-        setting.first == HdCyclesRenderSettingsTokens->useResolutionDivider ||
-        setting.first == HdCyclesRenderSettingsTokens->curveShape)
-    {
+    if (IsSessionSetting(setting.first)) {
       continue;
     }
 
@@ -645,6 +651,34 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   Scene *const scene = _renderParam->session->scene.get();
   Session *const session = _renderParam->session;
   const std::vector<float> motionTimes = _renderParam->GetMotionTimes();
+
+  /* Houdini's viewport creates the render delegate without settings and sets them afterwards,
+   * also the ones it restarts the delegate for. Recreate the session for those while nothing
+   * uses it, then set the other settings again on it. */
+  _settingsMap[key] = value;
+  if (IsSessionSetting(key)) {
+    /* A thread count limits TBB in the whole process, which hangs Houdini with one thread: keep
+     * the count the session was created with (all threads, unless husk set it). */
+    HdRenderSettingsMap settings = _settingsMap;
+    settings[HdCyclesRenderSettingsTokens->threads] = VtValue(session->params.threads);
+    const SessionParams params = GetSessionParams(settings);
+    const SceneParams sceneParams = GetSceneParams(settings, params);
+    if (!session->params.modified(params) && !scene->params.modified(sceneParams)) {
+      return;
+    }
+    if (_renderIndex || !_renderParam->IsSessionUnused()) {
+      TF_WARN("Cycles render setting %s only applies to a new render", key.GetText());
+      return;
+    }
+    _renderParam->RecreateSession(params, sceneParams);
+    settings = _settingsMap;
+    for (const auto &[otherKey, otherValue] : settings) {
+      if (!IsSessionSetting(otherKey)) {
+        SetRenderSetting(otherKey, otherValue);
+      }
+    }
+    return;
+  }
 
   if (key == HdCyclesRenderSettingsTokens->stageMetersPerUnit) {
     _renderParam->SetStageMetersPerUnit(
