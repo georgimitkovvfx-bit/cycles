@@ -108,6 +108,11 @@ double RenderScheduler::get_time_limit() const
   return time_limit_;
 }
 
+void RenderScheduler::set_max_display_update_interval(const double max_display_update_interval)
+{
+  max_display_update_interval_ = max_display_update_interval;
+}
+
 int RenderScheduler::get_rendered_sample() const
 {
   DCHECK_GT(get_num_rendered_samples(), 0);
@@ -760,6 +765,10 @@ double RenderScheduler::guess_display_update_interval_in_seconds_for_num_samples
                                              time_limit_ - (time_dt() - state_.start_render_time));
 
     update_interval = min(update_interval, remaining_render_time);
+  }
+
+  if (max_display_update_interval_ != 0.0) {
+    update_interval = min(update_interval, max_display_update_interval_);
   }
 
   return update_interval;

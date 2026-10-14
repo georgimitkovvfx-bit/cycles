@@ -146,6 +146,10 @@ class RenderScheduler {
   void set_time_limit(const double time_limit);
   double get_time_limit() const;
 
+  /* Longest time between display updates, in seconds.
+   * Zero lets the interval grow with the render time. */
+  void set_max_display_update_interval(const double max_display_update_interval);
+
   /* Get sample up to which rendering has been done.
    * This is an absolute 0-based value.
    *
@@ -459,6 +463,9 @@ class RenderScheduler {
   /* Limit in seconds for how long path tracing is allowed to happen.
    * Zero means no limit is applied. */
   double time_limit_ = 0.0;
+
+  /* Longest time between display updates in seconds, zero for no limit. */
+  double max_display_update_interval_ = 0.0;
 
   /* Headless rendering without interface. */
   bool headless_;

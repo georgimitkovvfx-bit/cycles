@@ -358,6 +358,7 @@ RenderWork Session::run_update_for_next_iteration()
                                       params.sample_subset_offset,
                                       params.sample_subset_length);
   render_scheduler_.set_time_limit(params.time_limit);
+  render_scheduler_.set_max_display_update_interval(params.max_display_update_interval);
 
   while (have_tiles) {
     render_work = render_scheduler_.get_render_work();

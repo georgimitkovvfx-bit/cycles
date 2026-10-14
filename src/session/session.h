@@ -56,6 +56,10 @@ class SessionParams {
    * Zero means no limit is applied. */
   double time_limit;
 
+  /* Longest time in seconds between display updates of an interactive render.
+   * Zero lets the interval grow with the render time. */
+  double max_display_update_interval;
+
   bool use_profiling;
 
   bool use_auto_tile;
@@ -80,6 +84,7 @@ class SessionParams {
     pixel_size = 1;
     threads = 0;
     time_limit = 0.0;
+    max_display_update_interval = 0.0;
 
     use_profiling = false;
 
