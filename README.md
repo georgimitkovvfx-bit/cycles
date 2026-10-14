@@ -41,7 +41,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
 | Primvars | USD primvars are Cycles attributes for the Attribute, UV Map, Vertex Color, Normal Map/Tangent and USD Primvar Reader nodes, MaterialX geometry nodes and OSL `getattribute`: every interpolation on meshes (also subdivided), curves and points, constant primvars on volumes, float/double/half/int/bool scalars, vectors and arrays. Houdini's attribute names work too: `Cd`, `Alpha`, `uv`, `v`, `accel` find `displayColor`, `displayOpacity`, `st`, `velocities`, `accelerations` and the other way round. Face-varying normals (Houdini vertex `N`) are used. **Instance primvars:** per-point primvars of point instancers (Houdini Instancer LOP, SOP Import of packed primitives) and constant primvars on native instances reach the prototypes' shaders; the prototype's own primvar wins, then the innermost instancer, like Karma |
 | Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as smooth meshes |
-| Motion blur | Object transforms, mesh deformation (time samples or velocities) and the camera, over the camera shutter (Motion Blur in the render settings) |
+| Motion blur | Object transforms, deformation of meshes, curves and points (time samples, velocities, accelerations), point instancers (also nested; velocities and angular velocities), volumes with velocity fields (Houdini `vel` or `vel.x/y/z`) and the camera, over the camera shutter (Motion Blur in the render settings). A **Vector** (motion vector) pass like Blender's when motion blur is off |
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
 | Batch rendering | husk, the USD Render ROP and TOPs (USD Render Scene, USD Render Files, ROP Fetch). The Cycles Render Settings LOP is the stage's default render settings, like Karma's |
 | Per-light settings | Max Bounces, Multiple Importance, Shadow Caustics, ray visibility and Light Group: Cycles tab of the Light LOP |
@@ -57,8 +57,10 @@ Linux and macOS builds have not been tested on Houdini 22.
   passes, others render black. A Blender light pass and the LPE of the same light path (DiffDir and
   directdiffuse) cannot be rendered together. Karma's shadow/unshadowed LPEs and its geometric normal, facing
   ratio, camera-space position, element and motion vector AOVs have no Cycles pass and render black.
-- **Motion blur:** meshes only for deformation (not curves, points or volumes), no instancer motion and no
-  motion vector pass. LOP expressions give no motion: cache samples with the Motion Blur LOP, as for Karma.
+- **Motion blur:** curve and point widths are not blurred; instancers whose instance count changes over the shutter
+  get no motion; a volume field named `vel` or `v` is taken as velocity. LOP expressions give no motion: cache
+  samples with the Motion Blur LOP, as for Karma. The Vector pass needs samples at the previous and next frame
+  and is empty with motion blur on (like Blender); animated focal length gives no zoom vectors.
 - **Textures:** a texture file overwritten in place, with nothing changed in the scene, updates after
   **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
   (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
@@ -87,7 +89,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 - Color Ramp and the curve nodes expose raw arrays instead of Houdini ramp parameters; angles are in radians.
 
 ### Missing features
-- The Fast GI method menu is not exposed. Implicit shapes have no UVs.
+- Implicit shapes have no UVs.
 - Viewport resolution divider (the viewport always renders at full resolution).
 - HIP (AMD) and oneAPI (Intel) devices are disabled; NVIDIA and CPU only.
 
@@ -95,11 +97,10 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 In progress, roughly in this order:
 
-1. Motion blur for curves, points, volumes and instancers; the motion vector pass; Fast GI method.
-2. Texture coordinates on implicit shapes, the viewport resolution divider, Blender render defaults, curve shape.
-3. Viewport responsiveness (start at low resolution, more frequent updates).
-4. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
-5. Confirm the orbit fix and the Reload Textures command in the GUI.
+1. Texture coordinates on implicit shapes, the viewport resolution divider, Blender render defaults, curve shape.
+2. Viewport responsiveness (start at low resolution, more frequent updates).
+3. Ramps and curves as Houdini ramp parameters, angles in degrees, the Raycast node's attributes.
+4. Confirm the orbit fix and the Reload Textures command in the GUI.
 
 ## Building
 
@@ -142,7 +143,9 @@ cmake --install build
    node gets the shader's inputs and outputs (its type is saved in the hip file). Houdini's OSL Generic Shader
    Builder also works inside a Cycles material.
 7. Motion blur: turn on **Motion Blur** in the render settings; the shutter is the camera's (Shutter Open/Close).
-   Changing either no longer restarts the viewport render.
+   Changing either no longer restarts the viewport render. Curves, points, instancers and volumes with velocity
+   fields blur too. The **Vector** pass (Passes > Data) gives Blender-style motion vectors when Motion Blur is off;
+   it needs samples at the previous and next frame (e.g. a Cache LOP).
    Animated LOP parameters only have the current frame: cache samples with the **Motion Blur LOP**, as for Karma.
 8. Attributes: an **Attribute** node (or USD Primvar Reader, MaterialX geometry nodes, OSL `getattribute`) reads
    any primvar by name: Houdini names work (`Cd`, `uv`, `Alpha`), as do per-point attributes of instancers.
@@ -201,6 +204,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Vertex Color node read float and float2 attributes from the float3 array** (core Cycles, SVM): wrong values, CPU and OptiX differed. | `88c9261a2` |
 | **Point instancer orientations and scales were applied in the wrong order** (also nested instancers): instances with orient or pscale, e.g. from the Instancer LOP or SOP Import, landed in the wrong place. | `dfcda7df8` |
 | **Crash re-tessellating a subdivision mesh** when only its points changed. | `459f60fb3` |
+| **Volume velocity motion blur was cut off at the density's edge** (core Cycles): the volume octree only looked at the density at the shutter center, so advected density outside it was skipped. | `2bf5ae95b` |
+| **Motion pass zoom from the default camera field of view** (the previous/next frame projections used 45 degrees). | `acaab9cb4` |
 | **Review fixes for the primvar and instance work:** crash syncing a prototype with no instances (`e1601b67c`); vertex primvars dropped on meshes with unused trailing points (`44220246f`); out of bounds read of short uniform primvars (`f8564cb24`); UV map aliases interpolated linearly on subdivision surfaces (`289d73167`); OSL `getattribute` requested the parameter default instead of the node's value (`b20dd4dfd`); Vertex Color node with standard names (`uv`, `density`) read nothing and attribute ids above 255 wrapped (`c2b98f277`, `3ce37f642`). | `e1601b67c`, `44220246f`, `f8564cb24`, `289d73167`, `b20dd4dfd`, `c2b98f277`, `3ce37f642` |
 | **UsdPreviewSurface / UsdUVTexture translation:** specularColor is F0 in the specular workflow (was 25 times too dim; metallic ignored there, black default), clearcoat maps to the coat, the normal input is tangent space through a Normal Map node, UsdUVTexture scale/bias scale the output (they were used as UV tiling) and `sourceColorSpace` raw is honoured. Matches Karma within 0.02. | `20e7ebebf`, `9dcf9931f`, `3ab17edd7`, `ffcf479f2`, `f921fb280`, `0d47522b3` |
 | **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
@@ -231,6 +236,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Re-sync with scene indices:** with USD 26 scene indices Hydra never re-synced prims a delegate marked dirty. A pass-through scene index at the end of the chain (`resync_scene_index.cpp`) lets the delegate re-sync materials and prims, so motion blur and shutter changes, primvar AOVs and materials that start reading a primvar update without restarting the render. | `b5598ad66`, `b128d02b8`, `24e5ce736`, `014578e4b` |
 | **Texture reload:** image files are identified by path, modification time and size (core Cycles), so a changed or late-created file loads on the next material rebuild; materials always rebuild on parameter changes; a **Reload Textures** renderer command; UDIM `<UDIM>` tiles for native and MaterialX images; asset parameters that do not resolve keep their authored path. | `78dd64030`, `43e22cfbd`, `a39c407be`, `74d5ebeba`, `0ad76428d` |
 | **OSL script nodes request the attributes they read** (core Cycles): `getattribute` names found in the byte code (string constants and parameter defaults), so a Script node reading a primvar no longer needs another node requesting it. | `888453431` |
+| **More motion blur:** velocities, accelerations and angular velocities resolved by USD's `HdsiVelocityMotionResolvingSceneIndex` (with the stage frame rate from Houdini, `b44112557`); curves and points (`ee5261a9b`); point instancers incl. nested ones (`95683248f`); volumes from velocity fields with Houdini's names and a per-second velocity scale (`8dba7bd95`); the motion vector pass at the previous and next frame like Blender, added or removed without restarting (`4a0d66d39`). | `b44112557`, `ee5261a9b`, `95683248f`, `8dba7bd95`, `4a0d66d39` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
 ### Houdini user interface
@@ -253,6 +259,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Light settings and light groups:** Cycles tab on the Light LOP (`HdCyclesPlugin_Light.ds`), Light Group for objects, Light Groups on the Cycles Render Settings LOP. | `a9c2a8a5a` |
 | **Split Render Product by Render Var** and **Primvar AOVs** on the Cycles Render Settings LOP. | `46182e5a1`, `4cca27455` |
 | **Motion Blur** in the render settings (since `b128d02b8` motion blur and the camera shutter no longer restart the delegate). | `3f3fd20e3` |
+| **Fast GI** panel like Blender's: header toggle, Method (Replace / Add), Bounces, AO Factor, AO Distance (`cycles:fast_gi`, `cycles:fast_gi_method`, `cycles:ao_bounces`, `cycles:ao_factor`). | `08668d687` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
 ### Documentation
@@ -288,7 +295,7 @@ Modified upstream files: `src/hydra/{camera,curves,display_driver,field,geometry
 `src/hydra/resources/plugInfo.json`,
 `src/hydra/CMakeLists.txt`, `src/cmake/external_libs.cmake`, `src/cmake/dependency_targets.cmake`,
 `src/cmake/Modules/FindUSDHoudini.cmake`, `src/cmake/Modules/FindUSDPixar.cmake`,
-`src/kernel/geom/attribute.h`, `src/kernel/svm/vertex_color.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
+`src/kernel/bake/bake.h`, `src/kernel/geom/attribute.h`, `src/kernel/svm/{node_types,vertex_color}.h`, `src/scene/{image_oiio,osl,shader_nodes}`, `src/util/colorspace.cpp`, `BUILDING.md`, `README.md`.
 
 Full history: `git log main..hdCycles-H22`.
 
