@@ -72,6 +72,7 @@ class OSLManager {
                           Progress &progress,
                           const bool reload_kernels);
   void device_free(Device *device, DeviceScene *dscene, Scene *scene);
+  void free_textures(Scene *scene);
 
 #ifdef WITH_OSL
   /* osl compile and query */

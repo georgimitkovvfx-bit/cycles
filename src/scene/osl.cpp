@@ -285,6 +285,13 @@ void OSLManager::device_free(Device *device, DeviceScene * /*dscene*/, Scene *sc
 
   /* Remove any textures specific to an image manager from shared render services textures, since
    * the image manager may get destroyed next. */
+  free_textures(scene);
+}
+
+/* Shaders compiled next add their images again, also the files that texture() calls of script
+ * nodes read (looked up by file name), so files changed on disk are loaded again. */
+void OSLManager::free_textures(Scene *scene)
+{
   foreach_render_services([scene](OSLRenderServices *services) {
     for (auto it = services->textures.begin(); it != services->textures.end();) {
       if (it->second.handle.get_manager() == scene->image_manager.get()) {
@@ -1656,6 +1663,7 @@ void OSLManager::device_update_post(Device * /*device*/,
 {
 }
 void OSLManager::device_free(Device * /*device*/, DeviceScene * /*dscene*/, Scene * /*scene*/) {}
+void OSLManager::free_textures(Scene * /*scene*/) {}
 
 void OSLManager::tag_update() {}
 bool OSLManager::need_update() const

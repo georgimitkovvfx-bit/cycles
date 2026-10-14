@@ -25,6 +25,7 @@
 #include "scene/film.h"
 #include "scene/integrator.h"
 #include "scene/object.h"
+#include "scene/osl.h"
 #include "scene/scene.h"
 #include "scene/shader.h"
 #include "scene/shader_graph.h"
@@ -853,8 +854,10 @@ bool HdCyclesDelegate::InvokeCommand(const TfToken &command, const HdCommandArgs
   }
 
   /* Shaders add their images again when compiled without an image handle, and the image manager
-   * loads the files that changed on disk since they were loaded (OIIOImageLoader::equals). */
+   * loads the files that changed on disk since they were loaded (OIIOImageLoader::equals). OSL
+   * holds handles of its own. */
   const SceneLock lock(_renderParam.get());
+  lock.scene->osl_manager->free_textures(lock.scene);
   for (Shader *shader : lock.scene->shaders) {
     for (ShaderNode *node : shader->graph->nodes) {
       if (node->special_type == SHADER_SPECIAL_TYPE_IMAGE_SLOT) {
