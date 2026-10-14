@@ -447,6 +447,7 @@ void HdCyclesDelegate::CommitResources(HdChangeTracker *tracker)
   const SceneLock lock(_renderParam.get());
 
   _renderParam->UpdateScene();
+  _renderParam->rprimsResyncing = false;
 }
 
 /* Called at the start of HdRenderIndex::SyncAll: the prims that HdCyclesSession::RequestResync
@@ -488,6 +489,9 @@ void HdCyclesDelegate::Update()
     for (const SdfPath &id : _renderIndex->GetSprimSubtree(HdPrimTypeTokens->camera, root)) {
       entries.emplace_back(id, cameraLocators);
     }
+    /* The rebuilt materials request an rprim sync for the attributes they read now, which this
+     * sync does already: another one would re-read every rprim and restart the render again. */
+    _renderParam->rprimsResyncing = true;
   }
   resyncSceneIndex->Resync(entries);
 

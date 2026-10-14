@@ -198,6 +198,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   std::atomic<bool> resyncMaterials = false;
   std::atomic<bool> resyncRprims = false;
+  // Set from HdCyclesDelegate::Update() to CommitResources() when that sync syncs every rprim
+  // again: the materials and cameras synced before them need no other rprim sync
+  std::atomic<bool> rprimsResyncing = false;
 
  private:
   void CreateSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);

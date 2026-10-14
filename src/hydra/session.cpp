@@ -565,7 +565,7 @@ void HdCyclesSession::RequestResync(const bool materials, const bool rprims)
   if (materials) {
     resyncMaterials = true;
   }
-  if (rprims) {
+  if (rprims && !rprimsResyncing) {
     resyncRprims = true;
   }
   /* husk and the viewport only sync again while the render is not converged. */
