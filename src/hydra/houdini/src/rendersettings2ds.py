@@ -51,6 +51,11 @@ SESSION_SETTINGS = {
     "cycles:threads": {"type": "int", "default": 0},
     "cycles:shading_system": {"type": "boolean", "default": False},
     "cycles:use_resolution_divider": {"type": "boolean", "default": True},
+    "cycles:curve_shape": {
+        "type": "menu",
+        "default": "ribbon",
+        "enum_values": {"ribbon": "Rounded Ribbons", "thick": "3D Curves"},
+    },
     "cycles:samples": {"type": "int", "default": 1024},
     "cycles:time_limit": {"type": "float", "default": 0.0},
     "cycles:sample_offset": {"type": "int", "default": 0},
@@ -349,6 +354,13 @@ LAYOUT = [
           "long render times with big objects or small step sizes.",
           range=(2, 65536, True, False),
           hidewhen="{ cycles:integrator:volume_ray_marching == 0 }"),
+    ]),
+    P("Curves", [
+        S("cycles:curve_shape", "Shape",
+          "Form of curves. Rounded Ribbons render curves as flat ribbons with rounded normals, "
+          "for fast rendering. 3D Curves render curves as circular 3D geometry, for accurate "
+          "results when viewing closely. Changing it restarts the render.",
+          viewport=True),
     ]),
     P("Motion Blur", [
         S("cycles:integrator:motion_blur", "Motion Blur",

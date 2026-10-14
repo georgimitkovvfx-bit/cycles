@@ -35,7 +35,7 @@ struct SceneLock {
 class HdCyclesSession final : public PXR_NS::HdRenderParam {
  public:
   HdCyclesSession(CCL_NS::Session *session_, const bool keep_nodes);
-  HdCyclesSession(const CCL_NS::SessionParams &params);
+  HdCyclesSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);
   ~HdCyclesSession() override;
 
   void UpdateScene();

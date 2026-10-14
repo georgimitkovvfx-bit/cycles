@@ -20,6 +20,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((threads, "cycles:threads")) \
     ((shadingSystem, "cycles:shading_system")) \
     ((useResolutionDivider, "cycles:use_resolution_divider")) \
+    ((curveShape, "cycles:curve_shape")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \

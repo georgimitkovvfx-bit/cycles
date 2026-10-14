@@ -177,6 +177,9 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
   // Clear geometry before populating it again with updated topology
   _geom->clear(true);
 
+  // Ribbons or 3D curves for the whole scene, like Blender's Curves Shape setting
+  _geom->curve_shape = static_cast<const Scene *>(_geom->get_owner())->params.hair_shape;
+
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
   const HdBasisCurvesTopologySchema topoSchema =
       HdBasisCurvesSchema::GetFromParent(prim.dataSource).GetTopology();

@@ -38,6 +38,7 @@ class ParticleSystem;
 class Pass;
 class PointCloud;
 class Scene;
+class SceneParams;
 class Session;
 class SessionParams;
 class Shader;

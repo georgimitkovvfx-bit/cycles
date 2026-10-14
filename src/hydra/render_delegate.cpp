@@ -200,6 +200,20 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   return params;
 }
 
+SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionParams &sessionParams)
+{
+  SceneParams params;
+  params.shadingsystem = sessionParams.shadingsystem;
+
+  // Curve shape is fixed when the scene is created, like the shading system
+  const auto it = settings.find(HdCyclesRenderSettingsTokens->curveShape);
+  if (it != settings.end() && GetStringSetting(it->second, "ribbon") == "thick") {
+    params.hair_shape = CURVE_THICK;
+  }
+
+  return params;
+}
+
 HdCyclesResyncSceneIndexPtr FindResyncSceneIndex(const HdSceneIndexBaseRefPtr &sceneIndex)
 {
   if (auto resync = TfDynamic_cast<HdCyclesResyncSceneIndexRefPtr>(sceneIndex)) {
@@ -222,15 +236,21 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
                                    const bool keep_nodes)
     : HdRenderDelegate()
 {
-  _renderParam = session_ ? std::make_unique<HdCyclesSession>(session_, keep_nodes) :
-                            std::make_unique<HdCyclesSession>(GetSessionParams(settingsMap));
+  if (session_) {
+    _renderParam = std::make_unique<HdCyclesSession>(session_, keep_nodes);
+  }
+  else {
+    const SessionParams params = GetSessionParams(settingsMap);
+    _renderParam = std::make_unique<HdCyclesSession>(params, GetSceneParams(settingsMap, params));
+  }
 
   for (const auto &setting : settingsMap) {
     // Skip over the settings known to be used for initialization only
     if (setting.first == HdCyclesRenderSettingsTokens->device ||
         setting.first == HdCyclesRenderSettingsTokens->threads ||
         setting.first == HdCyclesRenderSettingsTokens->shadingSystem ||
-        setting.first == HdCyclesRenderSettingsTokens->useResolutionDivider)
+        setting.first == HdCyclesRenderSettingsTokens->useResolutionDivider ||
+        setting.first == HdCyclesRenderSettingsTokens->curveShape)
     {
       continue;
     }
@@ -747,6 +767,9 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
   }
   if (key == HdCyclesRenderSettingsTokens->useResolutionDivider) {
     return VtValue(session->params.use_resolution_divider);
+  }
+  if (key == HdCyclesRenderSettingsTokens->curveShape) {
+    return VtValue(TfToken(scene->params.hair_shape == CURVE_THICK ? "thick" : "ribbon"));
   }
   if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     return VtValue(session->params.time_limit);

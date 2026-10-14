@@ -207,11 +207,9 @@ HdCyclesSession::HdCyclesSession(Session *session_, const bool keep_nodes)
 {
 }
 
-HdCyclesSession::HdCyclesSession(const SessionParams &params)
+HdCyclesSession::HdCyclesSession(const SessionParams &params, const SceneParams &scene_params)
     : keep_nodes(false), _ownCyclesSession(true)
 {
-  SceneParams scene_params;
-  scene_params.shadingsystem = params.shadingsystem;
   session = new Session(params, scene_params);
 
   Scene *const scene = session->scene.get();
