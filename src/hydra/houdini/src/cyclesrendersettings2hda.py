@@ -493,6 +493,20 @@ def top_parameters(sockets, reference):
         template.setConditional(hou.parmCondType.DisableWhen, "")
         group.append(template)
 
+    # Sets Blender's values instead of changing the parameter defaults, see BLENDER_DEFAULTS.
+    values = [(hou.text.encodeParm(name), value)
+              for name, value in rendersettings2ds.BLENDER_DEFAULTS.items()]
+    group.append(hou.ButtonParmTemplate(
+        "blender_defaults", "Blender Defaults",
+        script_callback="node = kwargs['node']; [node.parm(n).set(v) for n, v in %r]" % values,
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Set Blender's defaults for final renders: 4096 samples, denoising, Blue-Noise "
+             "sampling pattern, Light Threshold 0.01, bounces 12 total, 4 diffuse, 4 glossy, 12 "
+             "transmission, 0 volume and 8 transparent, Filter Glossy 1, Blackman-Harris pixel "
+             "filter of width 1.5, transparent glass Roughness Threshold 0.1 and 3D Curves. "
+             "Denoising stays on the GPU (Blender denoises final renders on the CPU). Revert to "
+             "Defaults returns to the Cycles defaults."))
+
     # The Cycles settings, in Blender's layout.
     ds = rendersettings2ds.Writer(sockets, "lop").generate()
     cycles = hou.ParmTemplateGroup()
@@ -581,6 +595,18 @@ def main():
                     "renderproduct_combineddiffuse", "renderproduct_AOV",
                     "renderproduct_Cd", "renderproduct_Combined_key"]:
         raise RuntimeError("Unexpected split render products %r" % products)
+    test.parm("blender_defaults").pressButton()
+    settings_prim = test.stage().GetPrimAtPath("/Render/%s" % test.name())
+    for name, value in rendersettings2ds.BLENDER_DEFAULTS.items():
+        # Settings in disabled panels are not authored (Transparent Glass is off).
+        authored = settings_prim.GetAttribute(name).Get()
+        if authored is None:
+            authored = test.parm(hou.text.encodeParm(name)).eval()
+        same = (str(authored) == value if isinstance(value, str) else
+                abs(authored - value) <= 1e-6)
+        if not same:
+            raise RuntimeError("Blender Defaults authored %s = %r instead of %r"
+                               % (name, authored, value))
     log("Wrote %s (%d settings)" % (hda_path, len(list(rendersettings2ds.settings()))))
     return 0
 

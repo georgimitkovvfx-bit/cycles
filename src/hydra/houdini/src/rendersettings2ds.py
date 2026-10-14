@@ -71,6 +71,29 @@ SESSION_SETTINGS = {
     "cycles:ao_factor": {"type": "float", "default": 1.0},
 }
 
+# Blender's defaults for final renders (Blender 5.2) where they differ from the delegate's, set by
+# the Blender Defaults button of the Cycles Render Settings LOP. The parameter defaults stay what
+# the delegate uses when a setting is not authored, which saved scenes rely on. GPU denoising
+# stays on, while Blender denoises final renders on the CPU by default.
+BLENDER_DEFAULTS = {
+    "cycles:samples": 4096,
+    "cycles:integrator:use_denoise": True,
+    # What Blender's Automatic pattern uses for final renders
+    "cycles:integrator:sampling_pattern": "blue_noise_pure",
+    "cycles:integrator:light_sampling_threshold": 0.01,
+    "cycles:integrator:max_bounce": 12,
+    "cycles:integrator:max_diffuse_bounce": 4,
+    "cycles:integrator:max_glossy_bounce": 4,
+    "cycles:integrator:max_transmission_bounce": 12,
+    "cycles:integrator:max_volume_bounce": 0,
+    "cycles:integrator:transparent_max_bounce": 8,
+    "cycles:integrator:filter_glossy": 1.0,
+    "cycles:film:filter_type": "blackman_harris",
+    "cycles:film:filter_width": 1.5,
+    "cycles:background:transparent_roughness_threshold": 0.1,
+    "cycles:curve_shape": "thick",
+}
+
 # Menu labels and items for socket enums, where the title cased token is not good enough.
 # Items missing here are left out of the menu.
 MENU_ITEMS = {
@@ -782,6 +805,19 @@ def generate(sockets, viewport):
     return Writer(sockets, "viewport" if viewport else "global").generate()
 
 
+def check_blender_defaults(sockets):
+    """Every Blender default must be a setting in the layout, menu values one of its items."""
+    layout = {setting["name"]: setting for setting in settings()}
+    for name, value in BLENDER_DEFAULTS.items():
+        if name not in layout:
+            raise RuntimeError("Blender default %s is not in the layout" % name)
+        socket = sockets[name]
+        if socket["type"] == "menu" and value not in menu_items(layout[name], socket):
+            raise RuntimeError("Blender default %s = %r is not a menu item" % (name, value))
+        if value == socket["default"]:
+            raise RuntimeError("Blender default %s = %r is the delegate default" % (name, value))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -791,6 +827,7 @@ def main():
     args = parser.parse_args()
 
     sockets = load_sockets(args.json)
+    check_blender_defaults(sockets)
     os.makedirs(args.ds_install_dir, exist_ok=True)
 
     for suffix, ds in (("Global", generate(sockets, False)),
