@@ -50,6 +50,7 @@ SESSION_SETTINGS = {
     },
     "cycles:threads": {"type": "int", "default": 0},
     "cycles:shading_system": {"type": "boolean", "default": False},
+    "cycles:use_resolution_divider": {"type": "boolean", "default": True},
     "cycles:samples": {"type": "int", "default": 1024},
     "cycles:time_limit": {"type": "float", "default": 0.0},
     "cycles:sample_offset": {"type": "int", "default": 0},
@@ -407,6 +408,12 @@ LAYOUT = [
             S("cycles:threads", "Threads",
               "Number of CPU threads to use. 0 uses all cores.",
               range=(0, 64, True, False)),
+        ], open=True),
+        P("Viewport", [
+            S("cycles:use_resolution_divider", "Start at Low Resolution",
+              "Render the first samples after a change at a lower resolution, for faster "
+              "feedback while navigating. Changing it restarts the render.",
+              viewport=True),
         ], open=True),
     ]),
 ]

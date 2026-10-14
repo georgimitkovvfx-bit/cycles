@@ -8,7 +8,8 @@
         "needsdepth" : false,
         "needsselection" : true,
         "depthstyle" : "opengl",
-        "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system" ],
+        "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system",
+                                    "cycles:use_resolution_divider" ],
         "husk.default_output" : "cycles.exr"
     }
 }

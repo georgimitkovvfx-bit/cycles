@@ -122,7 +122,6 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   SessionParams params;
   params.threads = 0;
   params.background = false;
-  params.use_resolution_divider = false;
 
   HdRenderSettingsMap::const_iterator it;
 
@@ -136,6 +135,12 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   it = settings.find(HdCyclesRenderSettingsTokens->shadingSystem);
   if (it != settings.end() && VtValue::Cast<bool>(it->second).GetWithDefault(false)) {
     params.shadingsystem = SHADINGSYSTEM_OSL;
+  }
+
+  // Lower resolution start of renders after a change, fixed when the session is created
+  it = settings.find(HdCyclesRenderSettingsTokens->useResolutionDivider);
+  if (it != settings.end()) {
+    params.use_resolution_divider = VtValue::Cast<bool>(it->second).GetWithDefault(true);
   }
 
   // Get the Cycles device from settings or environment, defaulting to the best available GPU
@@ -224,7 +229,8 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
     // Skip over the settings known to be used for initialization only
     if (setting.first == HdCyclesRenderSettingsTokens->device ||
         setting.first == HdCyclesRenderSettingsTokens->threads ||
-        setting.first == HdCyclesRenderSettingsTokens->shadingSystem)
+        setting.first == HdCyclesRenderSettingsTokens->shadingSystem ||
+        setting.first == HdCyclesRenderSettingsTokens->useResolutionDivider)
     {
       continue;
     }
@@ -738,6 +744,9 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
   }
   if (key == HdCyclesRenderSettingsTokens->shadingSystem) {
     return VtValue(session->params.shadingsystem == SHADINGSYSTEM_OSL);
+  }
+  if (key == HdCyclesRenderSettingsTokens->useResolutionDivider) {
+    return VtValue(session->params.use_resolution_divider);
   }
   if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     return VtValue(session->params.time_limit);
