@@ -9,7 +9,8 @@ except for the parameters that shader2hda.py lays out like Blender: ramp paramet
 cycles_socket) are baked to the Cycles lookup table socket they edit, sampled at 256 positions
 like Blender. The channels of RGB and Vector Curves (tag cycles_channel r/g/b/c or x/y/z) are
 combined into one table, RGB Curves applying the combined curve "c" first like Blender.
-Parameters tagged cycles_units=degrees are shown in degrees and authored in radians.
+Parameters tagged cycles_units=degrees are shown in degrees and authored in radians, also when
+promoted to the material.
 
 Houdini's own ramp convention (key count, first key basis, keys and values) cannot be used: it
 loses per-key and monotone cubic interpolation, and its key count input has the name of the
@@ -99,6 +100,27 @@ class CyclesShaderTranslatorHelper(ShaderTranslatorHelper):
         if tags.get("cycles_units") == "degrees":
             return RadiansParmTranslator(parm_tuple)
         return ShaderTranslatorHelper.parameterTranslator(self, parm_tuple)
+
+    def setUsdAncestorInputValue(self, parm_tuple, input_node, ancestor_input):
+        # A promoted angle: the material parameter (or the Parameter VOP's default without one)
+        # shows the degrees of the Cycles input it feeds, but has none of its tags.
+        def feeds_degrees(connection):
+            target = connection.outputNode().parmTuple(connection.inputName())
+            return target is not None and \
+                target.parmTemplate().tags().get("cycles_units") == "degrees"
+
+        if not any(feeds_degrees(c) for c in input_node.outputConnections()):
+            ShaderTranslatorHelper.setUsdAncestorInputValue(self, parm_tuple, input_node,
+                                                            ancestor_input)
+        elif parm_tuple:
+            if shaderutils.isShaderParmActive(parm_tuple):
+                RadiansParmTranslator(parm_tuple).setAttrib(ancestor_input.GetAttr(),
+                                                            self.usdTimeCode())
+        else:
+            value_parm = shaderutils.valueParmTupleFromTypeParm(input_node, "parmtype")
+            if value_parm:
+                shaderutils.setUsdAttribFromParmValue(
+                    ancestor_input, tuple(math.radians(v) for v in value_parm.eval()))
 
 
 class CyclesShaderTranslator(ShaderTranslator):
