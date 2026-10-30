@@ -45,6 +45,11 @@ class TableParmTranslator(RampParmTranslator):
     def attribName(self):
         return self.parmTuple().parmTemplate().tags()["cycles_socket"]
 
+    def isParmChanged(self, parm_names):
+        # The input maps to one channel's parameter only: an edit of any channel authors it again.
+        return any(RampParmTranslator(pt).isParmChanged(parm_names)
+                   for pt in self.channels().values())
+
     def channels(self):
         socket = self.attribName()
         return {pt.parmTemplate().tags().get("cycles_channel"): pt
