@@ -49,7 +49,7 @@ HdCyclesLight::~HdCyclesLight() = default;
 
 HdDirtyBits HdCyclesLight::GetInitialDirtyBitsMask() const
 {
-  return DirtyBits::DirtyTransform | DirtyBits::DirtyParams;
+  return DirtyBits::DirtyTransform | DirtyBits::DirtyParams | DirtyBits::DirtyCollection;
 }
 
 void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
@@ -79,6 +79,14 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
 
     const Transform tfm = transform_scale(make_float3(metersPerUnit)) * convert_transform(xform);
     _object->set_tfm(tfm);
+  }
+
+  // Light and shadow linking categories (HdsiLightLinkingSceneIndex), empty for all objects
+  if (*dirtyBits & (DirtyBits::DirtyParams | DirtyBits::DirtyCollection)) {
+    static_cast<HdCyclesSession *>(renderParam)
+        ->SetLightLinks(_object->name.string(),
+                        GetTypedValue<TfToken>(lightDs, HdTokens->lightLink, TfToken()),
+                        GetTypedValue<TfToken>(lightDs, HdTokens->shadowLink, TfToken()));
   }
 
   if (*dirtyBits & DirtyBits::DirtyParams) {
@@ -407,6 +415,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
 
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
+  static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(_object->name.string());
 
   if (!keep_nodes) {
     /* Delete the object before the light, since the object references the light. */

@@ -22,6 +22,7 @@
 #include <pxr/imaging/hd/renderBuffer.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
 
@@ -298,6 +299,118 @@ void HdCyclesSession::UpdateScene()
     }
 
     scene->background->tag_update(scene);
+  }
+
+  UpdateLightLinking();
+}
+
+void HdCyclesSession::SetLightLinks(const std::string &light,
+                                    const TfToken &lightLink,
+                                    const TfToken &shadowLink)
+{
+  std::pair<TfToken, TfToken> links(lightLink, shadowLink);
+  const auto it = _lightLinks.find(light);
+  if (it == _lightLinks.end() ? !links.first.IsEmpty() || !links.second.IsEmpty() :
+                                it->second != links)
+  {
+    _lightLinks[light] = std::move(links);
+    _lightLinkingDirty = true;
+  }
+}
+
+void HdCyclesSession::SetCategories(const std::string &object, const VtArray<TfToken> &categories)
+{
+  const auto it = _categories.find(object);
+  if (it == _categories.end() ? !categories.empty() : it->second != categories) {
+    _categories[object] = categories;
+    _lightLinkingDirty = true;
+  }
+}
+
+void HdCyclesSession::RemoveLinking(const std::string &name)
+{
+  _lightLinkingDirty |= _lightLinks.erase(name) + _categories.erase(name) != 0;
+}
+
+void HdCyclesSession::UpdateLightLinking()
+{
+  if (!_lightLinkingDirty) {
+    return;
+  }
+  _lightLinkingDirty = false;
+  Scene *const scene = session->scene.get();
+
+  /* Like Blender's light linking. The link category of a light is the set of objects it lights
+   * (light link) or that cast its shadows (shadow link). Objects that belong to the same link
+   * categories share a receiver (blocker) set, and a light is a member of the sets that hold its
+   * category. Set 0 is the default of objects without linking, an empty category links all. */
+  std::array<std::set<TfToken>, 2> linkCategories;
+  for (const auto &[light, links] : _lightLinks) {
+    for (const auto &[kind, category] : {std::pair(0, links.first), std::pair(1, links.second)}) {
+      if (!category.IsEmpty()) {
+        linkCategories[kind].insert(category);
+      }
+    }
+  }
+
+  std::array<std::map<std::vector<TfToken>, uint>, 2> sets = {{{{{}, 0}}, {{{}, 0}}}};
+  std::unordered_map<std::string, std::array<uint, 2>> objectSets;
+  for (const auto &[object, categories] : _categories) {
+    for (int kind = 0; kind < 2; kind++) {
+      std::vector<TfToken> linked;
+      for (const TfToken &category : categories) {
+        if (linkCategories[kind].count(category)) {
+          linked.push_back(category);
+        }
+      }
+      std::sort(linked.begin(), linked.end());
+      linked.erase(std::unique(linked.begin(), linked.end()), linked.end());
+      objectSets[object][kind] =
+          sets[kind].emplace(std::move(linked), uint(sets[kind].size())).first->second;
+    }
+  }
+  if (sets[0].size() > LIGHT_LINK_SET_MAX || sets[1].size() > LIGHT_LINK_SET_MAX) {
+    TF_WARN("Cycles supports %d light and %d shadow linking sets, the scene needs %d and %d",
+            LIGHT_LINK_SET_MAX,
+            LIGHT_LINK_SET_MAX,
+            int(sets[0].size()),
+            int(sets[1].size()));
+  }
+
+  const auto membership = [&sets](const int kind, const TfToken &category) {
+    if (category.IsEmpty()) {
+      return uint64_t(LIGHT_LINK_MASK_ALL);
+    }
+    uint64_t bits = 0;
+    for (const auto &[categories, set] : sets[kind]) {
+      if (set < LIGHT_LINK_SET_MAX &&
+          std::binary_search(categories.begin(), categories.end(), category))
+      {
+        bits |= uint64_t(1) << set;
+      }
+    }
+    return bits;
+  };
+
+  for (Object *object : scene->objects) {
+    std::array<uint, 2> objectSet = {0, 0};
+    std::pair<TfToken, TfToken> links;
+    if (object->get_geometry()->is_light()) {
+      if (const auto it = _lightLinks.find(object->name.string()); it != _lightLinks.end()) {
+        links = it->second;
+      }
+    }
+    else if (const auto it = objectSets.find(object->name.string()); it != objectSets.end()) {
+      objectSet = it->second;
+    }
+
+    object->set_receiver_light_set(objectSet[0]);
+    object->set_blocker_shadow_set(objectSet[1]);
+    object->set_light_set_membership(membership(0, links.first));
+    object->set_shadow_set_membership(membership(1, links.second));
+    if (object->is_modified()) {
+      object->tag_update(scene);
+    }
   }
 }
 

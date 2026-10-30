@@ -16,6 +16,7 @@
 #include "session/session.h"
 #include "util/hash.h"
 
+#include <pxr/imaging/hd/categoriesSchema.h>
 #include <pxr/imaging/hd/materialBindingSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
@@ -46,7 +47,8 @@ HdDirtyBits HdCyclesGeometry<Base, CyclesBase>::GetInitialDirtyBitsMask() const
 {
   return HdChangeTracker::DirtyPrimID | HdChangeTracker::DirtyTransform |
          HdChangeTracker::DirtyMaterialId | HdChangeTracker::DirtyVisibility |
-         HdChangeTracker::DirtyInstancer | HdChangeTracker::DirtyPrimvar;
+         HdChangeTracker::DirtyInstancer | HdChangeTracker::DirtyPrimvar |
+         HdChangeTracker::DirtyCategories;
 }
 
 template<typename Base, typename CyclesBase>
@@ -112,6 +114,15 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     _geom->set_used_shaders(usedShaders);
   }
 
+  /* Light linking categories the prim belongs to (HdsiLightLinkingSceneIndex). */
+  if (*dirtyBits & HdChangeTracker::DirtyCategories) {
+    VtArray<TfToken> categories;
+    if (HdCategoriesSchema categoriesSchema = HdCategoriesSchema::GetFromParent(primDs)) {
+      categories = categoriesSchema.GetIncludedCategoryNames();
+    }
+    static_cast<HdCyclesSession *>(renderParam)->SetCategories(id.GetString(), categories);
+  }
+
   /* A prototype that no point of its instancer uses has no instances. */
   if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
     // This needs to be corrected in the AOV
@@ -175,6 +186,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     for (size_t i = oldSize; i < newSize; ++i) {
       _instances[i] = lock.scene->create_node<Object>();
       InitializeInstance(static_cast<int>(i));
+    }
+    if (newSize > oldSize) {
+      static_cast<HdCyclesSession *>(renderParam)->TagLightLinking();
     }
 
     /* After the resize: a prototype without instances has no object left to write to. */
@@ -453,6 +467,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
 
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
+  static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(Base::GetId().GetString());
 
   /* Delete the instances before the geometry, since the objects reference the geometry. */
   if (!keep_nodes) {

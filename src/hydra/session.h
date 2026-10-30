@@ -46,6 +46,23 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Override the automatic background transparency, which depends on presence of a dome light
   void SetTransparentBackground(const std::optional<bool> transparent);
 
+  // Light and shadow linking: the link categories of each light and the categories each object
+  // belongs to (from HdsiLightLinkingSceneIndex), by object name. UpdateScene turns them into
+  // Cycles light and shadow sets. Called with the scene locked.
+  // shortcut: per-instance categories of point instancers are ignored (instances use the
+  // prototype's), read HdInstanceCategoriesSchema if instances need their own links.
+  void SetLightLinks(const std::string &light,
+                     const PXR_NS::TfToken &lightLink,
+                     const PXR_NS::TfToken &shadowLink);
+  void SetCategories(const std::string &object,
+                     const PXR_NS::VtArray<PXR_NS::TfToken> &categories);
+  void RemoveLinking(const std::string &name);
+  // Objects were added: they need their sets
+  void TagLightLinking()
+  {
+    _lightLinkingDirty = true;
+  }
+
   double GetStageMetersPerUnit() const
   {
     return _stageMetersPerUnit;
@@ -219,6 +236,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
  private:
   void CreateSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);
+  void UpdateLightLinking();
+
+  std::unordered_map<std::string, std::pair<PXR_NS::TfToken, PXR_NS::TfToken>> _lightLinks;
+  std::unordered_map<std::string, PXR_NS::VtArray<PXR_NS::TfToken>> _categories;
+  bool _lightLinkingDirty = false;
 
   size_t _numDefaultShaders = 0;
   bool _resyncEnabled = false;

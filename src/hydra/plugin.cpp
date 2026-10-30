@@ -16,7 +16,10 @@
 #include <pxr/base/tf/envSetting.h>
 #include <pxr/imaging/hd/rendererPluginRegistry.h>
 #if PXR_VERSION >= 2408
+#  include <pxr/imaging/hd/retainedDataSource.h>
 #  include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
+#  include <pxr/imaging/hd/tokens.h>
+#  include <pxr/imaging/hdsi/lightLinkingSceneIndex.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -96,6 +99,32 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
       nullptr,
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+
+  /* Light and shadow linking: categories of the light linking collections on lights, and the
+   * categories each geometry prim belongs to. */
+  const VtArray<TfToken> lightTypes(HdLightPrimTypeTokens().begin(),
+                                    HdLightPrimTypeTokens().end());
+  const VtArray<TfToken> geometryTypes = {HdPrimTypeTokens->mesh,
+                                          HdPrimTypeTokens->basisCurves,
+                                          HdPrimTypeTokens->points,
+                                          HdPrimTypeTokens->volume};
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle &inputArgs) -> HdSceneIndexBaseRefPtr {
+        return HdsiLightLinkingSceneIndex::New(inputScene, inputArgs);
+      },
+      HdRetainedContainerDataSource::New(
+          HdsiLightLinkingSceneIndexTokens->lightPrimTypes,
+          HdRetainedTypedSampledDataSource<VtArray<TfToken>>::New(lightTypes),
+          HdsiLightLinkingSceneIndexTokens->lightFilterPrimTypes,
+          HdRetainedTypedSampledDataSource<VtArray<TfToken>>::New(
+              VtArray<TfToken>{HdPrimTypeTokens->lightFilter}),
+          HdsiLightLinkingSceneIndexTokens->geometryPrimTypes,
+          HdRetainedTypedSampledDataSource<VtArray<TfToken>>::New(geometryTypes)),
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
 
   /* Last in the chain, after every scene index that adds prims, so that the render delegate can
    * have any prim synced again (HdCyclesDelegate::Update), and the velocities of all prims are
