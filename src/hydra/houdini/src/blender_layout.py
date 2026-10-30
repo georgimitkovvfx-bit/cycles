@@ -42,6 +42,9 @@ ALIASES = {
              "Value_002": "value3"},
     "vector_math": {"operation": "math_type", "Vector": "vector1", "Vector_001": "vector2",
                     "Vector_002": "vector3"},
+    "integer_math": {"operation": "math_type", "Value": "value1", "Value_001": "value2",
+                     "Value_002": "value3"},
+    "boolean_math": {"operation": "math_type", "Boolean": "boolean1", "Boolean_001": "boolean2"},
     "mix": {"blend_type": "mix_type"},
     "mix_float": {"clamp_factor": "use_clamp"},
     "mix_vector": {"clamp_factor": "use_clamp"},
@@ -176,10 +179,6 @@ VARIANT_MENUS = {
     "glossy_bsdf": "Shader",
     "scene_time": "Input",
     "set_normal": "Utilities/Vector",
-    # New in Blender 5.3, where the Add menu has them here (not in the 5.2 layouts).
-    "boolean_math": "Utilities/Math",
-    "integer_math": "Utilities/Math",
-    "get_vector_component": "Utilities/Vector",
 }
 
 

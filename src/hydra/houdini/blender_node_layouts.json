@@ -1,6 +1,26 @@
 {
- "blender_version": "5.2.0 LTS",
+ "blender_version": "5.3.0 Beta",
  "menus": {
+  "FunctionNodeBooleanMath": "Utilities/Math",
+  "FunctionNodeFindInString": "Utilities/Text",
+  "FunctionNodeFormatString": "Utilities/Text",
+  "FunctionNodeGetVectorComponent": "Utilities/Vector",
+  "FunctionNodeInputBool": "Input/Constant",
+  "FunctionNodeInputInt": "Input/Constant",
+  "FunctionNodeInputMenu": "Input/Constant",
+  "FunctionNodeInputSpecialCharacters": "Utilities/Text",
+  "FunctionNodeInputString": "Input/Constant",
+  "FunctionNodeInputVector": "Input/Constant",
+  "FunctionNodeIntegerMath": "Utilities/Math",
+  "FunctionNodeMatchString": "Utilities/Text",
+  "FunctionNodeReplaceString": "Utilities/Text",
+  "FunctionNodeReverseString": "Utilities/Text",
+  "FunctionNodeSetStringCase": "Utilities/Text",
+  "FunctionNodeSliceString": "Utilities/Text",
+  "FunctionNodeStringLength": "Utilities/Text",
+  "FunctionNodeStringToValue": "Utilities/Text",
+  "FunctionNodeTrimString": "Utilities/Text",
+  "FunctionNodeValueToString": "Utilities/Text",
   "ShaderNodeAddShader": "Shader",
   "ShaderNodeAmbientOcclusion": "Input",
   "ShaderNodeAttribute": "Input",
@@ -37,7 +57,10 @@
   "ShaderNodeHueSaturation": "Color",
   "ShaderNodeInvert": "Color",
   "ShaderNodeLayerWeight": "Input",
+  "ShaderNodeLightAccumulation": "Shader",
+  "ShaderNodeLightEvaluation": "Input",
   "ShaderNodeLightFalloff": "Color",
+  "ShaderNodeLightInfo": "Input",
   "ShaderNodeLightPath": "Input",
   "ShaderNodeMapRange": "Utilities/Vector",
   "ShaderNodeMapping": "Utilities/Vector",
@@ -64,6 +87,7 @@
   "ShaderNodeSeparateColor": "Color",
   "ShaderNodeSeparateXYZ": "Utilities/Vector",
   "ShaderNodeShaderToRGB": "Color",
+  "ShaderNodeShadowRaycast": "Input",
   "ShaderNodeSubsurfaceScattering": "Shader",
   "ShaderNodeTangent": "Input",
   "ShaderNodeTexBrick": "Texture",
@@ -99,6 +123,1114 @@
   "ShaderNodeWireframe": "Input"
  },
  "nodes": {
+  "FunctionNodeBooleanMath": {
+   "blender_idname": "FunctionNodeBooleanMath",
+   "fixed": {},
+   "items": [
+    {
+     "default": "AND",
+     "description": "",
+     "identifier": "operation",
+     "items": [
+      [
+       "AND",
+       "And",
+       "True when both inputs are true"
+      ],
+      [
+       "OR",
+       "Or",
+       "True when at least one input is true"
+      ],
+      [
+       "NOT",
+       "Not",
+       "Opposite of the input"
+      ],
+      [
+       "NAND",
+       "Not And",
+       "True when at least one input is false"
+      ],
+      [
+       "NOR",
+       "Nor",
+       "True when both inputs are false"
+      ],
+      [
+       "XNOR",
+       "Equal",
+       "True when both inputs are equal (exclusive nor)"
+      ],
+      [
+       "XOR",
+       "Not Equal",
+       "True when both inputs are different (exclusive or)"
+      ],
+      [
+       "IMPLY",
+       "Imply",
+       "True unless the first input is true and the second is false"
+      ],
+      [
+       "NIMPLY",
+       "Subtract",
+       "True when the first input is true and the second is false (not imply)"
+      ]
+     ],
+     "kind": "property",
+     "label": "Operation",
+     "type": "ENUM"
+    },
+    {
+     "default": false,
+     "description": "",
+     "hide_value": false,
+     "identifier": "Boolean",
+     "kind": "input",
+     "label": "Boolean",
+     "type": "BOOLEAN"
+    },
+    {
+     "default": false,
+     "description": "",
+     "hide_value": false,
+     "identifier": "Boolean_001",
+     "kind": "input",
+     "label": "Boolean",
+     "type": "BOOLEAN"
+    }
+   ],
+   "label": "Boolean Math",
+   "outputs": [
+    {
+     "identifier": "Boolean",
+     "label": "Boolean",
+     "type": "BOOLEAN"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeFindInString": {
+   "blender_idname": "FunctionNodeFindInString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Search",
+     "kind": "input",
+     "label": "Search",
+     "type": "STRING"
+    },
+    {
+     "default": "From Start",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Mode",
+     "kind": "input",
+     "label": "Mode",
+     "type": "MENU"
+    }
+   ],
+   "label": "Find in String",
+   "outputs": [
+    {
+     "identifier": "First Found",
+     "label": "First Found",
+     "type": "INT"
+    },
+    {
+     "identifier": "Count",
+     "label": "Count",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeFormatString": {
+   "blender_idname": "FunctionNodeFormatString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Format",
+     "kind": "input",
+     "label": "Format",
+     "type": "STRING"
+    },
+    {
+     "description": "",
+     "hide_value": false,
+     "identifier": "__extend__",
+     "kind": "input",
+     "label": "",
+     "type": "CUSTOM"
+    }
+   ],
+   "label": "Format String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeGetVectorComponent": {
+   "blender_idname": "FunctionNodeGetVectorComponent",
+   "fixed": {},
+   "items": [
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": false,
+     "identifier": "Vector",
+     "kind": "input",
+     "label": "Vector",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "XYZ",
+     "type": "VECTOR"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hide_value": false,
+     "identifier": "Index",
+     "kind": "input",
+     "label": "Index",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Get Vector Component",
+   "outputs": [
+    {
+     "identifier": "Value",
+     "label": "Value",
+     "type": "VALUE"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputBool": {
+   "blender_idname": "FunctionNodeInputBool",
+   "fixed": {},
+   "items": [
+    {
+     "default": false,
+     "description": "Input value used for unconnected socket",
+     "identifier": "boolean",
+     "kind": "property",
+     "label": "Boolean",
+     "type": "BOOLEAN"
+    }
+   ],
+   "label": "Boolean",
+   "outputs": [
+    {
+     "identifier": "Boolean",
+     "label": "Boolean",
+     "type": "BOOLEAN"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputInt": {
+   "blender_idname": "FunctionNodeInputInt",
+   "fixed": {},
+   "items": [
+    {
+     "default": 0,
+     "description": "Input value used for unconnected socket",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "identifier": "integer",
+     "kind": "property",
+     "label": "Integer",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Integer",
+   "outputs": [
+    {
+     "identifier": "Integer",
+     "label": "Integer",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputMenu": {
+   "blender_idname": "FunctionNodeInputMenu",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "Value of the output socket",
+     "identifier": "value",
+     "items": [],
+     "kind": "property",
+     "label": "Menu",
+     "type": "ENUM"
+    }
+   ],
+   "label": "Menu",
+   "outputs": [
+    {
+     "identifier": "Menu",
+     "label": "Menu",
+     "type": "MENU"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputSpecialCharacters": {
+   "blender_idname": "FunctionNodeInputSpecialCharacters",
+   "fixed": {},
+   "items": [],
+   "label": "Special Characters",
+   "outputs": [
+    {
+     "identifier": "Line Break",
+     "label": "Line Break",
+     "type": "STRING"
+    },
+    {
+     "identifier": "Tab",
+     "label": "Tab",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputString": {
+   "blender_idname": "FunctionNodeInputString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "identifier": "string",
+     "kind": "property",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "label": "String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeInputVector": {
+   "blender_idname": "FunctionNodeInputVector",
+   "fixed": {},
+   "items": [
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "identifier": "vector",
+     "kind": "property",
+     "label": "Vector",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "XYZ",
+     "type": "FLOAT"
+    },
+    {
+     "default": 3,
+     "description": "Dimensions of the vector socket",
+     "hard_range": [
+      2,
+      4
+     ],
+     "identifier": "vector_dimensions",
+     "kind": "property",
+     "label": "Dimensions",
+     "soft_range": [
+      2,
+      4
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Vector",
+   "outputs": [
+    {
+     "identifier": "Vector",
+     "label": "Vector",
+     "type": "VECTOR"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeIntegerMath": {
+   "blender_idname": "FunctionNodeIntegerMath",
+   "fixed": {},
+   "items": [
+    {
+     "default": "ADD",
+     "description": "",
+     "identifier": "operation",
+     "items": [
+      [
+       "ADD",
+       "Add",
+       "A + B"
+      ],
+      [
+       "SUBTRACT",
+       "Subtract",
+       "A - B"
+      ],
+      [
+       "MULTIPLY",
+       "Multiply",
+       "A * B"
+      ],
+      [
+       "DIVIDE",
+       "Divide",
+       "A / B"
+      ],
+      [
+       "MULTIPLY_ADD",
+       "Multiply Add",
+       "A * B + C"
+      ],
+      [
+       "ABSOLUTE",
+       "Absolute",
+       "Non-negative value of A, abs(A)"
+      ],
+      [
+       "NEGATE",
+       "Negate",
+       "-A"
+      ],
+      [
+       "POWER",
+       "Power",
+       "A power B, pow(A,B)"
+      ],
+      [
+       "MINIMUM",
+       "Minimum",
+       "The minimum value from A and B, min(A,B)"
+      ],
+      [
+       "MAXIMUM",
+       "Maximum",
+       "The maximum value from A and B, max(A,B)"
+      ],
+      [
+       "SIGN",
+       "Sign",
+       "Return the sign of A, sign(A)"
+      ],
+      [
+       "DIVIDE_ROUND",
+       "Divide Round",
+       "Divide and round result toward zero"
+      ],
+      [
+       "DIVIDE_FLOOR",
+       "Divide Floor",
+       "Divide and floor to the largest integer smaller than or equal to the result"
+      ],
+      [
+       "DIVIDE_CEIL",
+       "Divide Ceiling",
+       "Divide and ceil to the smallest integer greater than or equal to the result"
+      ],
+      [
+       "FLOORED_MODULO",
+       "Floored Modulo",
+       "Modulo that is periodic for both negative and positive operands"
+      ],
+      [
+       "MODULO",
+       "Modulo",
+       "Modulo which is the remainder of A / B"
+      ],
+      [
+       "GCD",
+       "Greatest Common Divisor",
+       "The largest positive integer that divides into each of the values A and B, e.g. GCD(8,12) = 4"
+      ],
+      [
+       "LCM",
+       "Least Common Multiple",
+       "The smallest positive integer that is divisible by both A and B, e.g. LCM(6,10) = 30"
+      ]
+     ],
+     "kind": "property",
+     "label": "Operation",
+     "type": "ENUM"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hide_value": false,
+     "identifier": "Value",
+     "kind": "input",
+     "label": "Value",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "operation": "ABSOLUTE"
+      },
+      {
+       "operation": "NEGATE"
+      },
+      {
+       "operation": "SIGN"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Value_001",
+     "kind": "input",
+     "label": "Value",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "operation": "ABSOLUTE"
+      },
+      {
+       "operation": "ADD"
+      },
+      {
+       "operation": "DIVIDE"
+      },
+      {
+       "operation": "DIVIDE_CEIL"
+      },
+      {
+       "operation": "DIVIDE_FLOOR"
+      },
+      {
+       "operation": "DIVIDE_ROUND"
+      },
+      {
+       "operation": "FLOORED_MODULO"
+      },
+      {
+       "operation": "GCD"
+      },
+      {
+       "operation": "LCM"
+      },
+      {
+       "operation": "MAXIMUM"
+      },
+      {
+       "operation": "MINIMUM"
+      },
+      {
+       "operation": "MODULO"
+      },
+      {
+       "operation": "MULTIPLY"
+      },
+      {
+       "operation": "NEGATE"
+      },
+      {
+       "operation": "POWER"
+      },
+      {
+       "operation": "SIGN"
+      },
+      {
+       "operation": "SUBTRACT"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Value_002",
+     "kind": "input",
+     "label": "Value",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Integer Math",
+   "outputs": [
+    {
+     "identifier": "Value",
+     "label": "Value",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeMatchString": {
+   "blender_idname": "FunctionNodeMatchString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": "Starts With",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Operation",
+     "kind": "input",
+     "label": "Operation",
+     "type": "MENU"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Key",
+     "kind": "input",
+     "label": "Key",
+     "type": "STRING"
+    }
+   ],
+   "label": "Match String",
+   "outputs": [
+    {
+     "identifier": "Result",
+     "label": "Result",
+     "type": "BOOLEAN"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeReplaceString": {
+   "blender_idname": "FunctionNodeReplaceString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Find",
+     "kind": "input",
+     "label": "Find",
+     "type": "STRING"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Replace",
+     "kind": "input",
+     "label": "Replace",
+     "type": "STRING"
+    }
+   ],
+   "label": "Replace String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeReverseString": {
+   "blender_idname": "FunctionNodeReverseString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "label": "Reverse String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeSetStringCase": {
+   "blender_idname": "FunctionNodeSetStringCase",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": "Uppercase",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Case",
+     "kind": "input",
+     "label": "Case",
+     "type": "MENU"
+    }
+   ],
+   "label": "Set String Case",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeSliceString": {
+   "blender_idname": "FunctionNodeSliceString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hide_value": false,
+     "identifier": "Position",
+     "kind": "input",
+     "label": "Position",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    },
+    {
+     "default": 10,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hide_value": false,
+     "identifier": "Length",
+     "kind": "input",
+     "label": "Length",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Slice String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeStringLength": {
+   "blender_idname": "FunctionNodeStringLength",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "label": "String Length",
+   "outputs": [
+    {
+     "identifier": "Length",
+     "label": "Length",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeStringToValue": {
+   "blender_idname": "FunctionNodeStringToValue",
+   "fixed": {},
+   "items": [
+    {
+     "default": "FLOAT",
+     "description": "",
+     "identifier": "data_type",
+     "items": [
+      [
+       "FLOAT",
+       "Float",
+       "Floating-point value"
+      ],
+      [
+       "INT",
+       "Integer",
+       "32-bit integer"
+      ]
+     ],
+     "kind": "property",
+     "label": "Data Type",
+     "type": "ENUM"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": 10,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "data_type": "FLOAT"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Base",
+     "kind": "input",
+     "label": "Base",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "String to Value",
+   "outputs": [
+    {
+     "identifier": "Value",
+     "label": "Value",
+     "type": "VALUE"
+    },
+    {
+     "identifier": "Length",
+     "label": "Length",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeTrimString": {
+   "blender_idname": "FunctionNodeTrimString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "String",
+     "kind": "input",
+     "label": "String",
+     "type": "STRING"
+    },
+    {
+     "default": "",
+     "description": "",
+     "hide_value": false,
+     "identifier": "Characters",
+     "kind": "input",
+     "label": "Characters",
+     "type": "STRING"
+    },
+    {
+     "default": true,
+     "description": "",
+     "hide_value": false,
+     "identifier": "Whitespace",
+     "kind": "input",
+     "label": "Whitespace",
+     "type": "BOOLEAN"
+    },
+    {
+     "default": true,
+     "description": "",
+     "hide_value": false,
+     "identifier": "Start",
+     "kind": "input",
+     "label": "Start",
+     "type": "BOOLEAN"
+    },
+    {
+     "default": true,
+     "description": "",
+     "hide_value": false,
+     "identifier": "End",
+     "kind": "input",
+     "label": "End",
+     "type": "BOOLEAN"
+    }
+   ],
+   "label": "Trim String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
+  "FunctionNodeValueToString": {
+   "blender_idname": "FunctionNodeValueToString",
+   "fixed": {},
+   "items": [
+    {
+     "default": "FLOAT",
+     "description": "",
+     "identifier": "data_type",
+     "items": [
+      [
+       "FLOAT",
+       "Float",
+       "Floating-point value"
+      ],
+      [
+       "INT",
+       "Integer",
+       "32-bit integer"
+      ]
+     ],
+     "kind": "property",
+     "label": "Data Type",
+     "type": "ENUM"
+    },
+    {
+     "default": 0.0,
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": false,
+     "identifier": "Value",
+     "kind": "input",
+     "label": "Value",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "NONE",
+     "type": "VALUE"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "data_type": "INT"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Decimals",
+     "kind": "input",
+     "label": "Decimals",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    },
+    {
+     "default": 10,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "data_type": "FLOAT"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Base",
+     "kind": "input",
+     "label": "Base",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    },
+    {
+     "default": 0,
+     "description": "",
+     "hard_range": [
+      -2147483648,
+      2147483647
+     ],
+     "hidden_when": [
+      {
+       "data_type": "FLOAT"
+      }
+     ],
+     "hide_value": false,
+     "identifier": "Padding",
+     "kind": "input",
+     "label": "Padding",
+     "soft_range": [
+      -10000,
+      10000
+     ],
+     "subtype": "NONE",
+     "type": "INT"
+    }
+   ],
+   "label": "Value to String",
+   "outputs": [
+    {
+     "identifier": "String",
+     "label": "String",
+     "type": "STRING"
+    }
+   ],
+   "panels": []
+  },
   "ShaderNodeAddShader": {
    "blender_idname": "ShaderNodeAddShader",
    "fixed": {},
@@ -274,6 +1406,11 @@
        "VIEW_LAYER",
        "View Layer",
        "The attribute is associated with the View Layer, Scene or World that is being rendered"
+      ],
+      [
+       "LIGHT",
+       "Light",
+       "The attribute is associated with the Light that is being rendered"
       ]
      ],
      "kind": "property",
@@ -864,6 +2001,42 @@
      "type": "VALUE"
     },
     {
+     "default": 0.0,
+     "description": "",
+     "hard_range": [
+      0.0,
+      1.0
+     ],
+     "hide_value": false,
+     "identifier": "Anisotropy",
+     "kind": "input",
+     "label": "Anisotropy",
+     "soft_range": [
+      -1.0,
+      1.0
+     ],
+     "subtype": "FACTOR",
+     "type": "VALUE"
+    },
+    {
+     "default": 0.0,
+     "description": "",
+     "hard_range": [
+      0.0,
+      1.0
+     ],
+     "hide_value": false,
+     "identifier": "Rotation",
+     "kind": "input",
+     "label": "Rotation",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "FACTOR",
+     "type": "VALUE"
+    },
+    {
      "default": 1.5,
      "description": "",
      "hard_range": [
@@ -896,6 +2069,28 @@
      "identifier": "Normal",
      "kind": "input",
      "label": "Normal",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "NONE",
+     "type": "VECTOR"
+    },
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Tangent",
+     "kind": "input",
+     "label": "Tangent",
      "soft_range": [
       -10000.0,
       10000.0
@@ -2286,6 +3481,44 @@
       1.0
      ],
      "subtype": "FACTOR",
+     "type": "VALUE"
+    },
+    {
+     "default": 0.0,
+     "description": "",
+     "hard_range": [
+      0.0,
+      1.0
+     ],
+     "hide_value": false,
+     "identifier": "Transmission Dispersion Scale",
+     "kind": "input",
+     "label": "Transmission Dispersion Scale",
+     "panel": "Transmission",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "FACTOR",
+     "type": "VALUE"
+    },
+    {
+     "default": 20.0,
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": false,
+     "identifier": "Transmission Dispersion Abbe Number",
+     "kind": "input",
+     "label": "Transmission Dispersion Abbe Number",
+     "panel": "Transmission",
+     "soft_range": [
+      9.0,
+      91.0
+     ],
+     "subtype": "NONE",
      "type": "VALUE"
     },
     {
@@ -4241,6 +5474,233 @@
    ],
    "panels": []
   },
+  "ShaderNodeLightAccumulation": {
+   "blender_idname": "ShaderNodeLightAccumulation",
+   "fixed": {},
+   "items": [
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Diffuse Light",
+     "kind": "input",
+     "label": "Diffuse Light",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    },
+    {
+     "default": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Diffuse Color",
+     "kind": "input",
+     "label": "Diffuse Color",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    },
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Glossy Light",
+     "kind": "input",
+     "label": "Glossy Light",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    },
+    {
+     "default": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Glossy Color",
+     "kind": "input",
+     "label": "Glossy Color",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    },
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Transmission Light",
+     "kind": "input",
+     "label": "Transmission Light",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    },
+    {
+     "default": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "description": "",
+     "hard_range": [
+      0.0,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Transmission Color",
+     "kind": "input",
+     "label": "Transmission Color",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "COLOR",
+     "type": "RGBA"
+    }
+   ],
+   "label": "Light Accumulation",
+   "outputs": [
+    {
+     "identifier": "Shader",
+     "label": "Shader",
+     "type": "SHADER"
+    }
+   ],
+   "panels": []
+  },
+  "ShaderNodeLightEvaluation": {
+   "blender_idname": "ShaderNodeLightEvaluation",
+   "fixed": {},
+   "items": [
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Position",
+     "kind": "input",
+     "label": "Position",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "NONE",
+     "type": "VECTOR"
+    },
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Normal",
+     "kind": "input",
+     "label": "Normal",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "NONE",
+     "type": "VECTOR"
+    }
+   ],
+   "label": "Light Evaluation",
+   "outputs": [
+    {
+     "identifier": "Factor",
+     "label": "Factor",
+     "type": "VALUE"
+    },
+    {
+     "identifier": "Mask",
+     "label": "Mask",
+     "type": "VALUE"
+    },
+    {
+     "identifier": "Direction",
+     "label": "Direction",
+     "type": "VECTOR"
+    },
+    {
+     "identifier": "Distance",
+     "label": "Distance",
+     "type": "VALUE"
+    }
+   ],
+   "panels": []
+  },
   "ShaderNodeLightFalloff": {
    "blender_idname": "ShaderNodeLightFalloff",
    "fixed": {},
@@ -4300,6 +5760,52 @@
      "type": "VALUE"
     }
    ],
+   "panels": []
+  },
+  "ShaderNodeLightInfo": {
+   "blender_idname": "ShaderNodeLightInfo",
+   "fixed": {},
+   "items": [],
+   "label": "Light Info",
+   "outputs": [
+    {
+     "identifier": "Color",
+     "label": "Color",
+     "type": "RGBA"
+    },
+    {
+     "identifier": "Power",
+     "label": "Power",
+     "type": "VALUE"
+    },
+    {
+     "identifier": "Position",
+     "label": "Position",
+     "type": "VECTOR"
+    }
+   ],
+   "panels": []
+  },
+  "ShaderNodeLightIterInternalInput": {
+   "blender_idname": "ShaderNodeLightIterInternalInput",
+   "fixed": {},
+   "items": [],
+   "label": "Light Iter Internal Input",
+   "outputs": [
+    {
+     "identifier": "LightIndex",
+     "label": "LightIndex",
+     "type": "INT"
+    }
+   ],
+   "panels": []
+  },
+  "ShaderNodeLightIterInternalOutput": {
+   "blender_idname": "ShaderNodeLightIterInternalOutput",
+   "fixed": {},
+   "items": [],
+   "label": "Light Iter Internal Output",
+   "outputs": [],
    "panels": []
   },
   "ShaderNodeLightPath": {
@@ -7256,6 +8762,61 @@
      "identifier": "Alpha",
      "label": "Alpha",
      "type": "VALUE"
+    }
+   ],
+   "panels": []
+  },
+  "ShaderNodeShadowRaycast": {
+   "blender_idname": "ShaderNodeShadowRaycast",
+   "fixed": {},
+   "items": [
+    {
+     "default": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "description": "",
+     "hard_range": [
+      -3.4028234663852886e+38,
+      3.4028234663852886e+38
+     ],
+     "hide_value": true,
+     "identifier": "Position",
+     "kind": "input",
+     "label": "Position",
+     "soft_range": [
+      -10000.0,
+      10000.0
+     ],
+     "subtype": "NONE",
+     "type": "VECTOR"
+    },
+    {
+     "default": 1.0,
+     "description": "",
+     "hard_range": [
+      0.0,
+      1.0
+     ],
+     "hide_value": false,
+     "identifier": "Softness",
+     "kind": "input",
+     "label": "Softness",
+     "soft_range": [
+      0.0,
+      1.0
+     ],
+     "subtype": "FACTOR",
+     "type": "VALUE"
+    }
+   ],
+   "label": "Shadow Raycast",
+   "outputs": [
+    {
+     "identifier": "Color",
+     "label": "Color",
+     "type": "RGBA"
     }
    ],
    "panels": []
@@ -11276,6 +12837,11 @@
        "CAMERA",
        "Camera",
        ""
+      ],
+      [
+       "LIGHT",
+       "Light",
+       ""
       ]
      ],
      "kind": "property",
@@ -11300,6 +12866,11 @@
       [
        "CAMERA",
        "Camera",
+       ""
+      ],
+      [
+       "LIGHT",
+       "Light",
        ""
       ]
      ],
