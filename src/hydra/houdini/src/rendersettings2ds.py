@@ -87,7 +87,6 @@ BLENDER_DEFAULTS = {
     "cycles:integrator:max_transmission_bounce": 12,
     "cycles:integrator:max_volume_bounce": 0,
     "cycles:integrator:transparent_max_bounce": 8,
-    "cycles:integrator:filter_glossy": 1.0,
     "cycles:film:filter_type": "blackman_harris",
     "cycles:film:filter_width": 1.5,
     "cycles:background:transparent_roughness_threshold": 0.1,
