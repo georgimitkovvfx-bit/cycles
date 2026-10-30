@@ -782,7 +782,17 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else {
     ustring socketName;
     if (Node *const node = FindSettingNode(scene, key.GetString(), socketName)) {
-      if (const SocketType *socket = node->type->find_input(socketName)) {
+      /* The Fast GI settings set the AO sockets when authored, in any order. Without them, the
+       * sockets authored by older Cycles render settings still apply. */
+      const bool fastGiSocket = node == scene->integrator &&
+                                (socketName == "ao_factor" || socketName == "ao_additive_factor" ||
+                                 socketName == "ao_bounces");
+      const bool fastGiAuthored = _settingsMap.count(HdCyclesRenderSettingsTokens->fastGi) ||
+                                  _settingsMap.count(HdCyclesRenderSettingsTokens->fastGiMethod) ||
+                                  _settingsMap.count(HdCyclesRenderSettingsTokens->aoBounces) ||
+                                  _settingsMap.count(HdCyclesRenderSettingsTokens->aoFactor);
+      const SocketType *socket = node->type->find_input(socketName);
+      if (socket && !(fastGiSocket && fastGiAuthored)) {
         SetNodeValue(node, *socket, value);
         ++_settingsVersion;
 

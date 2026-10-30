@@ -152,13 +152,26 @@ def S(name, label, help, range=None, viewport=False, toolbar_icon=None, hidewhen
     }
 
 
-def P(label, items, open=False, toggle=None):
+def P(label, items, open=False, toggle=None, legacy=()):
     """A panel of settings and sub-panels, like a Blender properties panel.
 
     toggle is the setting shown in the panel header in Blender. It is the first parameter of the
-    folder, and the other settings in the panel are disabled when it is off.
+    folder, and the other settings in the panel are disabled when it is off. legacy settings are
+    invisible parameters at the end of the panel, which are not in settings().
     """
-    return {"panel": label, "items": items, "open": open, "toggle": toggle}
+    return {"panel": label, "items": items, "open": open, "toggle": toggle, "legacy": legacy}
+
+
+# The integrator sockets the Fast GI panel showed before the Fast GI settings. Invisible
+# parameters keep their values in saved scenes: the Render Settings LOP tab still authors them
+# when set (the delegate ignores them when Fast GI settings are authored), the Cycles Render
+# Settings LOP converts them to the Fast GI settings when a scene is loaded.
+LEGACY_SETTINGS = [
+    S("cycles:integrator:ao_bounces", "AO Bounces", "Replaced by Fast GI Approximation."),
+    S("cycles:integrator:ao_factor", "AO Factor", "Replaced by Fast GI Approximation."),
+    S("cycles:integrator:ao_additive_factor", "AO Additive Factor",
+      "Replaced by Fast GI Approximation."),
+]
 
 
 # Layout of the settings, following Blender's Cycles render properties.
@@ -368,7 +381,7 @@ LAYOUT = [
             S("cycles:integrator:ao_distance", "AO Distance",
               "Distance from shading point to trace rays for the approximation.",
               range=(0, 100, True, False)),
-        ], toggle="cycles:fast_gi"),
+        ], toggle="cycles:fast_gi", legacy=LEGACY_SETTINGS),
     ]),
     P("Volumes", [
         S("cycles:integrator:volume_ray_marching", "Biased",
@@ -707,6 +720,9 @@ class Writer:
             is_toggle = item["name"] == panel["toggle"]
             self.write_parm(item, name, depth + 1,
                             parent_conditions if is_toggle else conditions)
+        if self.mode != "viewport":
+            for setting in panel["legacy"]:
+                self.write_parm(dict(setting, invisible=True), name, depth + 1, [])
         self.lines.append(indent + "}")
 
     def write_parm(self, setting, section, depth, disable_conditions):
@@ -741,6 +757,8 @@ class Writer:
                 indent + "    }",
                 indent + '    parmtag { "sidefx::look" "icon" }',
             ]
+            if setting.get("invisible"):
+                lines.append(indent + "    invisible")
             if setting["hidewhen"]:
                 lines.append(indent + "    hidewhen %s" % quote(
                     encode_condition(setting["hidewhen"], self.encode)))
@@ -782,6 +800,8 @@ class Writer:
         if setting["hidewhen"]:
             lines.append(indent + "    hidewhen %s" % quote(
                 encode_condition(setting["hidewhen"], self.encode)))
+        if setting.get("invisible"):
+            lines.append(indent + "    invisible")
         lines.append(indent + "}")
 
     def generate(self):

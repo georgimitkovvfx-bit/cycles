@@ -53,6 +53,30 @@ loptoolutils.genericTool(kwargs, '$HDA_NAME')]]></script>
 """
 
 
+# Converts nodes saved before the Fast GI settings (HDA version 2) when a scene is loaded: their
+# integrator AO sockets (rendersettings2ds.LEGACY_SETTINGS, kept as invisible parameters) become
+# the Fast GI settings, which the node always authors.
+SYNC_NODE_VERSION = """import hou
+if not kwargs["old_version"]:
+    node = kwargs["node"]
+
+    def parm(name):
+        return node.parm(hou.text.encodeParm(name))
+
+    bounces = parm("cycles:integrator:ao_bounces").eval()
+    factor = parm("cycles:integrator:ao_factor").eval()
+    additive = parm("cycles:integrator:ao_additive_factor").eval()
+    if additive > 0 or (factor > 0 and bounces > 0):
+        parm("cycles:fast_gi").set(True)
+        parm("cycles:fast_gi_method").set("add" if additive > 0 else "replace")
+        parm("cycles:ao_factor").set(additive if additive > 0 else factor)
+        if bounces > 0:
+            parm("cycles:ao_bounces").set(bounces)
+    for name in %r:
+        parm(name).revertToDefaults()
+"""
+
+
 def ensure_cycles_parms(node, ds_dir):
     """Make sure the Render Settings LOP has the Cycles tab, also when Houdini does not know
     the Cycles renderer yet in this session."""
@@ -552,6 +576,11 @@ def main():
     definition.setParmTemplateGroup(top_parameters(sockets, reference))
     definition.setIcon("$CYCLES_ICON")
     definition.addSection("Tools.shelf", TOOL_XML)
+    definition.setVersion("2")
+    definition.addSection("SyncNodeVersion", SYNC_NODE_VERSION % [
+        setting["name"] for setting in rendersettings2ds.LEGACY_SETTINGS])
+    definition.setExtraFileOption("SyncNodeVersion/IsPython", True)
+    definition.setExtraFileOption("SyncNodeVersion/IsScript", True)
     definition.setExtraFileOption("UnlockOnCreate", False)
     definition.save(hda_path)
 
