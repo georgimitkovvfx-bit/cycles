@@ -189,10 +189,10 @@ static bool resize_block_2pass(OIIO::ImageBuf &dst, const OIIO::ImageBuf &src, O
    * any NDC -> pixel math, and just directly traverse pixels. */
   const SRCTYPE *s = (const SRCTYPE *)src.localpixels();
   SRCTYPE *d = (SRCTYPE *)dst.localpixels();
-  assert(s && d);                                      /* Assume contig bufs */
-  d += roi.ybegin * dst.spec().width * nchannels;      /* Top of dst OIIO::ROI */
-  const size_t ystride = src.spec().width * nchannels; /* Scanline offset */
-  s += 2 * roi.ybegin * ystride;                       /* Top of src OIIO::ROI */
+  assert(s && d);                                          /* Assume contig bufs */
+  d += int64_t(roi.ybegin) * dst.spec().width * nchannels; /* Top of dst OIIO::ROI */
+  const size_t ystride = src.spec().width * nchannels;     /* Scanline offset */
+  s += 2 * roi.ybegin * ystride;                           /* Top of src OIIO::ROI */
 
   /* Run through destination rows, doing the two-pass bilerp filter. */
   const size_t dw = roi.width(), dh = roi.height(); /* Loop invariants */
@@ -346,7 +346,7 @@ static std::string alpha_type_string(const ImageAlphaType alpha_type)
   return "auto";
 }
 
-static std::string format_tyoe_string(const ImageFormatType format_type)
+static std::string format_type_string(const ImageFormatType format_type)
 {
   switch (format_type) {
     case IMAGE_FORMAT_PLAIN:
@@ -375,14 +375,14 @@ static std::string unique_filename_tx(const string &filepath,
   /* Scene linear colorspace that we may be converting to. */
   md5.append("xyz_to_scene_linear:" + ColorSpaceManager::get_xyz_to_scene_linear_rgb_string());
 
-  /* Colorspace. */
+  /* Color-space. */
   md5.append("colorspace:" + (ColorSpaceManager::colorspace_is_data(colorspace) ?
                                   u_colorspace_data.string() :
                                   colorspace.string()));
 
   md5.append("alpha:" + alpha_type_string(alpha_type));
 
-  md5.append("format:" + format_tyoe_string(format_type));
+  md5.append("format:" + format_type_string(format_type));
 
   /* For absolute texture cache path, include the full file path. This requires
    * a matching directory structure though. */
@@ -578,7 +578,7 @@ static void clamp_half_tx(OIIO::ImageBuf &buf, const TypeDesc out_format)
 
   assert(buf.spec().format == TypeFloat);
 
-  const int64_t num_values = buf.spec().width * buf.spec().height * buf.spec().nchannels;
+  const int64_t num_values = int64_t(buf.spec().width) * buf.spec().height * buf.spec().nchannels;
   float *pixels = static_cast<float *>(buf.localpixels());
   for (int64_t i = 0; i < num_values; i++) {
     pixels[i] = clamp(pixels[i], -HALF_MAX, HALF_MAX);
@@ -590,7 +590,7 @@ static void convert_srgb_tx(OIIO::ImageBuf &buf, const bool from_srgb)
   assert(buf.spec().format == TypeFloat);
   assert(buf.spec().nchannels == 1 || buf.spec().nchannels == 4);
 
-  const int64_t num_pixels = buf.spec().width * buf.spec().height;
+  const int64_t num_pixels = int64_t(buf.spec().width) * buf.spec().height;
 
   if (buf.spec().nchannels == 1) {
     float *pixels = static_cast<float *>(buf.localpixels());

@@ -216,7 +216,7 @@ AttributeStandard PrimvarStandard(const HdPrimvarsSchema &primvars,
     return ATTR_STD_VERTEX_COLOR;
   }
   /* The Attribute node requests these names as standard attributes. */
-  const AttributeStandard std = Attribute::name_standard(name.GetText());
+  const AttributeStandard std = Attribute::name_standard(ustring(name.GetString()));
   return (std >= ATTR_STD_VOLUME_DENSITY && std <= ATTR_STD_VOLUME_VELOCITY) ? std : ATTR_STD_NONE;
 }
 

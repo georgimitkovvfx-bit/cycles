@@ -145,7 +145,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
           renderBuffer->Unmap();
         }
         else {
-          // Do not warn on missing elementId, which is a standard AOV but is not implememted
+          // Do not warn on missing elementId, which is a standard AOV but is not implemented
           if (aovBinding.aovName != HdAovTokens->elementId) {
             TF_RUNTIME_ERROR("Could not find pass for AOV '%s'", aovBinding.aovName.GetText());
           }

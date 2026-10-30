@@ -264,7 +264,7 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
   };
   static const std::string prefix = "cycles:object:";
 
-  uint visibility = Base::IsVisible() ? PATH_RAY_VISIBILITY_ALL : 0;
+  uint visibility = Base::IsVisible() ? PATH_RAY_VISIBILITY_OBJECT_ALL : 0;
   std::vector<std::pair<const SocketType *, VtValue>> values;
 
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);

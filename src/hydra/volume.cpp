@@ -95,10 +95,7 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
         const auto alias = aliases.find(fieldName.GetString());
         const ustring name(alias != aliases.end() ? alias->second : fieldName.GetString());
 
-        AttributeStandard std = Attribute::name_standard(name.c_str());
-        if (std < ATTR_STD_VOLUME_DENSITY || std > ATTR_STD_VOLUME_VELOCITY_Z) {
-          std = ATTR_STD_NONE;
-        }
+        const AttributeStandard std = Attribute::name_volume_standard(name);
 
         // Skip attributes that are not needed
         if ((std != ATTR_STD_NONE && _geom->need_attribute(scene, std)) ||
