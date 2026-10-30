@@ -344,6 +344,7 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (scale)
     (bias)
     (metallic)
+    (fallback)
 );
 // clang-format on
 
@@ -355,6 +356,28 @@ static T GetParameter(const HdMaterialNodeParameterContainerSchema &params,
 {
   const HdSampledDataSourceHandle ds = params.Get(name).GetValue();
   return ds ? VtValue::Cast<T>(ds->GetValue(0.0f)).GetWithDefault(fallback) : fallback;
+}
+
+/* USD's fallback input of texture and primvar readers (float, float2, float3, float4 or int), as
+ * a color and alpha, or `value` when it is not authored. */
+static GfVec4f GetFallback(const HdMaterialNodeParameterContainerSchema &params,
+                           const GfVec4f &value)
+{
+  const HdSampledDataSourceHandle ds = params.Get(CyclesMaterialTokens->fallback).GetValue();
+  const VtValue fallback = ds ? ds->GetValue(0.0f) : VtValue();
+  if (fallback.IsHolding<float>() || fallback.IsHolding<int>()) {
+    const float f = VtValue::Cast<float>(fallback).Get<float>();
+    return GfVec4f(f, f, f, 1.0f);
+  }
+  if (fallback.IsHolding<GfVec2f>()) {
+    const GfVec2f v = fallback.UncheckedGet<GfVec2f>();
+    return GfVec4f(v[0], v[1], 0.0f, 1.0f);
+  }
+  if (fallback.IsHolding<GfVec3f>()) {
+    const GfVec3f v = fallback.UncheckedGet<GfVec3f>();
+    return GfVec4f(v[0], v[1], v[2], 1.0f);
+  }
+  return VtValue::Cast<GfVec4f>(fallback).GetWithDefault(value);
 }
 
 /* Simple class to handle remapping of USDPreviewSurface nodes and parameters to Cycles
@@ -472,13 +495,21 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
                    const HdMaterialNodeParameterContainerSchema & /*params*/) const override
   {
     /* Applied to the outputs in finalize(), they are not the texture mapping "Scale". */
-    return name != CyclesMaterialTokens->scale && name != CyclesMaterialTokens->bias;
+    return name != CyclesMaterialTokens->scale && name != CyclesMaterialTokens->bias &&
+           name != CyclesMaterialTokens->fallback;
   }
 
   void finalize(ShaderGraph *graph,
                 ShaderNode *node,
                 const HdMaterialNodeParameterContainerSchema &params) const override
   {
+    /* A missing file or UDIM tile reads the fallback, (0, 0, 0, 1) by default, like in Karma and
+     * Storm, instead of Cycles' pink. */
+    ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+    const GfVec4f fallback = GetFallback(params, GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+    image->set_missing(make_float3(fallback[0], fallback[1], fallback[2]));
+    image->set_missing_alpha(fallback[3]);
+
     /* The outputs are the texture values times scale plus bias, e.g. to unpack normal maps.
      * shortcut: authored values only, a connected scale or bias is ignored; add it when an asset
      * needs it. */
@@ -584,6 +615,29 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
   }
 };
 
+class UsdToCyclesPrimvarReader : public UsdToCyclesMapping {
+ public:
+  using UsdToCyclesMapping::UsdToCyclesMapping;
+
+  bool isInputUsed(const TfToken &name,
+                   const HdMaterialNodeParameterContainerSchema & /*params*/) const override
+  {
+    return name != CyclesMaterialTokens->fallback;
+  }
+
+  void finalize(ShaderGraph * /*graph*/,
+                ShaderNode *node,
+                const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* Geometry without the primvar reads the fallback (e.g. 1 for a displayOpacity reader into
+     * opacity), the Attribute node's Fac is its average. */
+    AttributeNode *attribute = static_cast<AttributeNode *>(node);
+    const GfVec4f fallback = GetFallback(params, GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+    attribute->set_missing(make_float3(fallback[0], fallback[1], fallback[2]));
+    attribute->set_missing_alpha(fallback[3]);
+  }
+};
+
 namespace {
 
 class UsdToCycles {
@@ -609,11 +663,8 @@ class UsdToCycles {
           {TfToken("file"), ustring("filename")},
           {TfToken("sourceColorSpace"), ustring("colorspace")},
       }};
-  /* shortcut: 'fallback' is ignored, a geometry without the primvar reads 0 (Karma and Storm use
-   * the fallback, e.g. 1 for a displayOpacity reader into opacity). Cycles' Attribute node has no
-   * "found" output; add one when assets rely on fallbacks. */
-  const UsdToCyclesMapping UsdPrimvarReader = {"attribute",
-                                               {{TfToken("varname"), ustring("attribute")}}};
+  const UsdToCyclesPrimvarReader UsdPrimvarReader = {
+      "attribute", {{TfToken("varname"), ustring("attribute")}}};
 
  public:
   const UsdToCyclesMapping *findUsd(const TfToken &usdNodeType)
