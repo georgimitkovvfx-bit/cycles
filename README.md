@@ -52,13 +52,13 @@ Linux and macOS builds have not been tested on Houdini 22.
 
 ## Known issues
 
-### Not verified yet
-The latest changes build, but the Houdini test suites could not run yet (the Houdini license was logged out):
-the Cycles 5.3 merge, the fixes for the last review findings (motion blur BVH refit crash, Raycast node merging,
-color spaces, array primvars, velocity field names, prim ids, old Fast GI settings, instance motion and frame rate,
-inactive render settings, volume shutter, old hip angles, curve defaults, promoted angles, curve channels), the
-USD fallbacks, re-syncing outside Hydra's sync and DLSS's fallbacks. Back-face culling of points on the CPU is
-verified (no back-face hits, CPU and OptiX identical); 3D curve hair is not yet.
+### Cycles 5.3 update
+Every test suite passes on the Cycles 5.3 merge with the latest fixes (shaders 100/100 on CPU and OptiX, OSL,
+MaterialX, primvars, motion blur, AOVs, review fixes, ...). 3D curve hair now matches between CPU and OptiX.
+A feature test scene (a hip file with one section per feature and a Run All Checks button, 133 checks) passes
+too; it found that dome light textures were rotated (fixed).
+
+- **Cylinder lights** do not render: Cycles has no cylinder light.
 
 - **DLSS** needs an NVIDIA RTX GPU and driver 620 or newer, and has no upscale modes yet (Houdini's depth and ID
   outputs need full resolution passes).
@@ -122,9 +122,8 @@ verified (no back-face hits, CPU and OptiX identical); 3D curve hair is not yet.
 
 Next, roughly in this order:
 
-1. Run every test suite on the Cycles 5.3 merge and the latest fixes.
-2. A test hip file that runs every feature check.
-3. Shader node layouts from Blender 5.3; DLSS upscale modes.
+1. Shader node layouts from Blender 5.3; DLSS upscale modes; cylinder lights (as mesh lights).
+2. Dome lights with `poleAxis` Z (DomeLight_1).
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
 
 ## Building
@@ -243,6 +242,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Embree hit the back faces of 3D curves and points** (core Cycles): the Embree 4 port lost the back-face culling the hair BSDFs and the other devices assume, so 3D curve hair was 0.3-1.1% darker on the CPU than with OptiX, and rays inside points hit their insides. | `aefa0fd46` |
 | **Re-sync notices were sent during Hydra's sync** (a USD coding error); they are sent after it now, and the render stays unconverged until the prims are synced. | `bb99a785a` |
 | **Review fixes:** BVH refit crash after the motion steps changed (`08d7fb7a2`); Raycast nodes reading different attributes merged (core Cycles, `af7968524`); image color space reset by other parameters (`5221a831b`); array primvars read as one value per point (`e78818833`); velocity fields not found by their own name (`4b59ccf17`); prim id lost when instances come back (`e5d0b4292`); instance motion blur after a frame rate change (`7471177b0`); inactive render settings adding motion steps (`4bfefd71c`); volume velocity blur centered on mid-shutter (`6e6c064e5`); curves without points no identity over their range (core Cycles, `84daaa659`). | see the list |
+| **Dome light textures were rotated:** USD latlong textures have their top on the light's +Y and their center on +Z, Cycles' environment lookup on +Z and +X, so skies lit and showed sideways (checked against Karma). | `6be251a1a` |
+| **Embree was missing from the build** after the upstream merge (upstream renamed its CMake condition). | `d171a557f` |
+| **The render settings UI was not generated** with Cycles 5.3's Filter Glossy default. | `4502c10ef` |
 | **UsdPreviewSurface:** diffuseColor default 0.18 and opacityThreshold cutouts (`d33094a9e`), USD's clearcoatRoughness default (`94c95560a`). | `d33094a9e`, `94c95560a` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
