@@ -497,6 +497,10 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
 
   instance->set_color(index > 0 ? _instances[0]->get_color() : make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));
+  if (index == 0) {
+    /* Also when instances come back after a sync without any, which leaves the prim id clean. */
+    instance->set_pass_id(Base::GetPrimId() + 1);
+  }
 
   // Cryptomatte object and asset names: the prim and its parent
   instance->name = _geom->name;
