@@ -1941,11 +1941,20 @@ class RaycastNode : public ShaderNode {
 
   NODE_SOCKET_API(bool, only_local)
 
+  /* Nodes with different attribute outputs are not the same, which the inputs do not tell. */
+  bool equals(const ShaderNode &other) override
+  {
+    return ShaderNode::equals(other) &&
+           attribute_outputs_ == static_cast<const RaycastNode &>(other).attribute_outputs_;
+  }
+
  private:
   struct AttributeOutput {
     ustring attribute_name;
     AttributeOutputType attribute_output_type;
     ustring socket_id;
+
+    bool operator==(const AttributeOutput &other) const = default;
   };
   vector<AttributeOutput> attribute_outputs_;
 
