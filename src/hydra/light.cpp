@@ -340,6 +340,12 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
         if (_lightType == HdPrimTypeTokens->domeLight) {
           Transform tfm = _object->get_tfm();
           transform_set_column(&tfm, 3, zero_float3());  // Remove translation
+          /* USD latlong textures have their top on the light's +Y and their center on +Z, like
+           * in Karma, Cycles' environment lookup has them on +Z and +X: turn light space
+           * (x, y, z) into (z, x, y).
+           * shortcut: DomeLight_1 poleAxis Z (or "scene" on Z-up stages) is not read, add it
+           * when such stages show up. */
+          tfm = tfm * make_transform(0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0);
 
           TextureCoordinateNode *coordNode = graph->create_node<TextureCoordinateNode>();
           coordNode->set_ob_tfm(tfm);
