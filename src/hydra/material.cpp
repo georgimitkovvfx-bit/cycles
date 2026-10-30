@@ -345,6 +345,7 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (bias)
     (metallic)
     (fallback)
+    (opacityThreshold)
 );
 // clang-format on
 
@@ -545,8 +546,9 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
 
   void initialize(ShaderNode *node) const override
   {
-    /* emissiveColor is the emitted radiance and defaults to black. */
+    /* USD's diffuseColor default. emissiveColor is the emitted radiance and defaults to black. */
     PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
+    bsdf->set_base_color(make_float3(0.18f));
     bsdf->set_emission_color(zero_float3());
     bsdf->set_emission_strength(1.0f);
   }
@@ -568,7 +570,8 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
     if (name == CyclesMaterialTokens->ior || name == CyclesMaterialTokens->metallic) {
       return !isSpecularWorkflow(params);
     }
-    return true;
+    /* Applied to the opacity in finalize(). */
+    return name != CyclesMaterialTokens->opacityThreshold;
   }
 
   void finalize(ShaderGraph *graph,
@@ -594,6 +597,28 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
         /* An unauthored specularColor is black, unlike the white Specular Tint default. */
         const bool authored = bool(params.Get(CyclesMaterialTokens->specularColor).GetValue());
         bsdf->set_specular_tint(authored ? bsdf->get_specular_tint() * scale : zero_float3());
+      }
+    }
+
+    /* An opacityThreshold above 0 makes a cutout: opacity below it is transparent, the rest
+     * opaque. */
+    const float threshold = GetParameter(params, CyclesMaterialTokens->opacityThreshold, 0.0f);
+    if (threshold > 0.0f) {
+      ShaderInput *alpha = bsdf->input("Alpha");
+      if (ShaderOutput *link = alpha->link) {
+        MathNode *below = graph->create_node<MathNode>();
+        below->set_math_type(NODE_MATH_LESS_THAN);
+        below->set_value2(threshold);
+        MathNode *opaque = graph->create_node<MathNode>();
+        opaque->set_math_type(NODE_MATH_SUBTRACT);
+        opaque->set_value1(1.0f);
+        graph->disconnect(alpha);
+        graph->connect(link, below->input("Value1"));
+        graph->connect(below->output("Value"), opaque->input("Value2"));
+        graph->connect(opaque->output("Value"), alpha);
+      }
+      else {
+        bsdf->set_alpha(bsdf->get_alpha() < threshold ? 0.0f : 1.0f);
       }
     }
 
@@ -650,7 +675,6 @@ class UsdToCycles {
           {TfToken("clearcoat"), ustring("coat_weight")},
           {TfToken("clearcoatRoughness"), ustring("coat_roughness")},
           {TfToken("opacity"), ustring("alpha")},
-          /* opacityThreshold */
           /* occlusion */
           /* displacement */
       }};
