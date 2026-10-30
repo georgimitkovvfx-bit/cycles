@@ -10,8 +10,10 @@
 #include "hydra/node_util.h"
 #include "hydra/util.h"
 #include "scene/geometry.h"
+#include "scene/integrator.h"
 #include "scene/object.h"
 #include "scene/scene.h"
+#include "session/session.h"
 #include "util/hash.h"
 
 #include <pxr/imaging/hd/materialBindingSchema.h>
@@ -225,6 +227,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   // based on it (e.g. check whether an attribute is actually needed)
   bool rebuild = false;
   Populate(sceneDelegate, *dirtyBits, rebuild);
+  /* A refit keeps the time steps the BVH was built with, and their buffers that changing the
+   * motion steps freed. */
+  rebuild |= _geom->motion_steps_is_modified() || _geom->use_motion_blur_is_modified();
 
   if (_geom->is_modified() || rebuild) {
     _geom->tag_update(lock.scene, rebuild);
@@ -412,7 +417,9 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
     }
   }
 
-  _geom->set_use_motion_blur(!motionPoints.empty());
+  /* Like Blender, the motion pass only needs the positions, motion blur also the motion BVH. */
+  _geom->set_use_motion_blur(!motionPoints.empty() &&
+                             _session->session->scene->integrator->get_motion_blur());
   _geom->set_motion_steps(uint(motionPoints.size()));
   if (motionPoints.empty()) {
     attr_P->remove_motion();
