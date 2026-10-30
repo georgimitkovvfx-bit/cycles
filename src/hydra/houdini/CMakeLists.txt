@@ -138,4 +138,7 @@ install(CODE "
   if(NOT _script_result EQUAL 0)
     message(WARNING \"script2hda.py failed with exit code \${_script_result}\")
   endif()
+
+  # Houdini backs up an HDA file on every edit of its definition; the generators make hundreds.
+  file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/houdini/otls/backup\")
 ")
