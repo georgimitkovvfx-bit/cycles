@@ -333,17 +333,59 @@ def apply_layout(hda_def, label, panels, params):
 
 # Converts nodes saved with the HDAs before version 2, when a scene is loaded: their ramp sockets
 # were float parameters, whose value loads as a one key ramp, and their angles were in radians.
+# Animated angles are converted too: keyframe values and slopes, and expressions other than the
+# segment functions are multiplied. References to other converted angles follow them as they are.
 SYNC_NODE_VERSION = """import math
+import re
+
+SEGMENT_FUNCTIONS = {
+    "bezier", "constant", "cubic", "ease", "easein", "easeinp", "easeout", "easeoutp", "easep",
+    "linear", "match", "matchin", "matchout", "qlinear", "quintic", "spline", "vmatch",
+    "vmatchin", "vmatchout"}
+
+
+def to_degrees(parm):
+    reference = parm.getReferencedParm()
+    if reference != parm and reference.parmTemplate().tags().get("cycles_units") == "degrees":
+        return
+    locked = parm.isLocked()
+    parm.lock(False)
+    keys = parm.keyframes()
+    if not keys:
+        # Rounded, so the 6 digit radian defaults (0.261799) give the degree defaults.
+        parm.set(round(math.degrees(parm.eval()), 4))
+    for key in keys:
+        if key.isValueSet():
+            in_value = None if key.isValueTied() else key.inValue()
+            key.setValue(math.degrees(key.value()))
+            if in_value is not None:
+                key.setInValue(math.degrees(in_value))
+        if key.isSlopeSet() and not key.isSlopeAuto():
+            in_slope = None if key.isSlopeTied() else key.inSlope()
+            key.setSlope(math.degrees(key.slope()))
+            if in_slope is not None:
+                key.setInSlope(math.degrees(in_slope))
+        expression = key.expression() if key.isExpressionSet() else ""
+        function = re.match(r"\\s*(\\w+)\\s*\\(", expression)
+        if expression and not (function and function.group(1) in SEGMENT_FUNCTIONS):
+            if "\\n" in expression:
+                print("Cycles: %%s is still in radians, convert its expression to degrees"
+                      %% parm.path())
+            else:
+                key.setExpression("(%%s) * 180 / %%r" %% (expression, math.pi),
+                                  key.expressionLanguage())
+    if keys:
+        parm.setKeyframes(keys)
+    parm.lock(locked)
+
+
 if not kwargs["old_version"]:
     node = kwargs["node"]
     for name in %(ramps)r:
         node.parm(name).revertToRampDefaults()
     for name in %(angles)r:
         for parm in node.parmTuple(name):
-            # shortcut: animated angles stay in radians, convert keyframes too if users need it.
-            if not parm.keyframes():
-                # Rounded, so the 6 digit radian defaults (0.261799) give the degree defaults.
-                parm.set(round(math.degrees(parm.eval()), 4))
+            to_degrees(parm)
 """
 
 
