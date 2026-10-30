@@ -21,6 +21,7 @@
 #include "hydra/render_settings.h"
 #include "hydra/session.h"
 #include "hydra/volume.h"
+#include "integrator/denoiser.h"
 #include "scene/background.h"
 #include "scene/film.h"
 #include "scene/integrator.h"
@@ -791,6 +792,70 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   if (_renderParam->GetMotionTimes() != motionTimes) {
     _renderParam->RequestResync(false, true);
   }
+
+  if (TfStringStartsWith(key.GetString(), "cycles:integrator:denois") ||
+      key == HdCyclesRenderSettingsTokens->houdiniViewport)
+  {
+    UpdateDenoiser();
+  }
+}
+
+void HdCyclesDelegate::UpdateDenoiser()
+{
+  Integrator *const integrator = _renderParam->session->scene->integrator;
+
+  /* The sockets set for DLSS, from their settings when it is not used. */
+  for (const char *name : {"denoiser_type",
+                           "denoiser_passes",
+                           "denoise_start_sample",
+                           "denoiser_quality",
+                           "denoiser_upscale_factor",
+                           "scrambling_distance"})
+  {
+    const SocketType *socket = integrator->type->find_input(ustring(name));
+    const auto setting = _settingsMap.find(TfToken(std::string("cycles:integrator:") + name));
+    if (setting != _settingsMap.end()) {
+      SetNodeValue(integrator, *socket, setting->second);
+    }
+    else {
+      integrator->set_default_value(*socket);
+    }
+  }
+  if (integrator->get_denoiser_type() != DENOISER_DLSS) {
+    return;
+  }
+
+  /* Like Blender, DLSS only denoises interactive renders. It needs an NVIDIA RTX GPU and a
+   * driver with the DLSS Ray Reconstruction runtime (620 or newer). */
+  const DeviceInfo &device = _renderParam->session->params.denoise_device;
+  if (!_renderParam->IsViewport() || !(device.denoisers & DENOISER_DLSS)) {
+    const DenoiserType fallback = _renderParam->IsViewport() ?
+                                      Denoiser::automatic_viewport_denoiser_type(device) :
+                                      DENOISER_OPENIMAGEDENOISE;
+    integrator->set_denoiser_type(fallback != DENOISER_NONE ? fallback :
+                                                              DENOISER_OPENIMAGEDENOISE);
+    if (!_dlssWarned) {
+      TF_WARN("Cycles: DLSS %s, denoising with %s instead",
+              _renderParam->IsViewport() ? "is not supported by this GPU or driver" :
+                                           "only denoises the viewport",
+              denoiserTypeToHumanReadable(integrator->get_denoiser_type()));
+      _dlssWarned = true;
+    }
+    return;
+  }
+
+  /* What Blender's viewport sets for DLSS. Every sample is denoised, at full resolution: the
+   * output driver only writes full resolution passes, which the other AOVs need.
+   * shortcut: no upscale modes, add them when the output driver can write upscaled AOVs. */
+  integrator->set_denoiser_passes(DENOISER_PASS_ALBEDO | DENOISER_PASS_SPECULAR_ALBEDO |
+                                  DENOISER_PASS_NORMAL | DENOISER_PASS_ROUGHNESS |
+                                  DENOISER_PASS_DEPTH | DENOISER_PASS_BACKWARD_MOTION |
+                                  DENOISER_PASS_SPECULAR_MOTION);
+  integrator->set_denoise_start_sample(0);
+  integrator->set_denoiser_quality(DENOISER_QUALITY_HIGH);
+  integrator->set_denoiser_upscale_factor(1.0f);
+  /* DLSS accumulates 1 sample renders, which scrambling makes too different. */
+  integrator->set_scrambling_distance(1.0f);
 }
 
 VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const

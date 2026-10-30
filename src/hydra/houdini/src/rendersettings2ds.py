@@ -100,6 +100,7 @@ MENU_ITEMS = {
     "cycles:integrator:denoiser_type": {
         "openimagedenoise": "OpenImageDenoise",
         "optix": "OptiX",
+        "dlss": "DLSS",
     },
     "cycles:integrator:denoiser_prefilter": {
         "none": "None",
@@ -200,12 +201,16 @@ LAYOUT = [
                   "Denoise the rendered image.",
                   viewport=True, toolbar_icon="VIEW_display_denoise"),
                 S("cycles:integrator:denoiser_type", "Denoiser",
-                  "Denoiser to use. OptiX requires an NVIDIA GPU.",
+                  "Denoiser to use. OptiX requires an NVIDIA GPU. DLSS Ray Reconstruction "
+                  "denoises the viewport, it requires an NVIDIA RTX GPU and driver 620 or newer; "
+                  "final renders and other GPUs use OpenImageDenoise or the fastest available "
+                  "denoiser instead.",
                   viewport=True),
                 S("cycles:integrator:denoiser_prefilter", "Prefilter",
                   "Prefilter of the guiding passes (albedo and normal). Accurate gives the best "
                   "detail, None should only be used when the guiding passes are noise free.",
-                  viewport=True),
+                  viewport=True,
+                  hidewhen="{ cycles:integrator:denoiser_type == dlss }"),
                 S("cycles:integrator:denoiser_quality", "Quality",
                   "Quality of the OpenImageDenoise denoiser, balanced and fast trade quality for "
                   "speed.",
@@ -213,10 +218,12 @@ LAYOUT = [
                   hidewhen="{ cycles:integrator:denoiser_type != openimagedenoise }"),
                 S("cycles:integrator:denoise_start_sample", "Start Sample",
                   "Sample to start denoising the interactive render at.",
-                  range=(0, 64, True, False), viewport=True),
+                  range=(0, 64, True, False), viewport=True,
+                  hidewhen="{ cycles:integrator:denoiser_type == dlss }"),
                 S("cycles:integrator:denoise_use_gpu", "Use GPU",
                   "Run the denoiser on the GPU when available.",
-                  viewport=True),
+                  viewport=True,
+                  hidewhen="{ cycles:integrator:denoiser_type == dlss }"),
             ], toggle="cycles:integrator:use_denoise"),
         ], open=True),
         P("Path Guiding", [

@@ -123,6 +123,11 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
   std::string _fastGiMethod = "replace";
   int _aoBounces = 1;
   float _aoFactor = 1.0f;
+
+  /* Set the integrator's denoising sockets from the settings, with what DLSS needs when it
+   * denoises, or another denoiser when it cannot. */
+  void UpdateDenoiser();
+  bool _dlssWarned = false;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
