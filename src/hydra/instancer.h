@@ -56,10 +56,11 @@ class HdCyclesInstancer final : public PXR_NS::HdInstancer {
   void SyncPrimvars();
 
   /* Samples at the motion times when anything moves over the shutter, else at the current
-   * frame. Sampled when first needed after a sync, or for other motion times. */
+   * frame. Sampled when first needed after a sync, or for other motion times or frame rate. */
   const std::vector<Sample> &GetSamples(const std::vector<float> &times);
 
   std::vector<float> _sampleTimes;
+  double _sampleFps = 0.0;
   std::vector<Sample> _samples;
   std::vector<Primvar> _primvars;
 };

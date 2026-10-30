@@ -15,6 +15,7 @@
 #include <pxr/imaging/hd/primvarSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
+#include <pxr/imaging/hd/sceneGlobalsSchema.h>
 #include <pxr/imaging/hd/xformSchema.h>
 
 #include <algorithm>
@@ -45,10 +46,19 @@ void HdCyclesInstancer::Sync(HdSceneDelegate *sceneDelegate,
 const std::vector<HdCyclesInstancer::Sample> &HdCyclesInstancer::GetSamples(
     const std::vector<float> &times)
 {
-  if (!_samples.empty() && times == _sampleTimes) {
+  /* Velocities move the instances by the frame rate, which changes without syncing instancers. */
+  double fps = 0.0;
+  if (HdDoubleDataSourceHandle fpsDs = HdSceneGlobalsSchema::GetFromSceneIndex(
+                                           GetDelegate()->GetRenderIndex().GetTerminalSceneIndex())
+                                           .GetTimeCodesPerSecond())
+  {
+    fps = fpsDs->GetTypedValue(0.0f);
+  }
+  if (!_samples.empty() && times == _sampleTimes && fps == _sampleFps) {
     return _samples;
   }
   _sampleTimes = times;
+  _sampleFps = fps;
   _samples.clear();
 
   const HdSceneIndexPrim prim = GetPrim(GetDelegate(), GetId());
