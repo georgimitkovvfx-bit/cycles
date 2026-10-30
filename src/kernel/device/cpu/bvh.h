@@ -153,6 +153,29 @@ ccl_device_inline bool kernel_embree_is_self_intersection(const KernelGlobals kg
   return intersection_skip_self_shadow(ray->self, object, prim);
 }
 
+/* Thick curves and points are back-face culled on all devices: the hair BSDFs assume it, and
+ * Cycles' own intersectors and OptiX only report entering hits. Embree's round curves and sphere
+ * points also report the exit hit of rays starting inside them. The ray and hit are in object
+ * space for instances. */
+ccl_device_inline bool kernel_embree_is_backface(const KernelGlobals kg,
+                                                 const RTCRay *ray,
+                                                 const RTCHit *hit)
+{
+  const int object = kernel_embree_get_hit_object(hit);
+  if (hit->geomID & 1) {
+    const int prim = hit->primID + kernel_data_fetch(object_prim_offset, object);
+    if ((kernel_data_fetch(curve_segments, prim).type & PRIMITIVE_CURVE) ==
+        PRIMITIVE_CURVE_RIBBON)
+    {
+      return false;
+    }
+  }
+  else if (!(kernel_data_fetch(objects, object).primitive_type & PRIMITIVE_POINT)) {
+    return false;
+  }
+  return ray->dir_x * hit->Ng_x + ray->dir_y * hit->Ng_y + ray->dir_z * hit->Ng_z > 0.0f;
+}
+
 ccl_device_inline void kernel_embree_convert_hit(KernelGlobals kg,
                                                  const RTCRay *ray,
                                                  const RTCHit *hit,
@@ -214,7 +237,9 @@ ccl_device_forceinline void kernel_embree_filter_intersection_func_impl(
 #endif
   const Ray *cray = ctx->ray;
 
-  if (kernel_embree_is_self_intersection(kg, hit, cray)) {
+  if (kernel_embree_is_self_intersection(kg, hit, cray) ||
+      kernel_embree_is_backface(kg, (const RTCRay *)args->ray, hit))
+  {
     *args->valid = 0;
     return;
   }
@@ -420,6 +445,11 @@ ccl_device_forceinline void kernel_embree_filter_occluded_shadow_all_func_impl(
 #else
   const ThreadKernelGlobalsCPU *kg = ctx->kg;
 #endif
+
+  if (kernel_embree_is_backface(kg, ray, hit)) {
+    *args->valid = 0;
+    return;
+  }
 
   Intersection isect;
   kernel_embree_convert_hit(kg, ray, hit, &isect);
