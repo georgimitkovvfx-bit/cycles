@@ -31,7 +31,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | GPU rendering | OptiX and CUDA, chosen automatically (OptiX > CUDA > CPU), results match the CPU |
 | Denoising | OpenImageDenoise (GPU or CPU) and OptiX; **DLSS** Ray Reconstruction for the viewport (needs an NVIDIA RTX GPU and driver 620 or newer; final renders and other GPUs fall back to OpenImageDenoise or the fastest available denoiser) |
 | Shaders | All user-facing Cycles shader nodes (96, plus Cycles 5.3's Integer Math, Boolean Math and Get Vector Component), as Houdini VOP nodes inside a **USD Cycles Material Builder** |
-| Shader node UI | Blender 5.2 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
+| Shader node UI | Blender 5.3 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
@@ -62,8 +62,6 @@ too; it found that dome light textures were rotated (fixed).
 
 - **DLSS** needs an NVIDIA RTX GPU and driver 620 or newer, and has no upscale modes yet (Houdini's depth and ID
   outputs need full resolution passes).
-- New Cycles 5.3 node inputs (Glass anisotropy, Principled dispersion, Missing inputs of image and attribute
-  nodes) are not laid out like Blender 5.3 yet.
 
 ### Rendering
 - **AOVs:** Cycles has no light path expression engine: only Karma's common LPEs (diffuse, glossy reflection,
@@ -122,7 +120,7 @@ too; it found that dome light textures were rotated (fixed).
 
 Next, roughly in this order:
 
-1. Shader node layouts from Blender 5.3; DLSS upscale modes; cylinder lights (as mesh lights).
+1. DLSS upscale modes; cylinder lights (as mesh lights).
 2. Dome lights with `poleAxis` Z (DomeLight_1).
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
 
@@ -289,6 +287,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 |---|---|
 | **96 Cycles shader nodes** as VOP HDAs, plus a **USD Cycles Material Builder** shelf tool and icon (ported from the `shaders` branch, made to work on Windows) | `3653a9084` |
 | **Shader nodes laid out like Blender 5.2:** Blender's order, labels, menus, collapsible panels, hide rules and default values. `blender_node_layouts.py` runs inside Blender and dumps how each node is drawn; `blender_layout.py` maps that onto the Cycles nodes. Parameter names are unchanged, so existing scenes still load. | `c9c2640e7` |
+| **Layouts from Blender 5.3** (the new Integer Math, Boolean Math and Get Vector Component nodes, Glass anisotropy, Principled dispersion). | `af84eb068`, `545cd2dce` |
 | **Slider ranges from Blender's node declarations,** read from the Blender source because the Python API only gives generic ranges. Fixes sliders from −10000 to 10000, and IOR inputs that were clamped below their defaults. | `702fd2b44` |
 | **Cycles tab on the Render Settings LOP and in the viewport display options,** laid out like Blender's render properties: Sampling, Denoise, Path Guiding, Light Paths, Clamping, Caustics, Fast GI, Volumes, Film, Performance. Generated from the delegate's own settings, so defaults and menus always match. | `16f63cd20`, `de6ced211` |
 | **Cycles Render Settings LOP:** one node that creates the render settings, product and var prims (`Products/renderproduct`, `Vars/beauty`) with every Cycles setting authored, like Karma's. | `8abcbdb5f`, `bb487a793` |
