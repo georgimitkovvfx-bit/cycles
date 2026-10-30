@@ -176,6 +176,10 @@ VARIANT_MENUS = {
     "glossy_bsdf": "Shader",
     "scene_time": "Input",
     "set_normal": "Utilities/Vector",
+    # New in Blender 5.3, where the Add menu has them here (not in the 5.2 layouts).
+    "boolean_math": "Utilities/Math",
+    "integer_math": "Utilities/Math",
+    "get_vector_component": "Utilities/Vector",
 }
 
 
