@@ -10,14 +10,15 @@ Cycles repository). The work for Houdini 22 lives on the `hdCycles-H22` branch.
 
 > **Status: work in progress.** Daily lookdev with Cycles shaders, Karma/MaterialX materials, USD lights,
 > volumes, primvars as shader attributes, AOVs, light groups, per-object and per-light settings, motion blur and
-> OSL works, in the viewport, husk and TOPs; see [Known issues](#known-issues).
+> OSL works, in the viewport, husk and TOPs; see [Known issues](#known-issues). The Cycles core follows Blender's
+> Cycles 5.3 (blender/cycles `main`, October 2026), including the DLSS viewport denoiser.
 
 ## Tested with
 
 | | |
 |---|---|
 | Houdini | 22.0.429 (USD 26.05), Windows 11 |
-| GPU | NVIDIA RTX 4090, OptiX 8.0 SDK, CUDA |
+| GPU | NVIDIA RTX 4090, OptiX 8.0 SDK, CUDA 12.8, DLSS SDK 310.9.1 (driver 610.88: DLSS itself not run yet) |
 | Other plugins | Loads alongside Arnold (HtoA): Embree is linked statically without SYCL |
 
 Linux and macOS builds have not been tested on Houdini 22.
@@ -28,8 +29,8 @@ Linux and macOS builds have not been tested on Houdini 22.
 |---|---|
 | Rendering in the Solaris viewport and with husk | Works |
 | GPU rendering | OptiX and CUDA, chosen automatically (OptiX > CUDA > CPU), results match the CPU |
-| Denoising | OpenImageDenoise (GPU or CPU) and OptiX |
-| Shaders | All 96 user-facing Cycles shader nodes, as Houdini VOP nodes inside a **USD Cycles Material Builder** |
+| Denoising | OpenImageDenoise (GPU or CPU) and OptiX; **DLSS** Ray Reconstruction for the viewport (needs an NVIDIA RTX GPU and driver 620 or newer; final renders and other GPUs fall back to OpenImageDenoise or the fastest available denoiser) |
+| Shaders | All user-facing Cycles shader nodes (96, plus Cycles 5.3's Integer Math, Boolean Math and Get Vector Component), as Houdini VOP nodes inside a **USD Cycles Material Builder** |
 | Shader node UI | Blender 5.2 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
@@ -45,19 +46,24 @@ Linux and macOS builds have not been tested on Houdini 22.
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
 | Batch rendering | husk, the USD Render ROP and TOPs (USD Render Scene, USD Render Files, ROP Fetch). The Cycles Render Settings LOP is the stage's default render settings, like Karma's |
 | Per-light settings | Max Bounces, Multiple Importance, Shadow Caustics, ray visibility and Light Group: Cycles tab of the Light LOP |
-| Per-object settings | Ray visibility, shadow catcher, holdout, shadow caustics, shadow terminator, AO distance: Cycles tab of the Render Geometry Settings LOP |
+| Per-object settings | Ray visibility (also Raycast), shadow catcher, holdout, shadow caustics, shadow terminator, AO distance: Cycles tab of the Render Geometry Settings LOP |
 | OSL | **Open Shading Language** render setting (CPU and OptiX). **Cycles Script** node for `.osl`/`.oso` files like Blender's Script node, and Houdini's own OSL shader nodes (OSL Generic Shader Builder) in Cycles materials |
 | Tab menu | Cycles nodes grouped like Blender's Add menu (Input, Output, Shader, Displacement, Color, Texture, Utilities/Math, Utilities/Vector) |
 
 ## Known issues
 
-### Open review findings (fixes written, not yet verified)
-A review of the latest work found problems whose fixes are written but not tested yet:
-- **Crash risk:** turning motion blur on for an already rendered scene on the CPU device can crash (Embree refits
-  the BVH with freed motion buffers). Two Raycast nodes reading different attributes in one material can crash.
-- Promoted angle parameters are authored in degrees but read as radians; Vector Curves' Min X default of -1
-  changes unauthored or old Vector Curves; the volume `vel`/`v` aliases hide those fields from shaders; old hip
-  files lose their Fast GI AO settings; a clearcoat gets Cycles' coat roughness instead of USD's default.
+### Not verified yet
+The latest changes build, but the Houdini test suites could not run yet (the Houdini license was logged out):
+the Cycles 5.3 merge, the fixes for the last review findings (motion blur BVH refit crash, Raycast node merging,
+color spaces, array primvars, velocity field names, prim ids, old Fast GI settings, instance motion and frame rate,
+inactive render settings, volume shutter, old hip angles, curve defaults, promoted angles, curve channels), the
+USD fallbacks, re-syncing outside Hydra's sync and DLSS's fallbacks. Back-face culling of points on the CPU is
+verified (no back-face hits, CPU and OptiX identical); 3D curve hair is not yet.
+
+- **DLSS** needs an NVIDIA RTX GPU and driver 620 or newer, and has no upscale modes yet (Houdini's depth and ID
+  outputs need full resolution passes).
+- New Cycles 5.3 node inputs (Glass anisotropy, Principled dispersion, Missing inputs of image and attribute
+  nodes) are not laid out like Blender 5.3 yet.
 
 ### Rendering
 - **AOVs:** Cycles has no light path expression engine: only Karma's common LPEs (diffuse, glossy reflection,
@@ -116,10 +122,10 @@ A review of the latest work found problems whose fixes are written but not teste
 
 Next, roughly in this order:
 
-1. Verify and commit the fixes for the open review findings above.
-2. CPU back-face culling for 3D curves and points (Embree); re-sync outside Hydra's sync.
-3. A test hip file that runs every feature check, and a full test run.
-4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness.
+1. Run every test suite on the Cycles 5.3 merge and the latest fixes.
+2. A test hip file that runs every feature check.
+3. Shader node layouts from Blender 5.3; DLSS upscale modes.
+4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
 
 ## Building
 
@@ -195,6 +201,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | Allow a static Embree without SYCL (`EMBREE_ROOT_DIR`), don't ship the SYCL runtime | The precompiled Embree needs `sycl8.dll`, which clashes with other plugins (Arnold) and stops Cycles loading | `4edfd12f9` |
 | Generate shader nodes, render settings UI and the Cycles Render Settings LOP at install time with `hython` | New Houdini install step (`src/hydra/houdini/CMakeLists.txt`) | `3653a9084`, `16f63cd20`, `8abcbdb5f` |
 | Allow OSL with an OSL built against Houdini's OpenImageIO (`OSL_ROOT_DIR`), static OSL, link USD `ar` | The precompiled OSL links Blender's OpenImageIO 3.1, which cannot be mixed with Houdini's 2.5 | `5476bf7e4`, `298aa4da1` |
+| Merge Cycles `main` from blender/cycles (159 commits up to `3eb35f859`, Cycles 5.3) | DLSS, new nodes and fixes from upstream; conflicts resolved for the Vertex Color node, volume names and object visibility | `4bc6af713` |
+| `WITH_CYCLES_DLSS` and `DLSS_SDK_ROOT` options, `FindDLSS.cmake`, the conforming preprocessor for the DLSS SDK headers on MSVC | Upstream only enables DLSS in Blender's own build | `de6ed1d84` |
+| Set `WITH_EMBREE` in the standalone build | Upstream renamed the Embree conditions for Blender's build, so standalone Cycles silently built without Embree | `d171a557f` |
 
 ### Rendering fixes
 
@@ -231,6 +240,10 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Review fixes for the primvar and instance work:** crash syncing a prototype with no instances (`e1601b67c`); vertex primvars dropped on meshes with unused trailing points (`44220246f`); out of bounds read of short uniform primvars (`f8564cb24`); UV map aliases interpolated linearly on subdivision surfaces (`289d73167`); OSL `getattribute` requested the parameter default instead of the node's value (`b20dd4dfd`); Vertex Color node with standard names (`uv`, `density`) read nothing and attribute ids above 255 wrapped (`c2b98f277`, `3ce37f642`). | `e1601b67c`, `44220246f`, `f8564cb24`, `289d73167`, `b20dd4dfd`, `c2b98f277`, `3ce37f642` |
 | **UsdPreviewSurface / UsdUVTexture translation:** specularColor is F0 in the specular workflow (was 25 times too dim; metallic ignored there, black default), clearcoat maps to the coat, the normal input is tangent space through a Normal Map node, UsdUVTexture scale/bias scale the output (they were used as UV tiling) and `sourceColorSpace` raw is honoured. Matches Karma within 0.02. | `20e7ebebf`, `9dcf9931f`, `3ab17edd7`, `ffcf479f2`, `f921fb280`, `0d47522b3` |
 | **Integer render vars (`primid`) were empty in husk:** outside the viewport ID buffers are floats (object index, 0 for none, like Karma's). | `6490beb06` |
+| **Embree hit the back faces of 3D curves and points** (core Cycles): the Embree 4 port lost the back-face culling the hair BSDFs and the other devices assume, so 3D curve hair was 0.3-1.1% darker on the CPU than with OptiX, and rays inside points hit their insides. | `aefa0fd46` |
+| **Re-sync notices were sent during Hydra's sync** (a USD coding error); they are sent after it now, and the render stays unconverged until the prims are synced. | `bb99a785a` |
+| **Review fixes:** BVH refit crash after the motion steps changed (`08d7fb7a2`); Raycast nodes reading different attributes merged (core Cycles, `af7968524`); image color space reset by other parameters (`5221a831b`); array primvars read as one value per point (`e78818833`); velocity fields not found by their own name (`4b59ccf17`); prim id lost when instances come back (`e5d0b4292`); instance motion blur after a frame rate change (`7471177b0`); inactive render settings adding motion steps (`4bfefd71c`); volume velocity blur centered on mid-shutter (`6e6c064e5`); curves without points no identity over their range (core Cycles, `84daaa659`). | see the list |
+| **UsdPreviewSurface:** diffuseColor default 0.18 and opacityThreshold cutouts (`d33094a9e`), USD's clearcoatRoughness default (`94c95560a`). | `d33094a9e`, `94c95560a` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
 ### Render delegate features
@@ -263,6 +276,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Viewport resolution divider:** output drivers are skipped while the render is at reduced resolution (core Cycles, `0cc07a34e`), the OpenGL display driver scales small renders up with a framebuffer blit (`6d4f3782b`), and `cycles:use_resolution_divider` turns it on (default, `a902cdda8`). | `0cc07a34e`, `6d4f3782b`, `a902cdda8` |
 | **Viewport responsiveness:** in the Houdini viewport the AOVs it does not show (depth, IDs, slap comp inputs) are refreshed 0.25 s after a change and then once per second instead of on every image update (33-59 ms each on a 2K viewport), and the display updates at least every 0.2 s (a new `SessionParams::max_display_update_interval` in core Cycles). Measured: 46 instead of 13 new images in the first 10 s, 15 instead of 10 per second while tumbling, no loss of samples. | `c8dce51e3`, `a000a4798`, `722523e32` |
 | **Curve shape** render setting (`cycles:curve_shape`: ribbon / thick, Blender's Rounded Ribbons / 3D Curves). | `d2eff57b6` |
+| **DLSS viewport denoiser** (`cycles:integrator:denoiser_type = dlss`), set up like Blender's viewport: the passes DLSS needs, denoising from the first sample, no scrambling distance, no upscaling; final renders and unsupported GPUs or drivers fall back with a warning. | `04b777417` |
+| **USD fallback values:** UsdPrimvarReader `fallback` for geometry without the primvar, UsdUVTexture `fallback` for missing files and UDIM tiles (black by default like Karma, not Cycles' pink), through Cycles 5.3's Missing inputs. | `2bf144b20` |
+| **Raycast object visibility** (`cycles:object:visible_raycast`). | `ce53c975f` |
 | **Per-object settings** from constant `cycles:object:<setting>` primvars: `visible_camera`/`_diffuse`/`_glossy`/`_transmission`/`_volume_scatter`/`_shadow`, `is_shadow_catcher`, `use_holdout`, shadow caustics, shadow terminator offsets, `ao_distance`. | `30aa47d9d` |
 
 ### Houdini user interface
@@ -291,6 +307,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Motion Blur** in the render settings (since `b128d02b8` motion blur and the camera shutter no longer restart the delegate). | `3f3fd20e3` |
 | **Blender Defaults** button on the Cycles Render Settings LOP: Blackman-Harris 1.5, bounces 12/4/4/12/0/8, light threshold 0.01, 4096 samples, denoising, blue-noise sampling, 3D curves (GPU denoising kept). | `1a40ca353` |
 | **Fast GI** panel like Blender's: header toggle, Method (Replace / Add), Bounces, AO Factor, AO Distance (`cycles:fast_gi`, `cycles:fast_gi_method`, `cycles:ao_bounces`, `cycles:ao_factor`). | `08668d687` |
+| **Fixes for older scenes and promoted parameters:** Fast GI settings of older Cycles LOPs kept and converted (`0521c6e3f`), animated angles converted to degrees (`2ebc565fa`), promoted angle parameters authored in radians (`b1b39fe1c`), curve channel edits authored (`af9b1be31`). | see the list |
+| **DLSS in the Denoiser menu**, Raycast in the object Ray Visibility panel, and Tab menu entries for the Integer Math, Boolean Math and Get Vector Component nodes. | `04b777417`, `ce53c975f`, `ab710a14c` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
 
 ### Documentation
