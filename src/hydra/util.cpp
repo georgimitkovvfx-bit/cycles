@@ -300,15 +300,13 @@ void ApplyPrimvars(AttributeSet &attributes,
                    const ustring &name,
                    VtValue value,
                    AttributeElement elem,
-                   AttributeStandard std)
+                   AttributeStandard std,
+                   const bool dropExtraValues)
 {
   /* Wrong counts would overflow or underfill the attribute, e.g. Houdini array attributes or
-   * cubic curve varying data. More vertex values are fine: a mesh only has the points up to the
-   * last one its faces use, the values of unused points after it are left out. */
+   * cubic curve varying data. */
   const size_t expected = Attribute::element_size(attributes.geometry, elem, attributes.prim);
-  if (value.GetArraySize() != expected &&
-      !(elem == ATTR_ELEMENT_VERTEX && value.GetArraySize() > expected))
-  {
+  if (value.GetArraySize() != expected && !(dropExtraValues && value.GetArraySize() > expected)) {
     TF_WARN(
         "Primvar %s has %zu values, expected %zu", name.c_str(), value.GetArraySize(), expected);
     return;

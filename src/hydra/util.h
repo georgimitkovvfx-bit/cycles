@@ -157,11 +157,13 @@ void SetObjectAttribute(CCL_NS::Object *object,
                         size_t width,
                         const float *data);
 
-/* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size. */
+/* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size.
+ * With `dropExtraValues`, values after the attribute's size are left out. */
 void ApplyPrimvars(CCL_NS::AttributeSet &attributes,
                    const CCL_NS::ustring &name,
                    PXR_NS::VtValue value,
                    CCL_NS::AttributeElement elem,
-                   CCL_NS::AttributeStandard std);
+                   CCL_NS::AttributeStandard std,
+                   bool dropExtraValues = false);
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

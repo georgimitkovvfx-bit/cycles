@@ -293,6 +293,7 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
   const TfToken uvName = FindUVPrimvar(primvars);
+  const size_t numPoints = ReadPrimvar(primvars, HdTokens->points).GetArraySize();
 
   const std::pair<HdInterpolation, AttributeElement> interpolations[] = {
       std::make_pair(HdInterpolationFaceVarying, ATTR_ELEMENT_CORNER),
@@ -365,9 +366,14 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         }
       }
 
+      /* A value for every point: the mesh only has the points up to the last one its faces use
+       * (Houdini keeps unused points after a Blast), the values of the others are left out. */
+      const bool unusedPoints = elem == ATTR_ELEMENT_VERTEX && value.GetArraySize() == numPoints;
+
       const ustring ownName(primvarName.GetString());
       for (const ustring &name : names) {
-        ApplyPrimvars(attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE);
+        ApplyPrimvars(
+            attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE, unusedPoints);
         /* Copies of the UV map under other names subdivide smoothly like the UV map. */
         Attribute *attr = (std == ATTR_STD_UV) ? attributes.find(name) : nullptr;
         if (attr) {
