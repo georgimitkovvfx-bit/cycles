@@ -468,8 +468,8 @@ std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
     return {-1.0f, 0.0f, 1.0f};
   }
 
-  // Three steps, like Blender's default of one motion step for objects
-  constexpr int numSteps = 3;
+  // Three steps for Blender's default of one motion step for objects
+  const int numSteps = (1 << _motionSteps) + 1;
   if (_motionBlurDisabled || !(shutterClose > shutterOpen)) {
     return {};
   }

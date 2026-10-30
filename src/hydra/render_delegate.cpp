@@ -764,6 +764,9 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur) {
     _renderParam->SetMotionBlurDisabled(VtValue::Cast<bool>(value).GetWithDefault(false));
   }
+  else if (key == HdCyclesRenderSettingsTokens->motionSteps) {
+    _renderParam->SetMotionSteps(VtValue::Cast<int>(value).GetWithDefault(1));
+  }
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
            key == HdCyclesRenderSettingsTokens->shutterClose)
   {

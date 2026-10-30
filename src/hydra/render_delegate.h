@@ -38,6 +38,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     (pixelAspectRatio) \
     ((houdiniFps, "houdini:fps")) \
     (disableMotionBlur) \
+    ((motionSteps, "cycles:motion_steps")) \
     ((shutterOpen, "shutter:open")) \
     ((shutterClose, "shutter:close"))
 // clang-format on

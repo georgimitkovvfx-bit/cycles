@@ -91,6 +91,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _motionBlurDisabled = disabled;
   }
 
+  // Blender's motion steps of objects: 2^steps + 1 motion times over the shutter
+  void SetMotionSteps(const int steps)
+  {
+    _motionSteps = std::clamp(steps, 1, 7);
+  }
+
   // Frame rate from the application (houdini:fps), 0 if it is unknown
   void SetFramesPerSecond(const double fps)
   {
@@ -225,6 +231,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   float _shutterClose = 0.0f;
   bool _shutterFromSettings = false;
   bool _motionBlurDisabled = false;
+  int _motionSteps = 1;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
