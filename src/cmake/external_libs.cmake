@@ -471,6 +471,8 @@ endif()
 ###########################################################################
 
 if(WITH_CYCLES_EMBREE)
+  set(WITH_EMBREE ON)
+
   # Use the precompiled Embree, unless another Embree was specified with EMBREE_ROOT_DIR.
   # For example a static Embree without SYCL support for Houdini, since the SYCL runtime
   # libraries required by the precompiled Embree conflict with other Houdini plugins.
