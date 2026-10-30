@@ -551,6 +551,8 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
     bsdf->set_base_color(make_float3(0.18f));
     bsdf->set_emission_color(zero_float3());
     bsdf->set_emission_strength(1.0f);
+    /* USD's clearcoatRoughness default, Cycles' is 0.03. */
+    bsdf->set_coat_roughness(0.01f);
   }
 
   static bool isSpecularWorkflow(const HdMaterialNodeParameterContainerSchema &params)
