@@ -24,7 +24,9 @@ TF_DECLARE_WEAK_AND_REF_PTRS(HdCyclesResyncSceneIndex);
  * angular velocities become time samples of points and instance transforms (UsdGeom rules), so
  * prims only sample those at the motion times. That scene index takes the frame rate from the
  * scene globals, where husk has 24 whatever the stage's frame rate, so the render delegate sets
- * the one it renders with here (houdini:fps). */
+ * the one it renders with here (houdini:fps). Before that, HdsiRenderSettingsFilteringSceneIndex
+ * marks the render settings prim of the scene globals active (HdRenderSettings::IsActive), which
+ * nothing else does for Cycles. */
 class HdCyclesResyncSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
  public:
   static HdCyclesResyncSceneIndexRefPtr New(const HdSceneIndexBaseRefPtr &inputSceneIndex);

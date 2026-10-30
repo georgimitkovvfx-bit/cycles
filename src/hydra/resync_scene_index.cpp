@@ -7,6 +7,7 @@
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
 #include <pxr/imaging/hd/sceneGlobalsSchema.h>
+#include <pxr/imaging/hdsi/renderSettingsFilteringSceneIndex.h>
 #include <pxr/imaging/hdsi/velocityMotionResolvingSceneIndex.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -83,8 +84,8 @@ HdCyclesResyncSceneIndexRefPtr HdCyclesResyncSceneIndex::New(
 {
   auto timeCodesPerSecond = std::make_shared<std::atomic<double>>(0.0);
   return TfCreateRefPtr(new HdCyclesResyncSceneIndex(
-      HdsiVelocityMotionResolvingSceneIndex::New(
-          SceneGlobalsSceneIndex::New(inputSceneIndex, timeCodesPerSecond)),
+      HdsiVelocityMotionResolvingSceneIndex::New(HdsiRenderSettingsFilteringSceneIndex::New(
+          SceneGlobalsSceneIndex::New(inputSceneIndex, timeCodesPerSecond), nullptr)),
       timeCodesPerSecond));
 }
 

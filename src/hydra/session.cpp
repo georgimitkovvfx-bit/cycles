@@ -452,7 +452,17 @@ std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
   if (!session->scene->integrator->get_motion_blur()) {
     /* Motion pass: the previous and next frame, like Blender (Scene::motion_shutter_time() is 2
      * frames). Cycles writes no motion pass with motion blur. */
-    if (_motionPassSettings.empty() && !_motionPassBound) {
+    const auto active = std::find_if(_motionPassSettings.begin(),
+                                     _motionPassSettings.end(),
+                                     [](const auto &settings) { return settings.second.first; });
+    const bool settingsMotionPass = active != _motionPassSettings.end() ?
+                                        active->second.second :
+                                        std::any_of(_motionPassSettings.begin(),
+                                                    _motionPassSettings.end(),
+                                                    [](const auto &settings) {
+                                                      return settings.second.second;
+                                                    });
+    if (!settingsMotionPass && !_motionPassBound) {
       return {};
     }
     return {-1.0f, 0.0f, 1.0f};
@@ -502,11 +512,13 @@ void HdCyclesSession::SetRenderSettingsPrimvarAovs(const SdfPath &id,
   }
 }
 
-void HdCyclesSession::SetRenderSettingsMotionPass(const SdfPath &id, const bool motionPass)
+void HdCyclesSession::SetRenderSettingsMotionPass(const SdfPath &id,
+                                                  const bool active,
+                                                  const bool motionPass)
 {
   const std::vector<float> motionTimes = GetMotionTimes();
-  if (motionPass) {
-    _motionPassSettings.insert(id);
+  if (active || motionPass) {
+    _motionPassSettings[id] = {active, motionPass};
   }
   else {
     _motionPassSettings.erase(id);

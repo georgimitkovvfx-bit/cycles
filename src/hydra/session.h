@@ -159,8 +159,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   void UpdateDefaultSurface();
 
   // Whether a render settings prim has a motion pass render var, synced before geometry so that
-  // it is sampled at the motion pass times, with the scene locked.
-  void SetRenderSettingsMotionPass(const PXR_NS::SdfPath &id, bool motionPass);
+  // it is sampled at the motion pass times, with the scene locked. Like the primvar AOVs, only the
+  // active render settings count, or all of them when none is active.
+  void SetRenderSettingsMotionPass(const PXR_NS::SdfPath &id, bool active, bool motionPass);
 
   // Primvar a render var reads: source type "primvar" or a "primvars:<name>" source name, unless
   // it is a Cycles pass (Karma's "st" is the UV pass). Empty if none.
@@ -231,7 +232,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::vector<std::pair<std::string, std::string>> _primvarAovs;
   std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
       _renderSettingsPrimvarAovs;
-  std::set<PXR_NS::SdfPath> _motionPassSettings;
+  // Render settings prim: (active, has a motion pass)
+  std::map<PXR_NS::SdfPath, std::pair<bool, bool>> _motionPassSettings;
   bool _motionPassBound = false;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
 };

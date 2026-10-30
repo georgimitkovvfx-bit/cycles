@@ -15,7 +15,7 @@ void HdCyclesRenderSettings::Finalize(HdRenderParam *renderParam)
 {
   const SceneLock lock(renderParam);
   static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsPrimvarAovs(GetId(), false, {});
-  static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsMotionPass(GetId(), false);
+  static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsMotionPass(GetId(), false, false);
 
   HdRenderSettings::Finalize(renderParam);
 }
@@ -47,7 +47,8 @@ void HdCyclesRenderSettings::_Sync(HdSceneDelegate * /*sceneDelegate*/,
   const SceneLock lock(renderParam);
   static_cast<HdCyclesSession *>(renderParam)
       ->SetRenderSettingsPrimvarAovs(GetId(), IsActive(), std::move(primvarAovs));
-  static_cast<HdCyclesSession *>(renderParam)->SetRenderSettingsMotionPass(GetId(), motionPass);
+  static_cast<HdCyclesSession *>(renderParam)
+      ->SetRenderSettingsMotionPass(GetId(), IsActive(), motionPass);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
