@@ -21,6 +21,10 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((shadingSystem, "cycles:shading_system")) \
     ((useResolutionDivider, "cycles:use_resolution_divider")) \
     ((curveShape, "cycles:curve_shape")) \
+    ((useTextureCache, "cycles:use_texture_cache")) \
+    ((autoTextureCache, "cycles:auto_texture_cache")) \
+    ((textureCachePath, "cycles:texture_cache_path")) \
+    ((textureLimit, "cycles:texture_limit")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \

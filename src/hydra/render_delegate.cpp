@@ -127,7 +127,11 @@ bool IsSessionSetting(const TfToken &key)
          key == HdCyclesRenderSettingsTokens->threads ||
          key == HdCyclesRenderSettingsTokens->shadingSystem ||
          key == HdCyclesRenderSettingsTokens->useResolutionDivider ||
-         key == HdCyclesRenderSettingsTokens->curveShape;
+         key == HdCyclesRenderSettingsTokens->curveShape ||
+         key == HdCyclesRenderSettingsTokens->useTextureCache ||
+         key == HdCyclesRenderSettingsTokens->autoTextureCache ||
+         key == HdCyclesRenderSettingsTokens->textureCachePath ||
+         key == HdCyclesRenderSettingsTokens->textureLimit;
 }
 
 SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
@@ -219,9 +223,28 @@ SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionPar
   params.shadingsystem = sessionParams.shadingsystem;
 
   // Curve shape is fixed when the scene is created, like the shading system
-  const auto it = settings.find(HdCyclesRenderSettingsTokens->curveShape);
+  auto it = settings.find(HdCyclesRenderSettingsTokens->curveShape);
   if (it != settings.end() && GetStringSetting(it->second, "ribbon") == "thick") {
     params.hair_shape = CURVE_THICK;
+  }
+
+  // The image manager reads the texture cache settings when the scene is created
+  it = settings.find(HdCyclesRenderSettingsTokens->useTextureCache);
+  if (it != settings.end()) {
+    params.use_texture_cache = VtValue::Cast<bool>(it->second).GetWithDefault(true);
+  }
+  it = settings.find(HdCyclesRenderSettingsTokens->autoTextureCache);
+  if (it != settings.end()) {
+    params.auto_texture_cache = VtValue::Cast<bool>(it->second).GetWithDefault(false);
+  }
+  it = settings.find(HdCyclesRenderSettingsTokens->textureCachePath);
+  if (it != settings.end()) {
+    params.texture_cache_path = GetStringSetting(it->second, "");
+  }
+  // Menu of sizes in pixels, "off" for no limit
+  it = settings.find(HdCyclesRenderSettingsTokens->textureLimit);
+  if (it != settings.end()) {
+    params.texture_limit = std::max(0, std::atoi(GetStringSetting(it->second, "off").c_str()));
   }
 
   return params;
