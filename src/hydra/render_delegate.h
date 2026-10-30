@@ -30,6 +30,8 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((aoBounces, "cycles:ao_bounces")) \
     ((aoFactor, "cycles:ao_factor")) \
     ((houdiniViewport, "houdini:viewport")) \
+    (resolution) \
+    (pixelAspectRatio) \
     ((houdiniFps, "houdini:fps")) \
     (disableMotionBlur) \
     ((shutterOpen, "shutter:open")) \

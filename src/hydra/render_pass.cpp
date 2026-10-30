@@ -117,6 +117,25 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
     // Update camera dimensions to the viewport size
     CameraUtilFraming framing = renderPassState->GetFraming();
+    // husk passes no framing: its viewport is the data window (dataWindowNDC) inside the render
+    // settings resolution, in OpenGL's convention (y up), and the render buffers have its size.
+    const GfVec2i resolution = renderDelegate
+                                   ->GetRenderSetting(HdCyclesRenderSettingsTokens->resolution)
+                                   .GetWithDefault<GfVec2i>(GfVec2i(0));
+    if (!framing.IsValid() && !_renderParam->IsViewport() && resolution[0] > 0 &&
+        resolution[1] > 0)
+    {
+      const GfVec4f vp = renderPassState->GetViewport();
+      if (vp[2] > 0.0f && vp[3] > 0.0f) {
+        const GfVec2i size{int(vp[2]), int(vp[3])};
+        framing = CameraUtilFraming(
+            GfRange2f(GfVec2f(0.0f), GfVec2f(resolution)),
+            GfRect2i(GfVec2i(int(vp[0]), resolution[1] - int(vp[1]) - size[1]), size[0], size[1]),
+            renderDelegate->GetRenderSetting(HdCyclesRenderSettingsTokens->pixelAspectRatio)
+                .GetWithDefault<float>(1.0f));
+      }
+    }
+
     float aspectRatio = 0.0f;
     if (!framing.IsValid()) {
       const GfVec4f vp = renderPassState->GetViewport();
@@ -143,9 +162,17 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
       framing = CameraUtilFraming(GfRect2i(GfVec2i(0), size[0], size[1]));
     }
+    else {
+      // The camera window is conformed to the display window, with non-square pixels
+      aspectRatio = framing.pixelAspectRatio * framing.displayWindow.GetSize()[0] /
+                    framing.displayWindow.GetSize()[1];
+    }
 
-    scene->camera->set_full_width(framing.dataWindow.GetWidth());
-    scene->camera->set_full_height(framing.dataWindow.GetHeight());
+    // The camera spans the display window, the render covers the data window (crop) inside it
+    const GfVec2i displaySize(int(framing.displayWindow.GetSize()[0]),
+                              int(framing.displayWindow.GetSize()[1]));
+    scene->camera->set_full_width(displaySize[0]);
+    scene->camera->set_full_height(displaySize[1]);
 
     if (const auto *const camera = static_cast<const HdCyclesCamera *>(
             renderPassState->GetCamera()))
@@ -170,14 +197,21 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       // Reset convergence state of all render buffers
       _renderParam->ResetConverged();
 
+      // The buffer holds the data window, placed at its offset in the camera's raster (the
+      // display window). The window is the whole buffer: Cycles' window is the part of the
+      // buffer that is not overscan.
       BufferParams buffer_params;
-      buffer_params.full_x = static_cast<int>(framing.displayWindow.GetMin()[0]);
-      buffer_params.full_y = static_cast<int>(framing.displayWindow.GetMin()[1]);
-      buffer_params.full_width = static_cast<int>(framing.displayWindow.GetSize()[0]);
-      buffer_params.full_height = static_cast<int>(framing.displayWindow.GetSize()[1]);
+      buffer_params.full_x = framing.dataWindow.GetMinX() -
+                             static_cast<int>(framing.displayWindow.GetMin()[0]);
+      // Cycles' raster y goes up, the windows' y goes down
+      buffer_params.full_y = displaySize[1] - framing.dataWindow.GetHeight() -
+                             (framing.dataWindow.GetMinY() -
+                              static_cast<int>(framing.displayWindow.GetMin()[1]));
+      buffer_params.full_width = displaySize[0];
+      buffer_params.full_height = displaySize[1];
 
-      buffer_params.window_x = framing.dataWindow.GetMinX() - buffer_params.full_x;
-      buffer_params.window_y = framing.dataWindow.GetMinY() - buffer_params.full_y;
+      buffer_params.window_x = 0;
+      buffer_params.window_y = 0;
       buffer_params.window_width = framing.dataWindow.GetWidth();
       buffer_params.window_height = framing.dataWindow.GetHeight();
 

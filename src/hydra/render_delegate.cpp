@@ -933,7 +933,9 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
     }
   }
 
-  return VtValue();
+  // Other settings as they were set, like HdRenderDelegate does (husk's resolution)
+  const auto it = _settingsMap.find(key);
+  return it != _settingsMap.end() ? it->second : VtValue();
 }
 
 /* Houdini lists the commands in the viewport renderer menu. */
