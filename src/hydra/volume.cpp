@@ -92,8 +92,9 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
             {"vel_y", "velocity_y"},
             {"vel_z", "velocity_z"},
         };
-        const auto alias = aliases.find(fieldName.GetString());
-        const ustring name(alias != aliases.end() ? alias->second : fieldName.GetString());
+        const ustring authored(fieldName.GetString());
+        const auto alias = aliases.find(authored.string());
+        const ustring name(alias != aliases.end() ? alias->second : authored.string());
 
         const AttributeStandard std = Attribute::name_volume_standard(name);
 
@@ -105,6 +106,11 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
                                       _geom->attributes.add(std) :
                                       _geom->attributes.add(name, TypeFloat, ATTR_ELEMENT_VOXEL);
           attr->data_voxel_for_write() = openvdbAsset->GetImageHandle();
+        }
+        /* Shaders can also read a velocity field by its own name. */
+        if (name != authored && _geom->need_attribute(scene, authored)) {
+          _geom->attributes.add(authored, TypeFloat, ATTR_ELEMENT_VOXEL)->data_voxel_for_write() =
+              openvdbAsset->GetImageHandle();
         }
       }
     }
