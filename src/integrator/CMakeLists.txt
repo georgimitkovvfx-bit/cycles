@@ -76,6 +76,10 @@ if(WITH_DLSS)
   list(APPEND INC_SYS
     ${DLSS_INCLUDE_DIR}
   )
+  if(MSVC)
+    # The variadic macros of the DLSS SDK headers need the standard conforming preprocessor.
+    set_source_files_properties(denoiser_dlss.cpp PROPERTIES COMPILE_OPTIONS "/Zc:preprocessor")
+  endif()
 endif()
 
 include_directories(${INC})

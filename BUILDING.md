@@ -91,6 +91,14 @@ By default the best available GPU is used (OptiX, then CUDA), falling back to th
 with the `cycles:device` render setting (`AUTO`, `OPTIX`, `CUDA`, `CPU`) or the `CYCLES_DEVICE` environment
 variable, for example `CYCLES_DEVICE=CPU husk -R Cycles scene.usd`.
 
+To add the DLSS viewport denoiser (DLSS Ray Reconstruction), get the headers of the NVIDIA DLSS SDK
+(310.9.1, https://github.com/NVIDIA/DLSS, only its `include` folder is needed) and add:
+
+    -DWITH_CYCLES_DLSS=ON
+    -DDLSS_SDK_ROOT="<path to DLSS SDK>"
+
+The DLSS implementation comes with the NVIDIA driver: it needs an RTX GPU and driver 620 or newer at runtime.
+
 On Windows, the precompiled Embree library depends on the SYCL runtime, which conflicts with other Houdini
 plugins that ship their own SYCL runtime (for example Arnold), making the Cycles plugin fail to load. To avoid
 this, build Embree as a static library without SYCL (`EMBREE_STATIC_LIB=ON`, `EMBREE_SYCL_SUPPORT=OFF`) and

@@ -168,6 +168,15 @@ Path to the OptiX SDK root directory. \
 When set, this path will be used at runtime to compile OptiX kernels."
   )
 
+  option(WITH_CYCLES_DLSS "\
+Enable NVIDIA DLSS Ray Reconstruction for viewport denoising (needs DLSS_SDK_ROOT)"
+    OFF
+  )
+  set(DLSS_SDK_ROOT "" CACHE PATH "\
+Path to the NVIDIA DLSS SDK root directory, for its headers. \
+The DLSS implementation is loaded from the NVIDIA driver at runtime."
+  )
+
   mark_as_advanced(CYCLES_CUDA_BINARIES_ARCH)
   mark_as_advanced(WITH_CYCLES_CUDA_BUILD_SERIAL)
   mark_as_advanced(WITH_CUDA_DYNLOAD)
