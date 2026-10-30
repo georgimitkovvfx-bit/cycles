@@ -1024,10 +1024,14 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     SetNodeValue(nodeDesc.node, *input, value);
 
     /* UsdImaging passes UsdUVTexture's sourceColorSpace as the color space of the file
-     * parameter, like the colorSpace metadata of asset inputs. */
-    if (const HdTokenDataSourceHandle colorSpaceDs = params.Get(paramName).GetColorSpace()) {
-      if (const SocketType *colorspace = nodeDesc.node->type->find_input(ustring("colorspace"))) {
-        nodeDesc.node->set(*colorspace, ustring(colorSpaceDs->GetTypedValue(0.0f).GetString()));
+     * parameter, like the colorSpace metadata of asset inputs. Other parameters can have one too
+     * (inherited, or empty), which is not the image's. An authored colorspace wins. */
+    if (input->name == "filename" && !params.Get(TfToken("colorspace")).GetValue()) {
+      const HdTokenDataSourceHandle colorSpaceDs = params.Get(paramName).GetColorSpace();
+      const TfToken colorSpaceName = colorSpaceDs ? colorSpaceDs->GetTypedValue(0.0f) : TfToken();
+      const SocketType *colorspace = nodeDesc.node->type->find_input(ustring("colorspace"));
+      if (!colorSpaceName.IsEmpty() && colorspace) {
+        nodeDesc.node->set(*colorspace, ustring(colorSpaceName.GetString()));
         input = colorspace;
       }
     }
