@@ -9,9 +9,10 @@ This is a fork of [cjhosken/hdCycles](https://projects.blender.org/cjhosken/hdCy
 Cycles repository). The work for Houdini 22 lives on the `hdCycles-H22` branch.
 
 > **Status: work in progress.** Daily lookdev with Cycles shaders, Karma/MaterialX materials, USD lights,
-> volumes, primvars as shader attributes, AOVs, light groups, per-object and per-light settings, motion blur and
-> OSL works, in the viewport, husk and TOPs; see [Known issues](#known-issues). The Cycles core follows Blender's
-> Cycles 5.3 (blender/cycles `main`, October 2026), including the DLSS viewport denoiser.
+> light and shadow linking, volumes, primvars as shader attributes, AOVs, light groups, per-object and per-light
+> settings, motion blur and OSL works, in the viewport, husk and TOPs; see [Known issues](#known-issues). The
+> Cycles core follows Blender's Cycles 5.3 (blender/cycles `main`, October 2026, plus the later Cycles fixes of
+> Blender `main`), including the DLSS viewport denoiser.
 
 ## Tested with
 
@@ -34,6 +35,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Shader node UI | Blender 5.3 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
+| Light linking | Light and shadow linking from the lights' `lightLink` / `shadowLink` collections (Light Linker LOP), like Karma |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
 | Interactive edits | Moving/editing lights, objects, materials and settings updates the render. Motion blur, the shutter and primvar AOVs change without restarting the render. Texture files changed on disk reload on the next material edit or with **Reload Textures** in the viewport's renderer menu; UDIM (`<UDIM>`) textures |
 | Viewport | Free view and looking through a camera. Starts each change at a lower resolution like Blender (**Start at Low Resolution** in Performance > Viewport). Image updates every 0.2 s (Cycles slows to 2 s after a while); on a 2K viewport about 15 images per second while tumbling |
@@ -42,9 +44,10 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs inside a LOP stage; volumes without a material show their density |
 | Primvars | USD primvars are Cycles attributes for the Attribute, UV Map, Vertex Color, Normal Map/Tangent and USD Primvar Reader nodes, MaterialX geometry nodes and OSL `getattribute`: every interpolation on meshes (also subdivided), curves and points, constant primvars on volumes, float/double/half/int/bool scalars, vectors and arrays. Houdini's attribute names work too: `Cd`, `Alpha`, `uv`, `v`, `accel` find `displayColor`, `displayOpacity`, `st`, `velocities`, `accelerations` and the other way round. Face-varying normals (Houdini vertex `N`) are used. **Instance primvars:** per-point primvars of point instancers (Houdini Instancer LOP, SOP Import of packed primitives) and constant primvars on native instances reach the prototypes' shaders; the prototype's own primvar wins, then the innermost instancer, like Karma |
 | Geometry | Meshes, curves, points, and implicit USD shapes (Sphere, Cube, Cone, Cylinder, Capsule, Plane) as smooth meshes with texture coordinates laid out like Blender's primitives (UV sphere, cube cross layout); the cube is flat shaded |
-| Motion blur | Object transforms, deformation of meshes, curves and points (time samples, velocities, accelerations), point instancers (also nested; velocities and angular velocities), volumes with velocity fields (Houdini `vel` or `vel.x/y/z`) and the camera, over the camera shutter (Motion Blur in the render settings). A **Vector** (motion vector) pass like Blender's when motion blur is off |
+| Motion blur | Object transforms, deformation of meshes, curves and points (time samples, velocities, accelerations), point instancers (also nested; velocities and angular velocities), volumes with velocity fields (Houdini `vel` or `vel.x/y/z`) and the camera, over the camera shutter (Motion Blur in the render settings, with Motion Steps like Blender's). A **Vector** (motion vector) pass like Blender's when motion blur is off |
 | AOVs | Pass toggles on the Cycles Render Settings LOP like Blender's View Layer Passes (Data, Light, Cryptomatte, Shader AOV, Light Groups) plus primvar AOVs, any Cycles pass as a render var, shader AOVs from the AOV Output node, Karma's common light path expressions and the Karma Render Settings LOP's AOVs mapped to Cycles passes, Cryptomatte with manifests, one image per pass (Split Render Product by Render Var), husk image filters. Every render var shows in the viewport's Render Outputs menu and in slap comps (live, and the Slap Comp Import COP) |
-| Batch rendering | husk, the USD Render ROP and TOPs (USD Render Scene, USD Render Files, ROP Fetch). The Cycles Render Settings LOP is the stage's default render settings, like Karma's |
+| Batch rendering | husk, the USD Render ROP and TOPs (USD Render Scene, USD Render Files, ROP Fetch). The Cycles Render Settings LOP is the stage's default render settings, like Karma's. Crop windows (`dataWindowNDC`) and non-square pixels match Karma |
+| Textures | Texture cache: tiled, mipmapped `.tx` files are used, and can be generated automatically into a cache directory (Performance > Texture Cache); Texture Size Limit (Simplify) |
 | Per-light settings | Max Bounces, Multiple Importance, Shadow Caustics, ray visibility and Light Group: Cycles tab of the Light LOP |
 | Per-object settings | Ray visibility (also Raycast), shadow catcher, holdout, shadow caustics, shadow terminator, AO distance: Cycles tab of the Render Geometry Settings LOP |
 | OSL | **Open Shading Language** render setting (CPU and OptiX). **Cycles Script** node for `.osl`/`.oso` files like Blender's Script node, and Houdini's own OSL shader nodes (OSL Generic Shader Builder) in Cycles materials |
@@ -77,9 +80,9 @@ too; it found that dome light textures were rotated (fixed).
   **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
   (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
 - **Primvars:** matrix, string and int64 primvars are not exported. Per-object settings (`cycles:object:*`) are not
-  read per instance. The USD Primvar Reader's `fallback` is ignored: geometry without the primvar reads 0.
-- **UsdPreviewSurface:** the diffuse color default is Cycles' 0.8 (USD: 0.18); `opacityThreshold`, `occlusion` and
-  `displacement` are not translated; in the specular workflow `ior` is ignored. UsdUVTexture scale and bias apply
+  read per instance.
+- **UsdPreviewSurface:** `occlusion` and `displacement` are not translated; in the specular workflow `ior` is
+  ignored. UsdUVTexture scale and bias apply
   only when authored (not connected), and its r/g/b outputs are luminance.
 - **MaterialX limits:** noise nodes use Cycles' noise (same character, different pattern); the OpenPBR coat is
   approximated; BSDF layering is an add; matrix nodes, hex tiling, some compositing nodes and MaterialX volumes
@@ -89,16 +92,14 @@ too; it found that dome light textures were rotated (fixed).
   can take minutes. Without a color attribute the Vertex Color node differs from SVM (also in Blender). Builds
   need an OSL built against Houdini's OpenImageIO (see [BUILDING.md](BUILDING.md)). `getattribute` in a Script
   node finds attributes named by a string constant or a parameter default, not names computed at run time.
-- **Hair:** with Curves > Shape = 3D Curves, hair BSDFs render 0.3-1.1% brighter on OptiX than on the CPU
-  (ribbons and meshes match). The CPU is wrong: the Embree 4 port of Cycles dropped back-face culling for 3D
-  curves (and point clouds), so rays inside overlapping strands hit their inner walls. Fix pending; upstream
-  Blender has the same bug. Same-seed images of the Huang hair model differ between
-  devices by noise only: its stochastic evaluation makes the sample paths diverge.
+- **Hair:** same-seed images of the Huang hair model differ between devices by noise only: its stochastic
+  evaluation makes the sample paths diverge.
+- **Light linking:** at most 64 light and 64 shadow linking sets (Cycles); point instances use the links of their
+  prototype, not per-instance ones.
+- **Path guiding** is not built yet (the settings do nothing): Blender's OpenPGL library carries its own copy of
+  Embree, which clashes with the static Embree this build needs; it has to be built as a separate library.
 
 ### Viewport
-- Re-syncing prims (motion blur or shutter changes, primvar AOVs) is requested inside Hydra's sync, which USD
-  reports as a coding error ("Unsafe scene index invalidation detected during SyncAll()"); the update still
-  works.
 - Depth, ID and slap comp AOVs the viewport does not show refresh about 0.25 s after a change and then once per
   second (the displayed image updates every 0.2 s); final renders write all of them. Houdini redraws an
   unconverged viewport about every 0.22 s, which bounds the latency. The thread count setting only applies to
@@ -120,8 +121,10 @@ too; it found that dome light textures were rotated (fixed).
 
 Next, roughly in this order:
 
-1. DLSS upscale modes; cylinder lights (as mesh lights).
-2. Dome lights with `poleAxis` Z (DomeLight_1).
+1. Path guiding (OpenPGL as its own library); material settings (true displacement, emission sampling, volume
+   step rate); subdivision settings; curve bases.
+2. Gaussian splats (`particleField`), panoramic cameras, portal lights.
+3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
 
 ## Building
@@ -201,6 +204,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | Merge Cycles `main` from blender/cycles (159 commits up to `3eb35f859`, Cycles 5.3) | DLSS, new nodes and fixes from upstream; conflicts resolved for the Vertex Color node, volume names and object visibility | `4bc6af713` |
 | `WITH_CYCLES_DLSS` and `DLSS_SDK_ROOT` options, `FindDLSS.cmake`, the conforming preprocessor for the DLSS SDK headers on MSVC | Upstream only enables DLSS in Blender's own build | `de6ed1d84` |
 | Set `WITH_EMBREE` in the standalone build | Upstream renamed the Embree conditions for Blender's build, so standalone Cycles silently built without Embree | `d171a557f` |
+| Cherry-pick the 23 Cycles commits of Blender `main` after the last blender/cycles sync (texture cache, multi-GPU and path guiding fixes, OSL texture crash, DLSS particle instances), and update `third_party/atomic` from Blender (they need `atomic_load_uint32`) | Upstream fixes before the next standalone sync; the OSL fix conflicted with `70adce657` | `49cccba01`..`764041981`, `f01a8ad39` |
 
 ### Rendering fixes
 
@@ -244,6 +248,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Embree was missing from the build** after the upstream merge (upstream renamed its CMake condition). | `d171a557f` |
 | **The render settings UI was not generated** with Cycles 5.3's Filter Glossy default. | `4502c10ef` |
 | **UsdPreviewSurface:** diffuseColor default 0.18 and opacityThreshold cutouts (`d33094a9e`), USD's clearcoatRoughness default (`94c95560a`). | `d33094a9e`, `94c95560a` |
+| **Crop windows and non-square pixels were ignored in husk:** the whole image was squeezed into the crop. husk passes the crop as the viewport and the resolution and pixel aspect as render settings; the camera now spans the display window and the render covers the crop inside it. | `27deea1d4` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
 
 ### Render delegate features
@@ -266,6 +271,9 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Light groups and per-light settings:** `lightgroup:<name>` render vars, `inputs:cycles:light:*` light attributes (max bounces, MIS, shadow caustics, ray visibility, light group). | `4b97f56e6` |
 | **Primvar AOVs:** render vars with source type `primvar`, written by every shader; the list comes from the render settings prim, which Hydra syncs before materials. | `cd9120fca` |
 | **Motion blur:** three evenly spaced motion steps over the camera shutter for transforms, mesh points (time samples or velocities) and the camera. | `acb24e055` |
+| **Motion steps** render setting (`cycles:motion_steps`, 2^steps + 1 motion times like Blender's object Motion Steps). | `a001d80a7` |
+| **Texture cache** render settings (`cycles:use_texture_cache`, `cycles:auto_texture_cache`, `cycles:texture_cache_path`) and the texture size limit (`cycles:texture_limit`), set when the scene is created. | `47547d102` |
+| **Light and shadow linking:** `HdsiLightLinkingSceneIndex` gives lights the category of their `lightLink` / `shadowLink` collections and geometry the categories it belongs to; these become Cycles light and shadow sets like Blender's light linking. | `78168abc8` |
 | **Primvars as attributes:** all numeric types and scalar constants (`c3b4eb536`); all interpolations on points and curves, constant primvars on volumes as object attributes (`6d86055d6`); Houdini attribute names as aliases made only when a shader asks for them, the UV map as face-varying float2, `displayColor`/`Cd` as the vertex color at every interpolation, volume standard names, the constant color on every instance (`0c7b5de34`); face-varying normals as corner normals (`a77312a17`). | `c3b4eb536`, `6d86055d6`, `0c7b5de34`, `a77312a17` |
 | **Instance primvars as object attributes:** point instancer and native instance primvars, composed through nested instancers, stored only for names the shaders read. | `f751e8b3f` |
 | **Re-sync with scene indices:** with USD 26 scene indices Hydra never re-synced prims a delegate marked dirty. A pass-through scene index at the end of the chain (`resync_scene_index.cpp`) lets the delegate re-sync materials and prims, so motion blur and shutter changes, primvar AOVs and materials that start reading a primvar update without restarting the render. | `b5598ad66`, `b128d02b8`, `24e5ce736`, `014578e4b` |
@@ -289,6 +297,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Shader nodes laid out like Blender 5.2:** Blender's order, labels, menus, collapsible panels, hide rules and default values. `blender_node_layouts.py` runs inside Blender and dumps how each node is drawn; `blender_layout.py` maps that onto the Cycles nodes. Parameter names are unchanged, so existing scenes still load. | `c9c2640e7` |
 | **Layouts from Blender 5.3** (the new Integer Math, Boolean Math and Get Vector Component nodes, Glass anisotropy, Principled dispersion). | `af84eb068`, `545cd2dce` |
 | **Slider ranges from Blender's node declarations,** read from the Blender source because the Python API only gives generic ranges. Fixes sliders from −10000 to 10000, and IOR inputs that were clamped below their defaults. | `702fd2b44` |
+| **Texture Cache, Texture Size Limit and Motion Steps** in the render settings (the texture settings restart the render). | `7c0826efb` |
 | **Cycles tab on the Render Settings LOP and in the viewport display options,** laid out like Blender's render properties: Sampling, Denoise, Path Guiding, Light Paths, Clamping, Caustics, Fast GI, Volumes, Film, Performance. Generated from the delegate's own settings, so defaults and menus always match. | `16f63cd20`, `de6ced211` |
 | **Cycles Render Settings LOP:** one node that creates the render settings, product and var prims (`Products/renderproduct`, `Vars/beauty`) with every Cycles setting authored, like Karma's. | `8abcbdb5f`, `bb487a793` |
 | **Tab menu sub-menus like Blender's Add menu,** parsed from Blender's `node_add_menu_shader.py`; nodes not in Blender's menu (Mix (Legacy), Scene Time, ...) in the closest sub-menu. | `f400ddc23`, `3d7bbdf1a` |
