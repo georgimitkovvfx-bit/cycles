@@ -57,7 +57,9 @@ HdCyclesRenderPass::~HdCyclesRenderPass()
 bool HdCyclesRenderPass::IsConverged() const
 {
   /* Changed settings or re-synced prims restart the render at the next execute. */
-  if (GetRenderIndex()->GetRenderDelegate()->GetRenderSettingsVersion() != _lastSettingsVersion) {
+  if (GetRenderIndex()->GetRenderDelegate()->GetRenderSettingsVersion() != _lastSettingsVersion ||
+      _renderParam->IsResyncing())
+  {
     return false;
   }
 
@@ -189,6 +191,8 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
     // Start Cycles render thread if not already running
     session->start();
+
+    renderDelegate->SendResync();
   }
 
   session->draw();

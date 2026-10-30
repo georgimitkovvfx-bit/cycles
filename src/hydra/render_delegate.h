@@ -94,6 +94,11 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
 
   void Update() override;
 
+  /* Mark the prims that HdCyclesSession::RequestResync asked for dirty, so that the next sync
+   * syncs them. Scene indices must not send notices during a sync: called after setting changes,
+   * after a sync (CommitResources) and after the render pass. */
+  void SendResync();
+
   PXR_NS::TfToken GetMaterialBindingPurpose() const override;
 
   PXR_NS::TfTokenVector GetMaterialRenderContexts() const override;

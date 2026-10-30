@@ -449,12 +449,26 @@ void HdCyclesDelegate::CommitResources(HdChangeTracker *tracker)
 
   _renderParam->UpdateScene();
   _renderParam->rprimsResyncing = false;
+
+  /* Requests of the prims just synced, for the next sync. */
+  SendResync();
 }
 
-/* Called at the start of HdRenderIndex::SyncAll: the prims that HdCyclesSession::RequestResync
- * asked for are dirtied here and synced by the same SyncAll. */
+/* Called at the start of HdRenderIndex::SyncAll, which syncs the prims SendResync() dirtied. */
 void HdCyclesDelegate::Update()
 {
+  /* Restart the render with the synced prims. The session thread takes scene changes into the
+   * running render without restarting it, which the render pass could miss. */
+  if (_renderParam->resyncPending.exchange(false)) {
+    ++_settingsVersion;
+  }
+}
+
+void HdCyclesDelegate::SendResync()
+{
+  if (!_renderIndex) {
+    return;
+  }
   const bool materials = _renderParam->resyncMaterials.exchange(false);
   const bool rprims = _renderParam->resyncRprims.exchange(false);
   if (!(materials || rprims) || !_renderIndex) {
@@ -495,10 +509,7 @@ void HdCyclesDelegate::Update()
     _renderParam->rprimsResyncing = true;
   }
   resyncSceneIndex->Resync(entries);
-
-  /* Restart the render with the synced prims. The session thread takes scene changes into the
-   * running render without restarting it, which the render pass could miss. */
-  ++_settingsVersion;
+  _renderParam->resyncPending = true;
 }
 
 HdCyclesResyncSceneIndexPtr HdCyclesDelegate::GetResyncSceneIndex()
@@ -798,6 +809,8 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   {
     UpdateDenoiser();
   }
+
+  SendResync();
 }
 
 void HdCyclesDelegate::UpdateDenoiser()

@@ -176,8 +176,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   // With scene indices, Hydra only syncs a prim again when the scene changes it, not when the
   // render delegate marks it dirty. Changes only the delegate knows about request a sync here,
-  // sent by HdCyclesDelegate::Update() at the start of the next sync: materials are rebuilt,
-  // rprims and cameras read their transforms and primvars again.
+  // sent by HdCyclesDelegate::SendResync() outside of syncs, for the next sync: materials are
+  // rebuilt, rprims and cameras read their transforms and primvars again.
   void RequestResync(bool materials, bool rprims);
 
   // Requests before the first render pass come from the first sync, which syncs the prims they
@@ -198,9 +198,17 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   std::atomic<bool> resyncMaterials = false;
   std::atomic<bool> resyncRprims = false;
-  // Set from HdCyclesDelegate::Update() to CommitResources() when that sync syncs every rprim
-  // again: the materials and cameras synced before them need no other rprim sync
+  // Set from HdCyclesDelegate::SendResync() to CommitResources() when the next sync syncs every
+  // rprim again: the materials and cameras synced before them need no other rprim sync
   std::atomic<bool> rprimsResyncing = false;
+  // Prims were marked dirty for the next sync, which restarts the render
+  std::atomic<bool> resyncPending = false;
+
+  // Whether a requested re-sync has not reached the render yet
+  bool IsResyncing() const
+  {
+    return resyncMaterials || resyncRprims || resyncPending;
+  }
 
  private:
   void CreateSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);
