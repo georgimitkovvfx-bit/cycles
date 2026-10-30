@@ -7455,30 +7455,35 @@ void BumpNode::constant_fold(const ConstantFolder &folder)
 }
 
 /* Default lookup tables for curve and ramp nodes without any points, matching the defaults of
- * the nodes in Blender: identity curves, and a black to white ramp. Without these, the node would
- * not be compiled and nodes using its output would read uninitialized values. This happens for
- * example with USD materials that don't specify the curve or ramp. */
+ * the nodes in Blender: identity curves over their range from min_x to max_x (Vector Curves go
+ * from -1 to 1), and a black to white ramp. Without these, the node would not be compiled and
+ * nodes using its output would read uninitialized values. This happens for example with USD
+ * materials that don't specify the curve or ramp. */
 
-static const array<packed_float3> &curve_table_or_default(const array<packed_float3> &table)
+static array<packed_float3> curve_table_or_default(const array<packed_float3> &table,
+                                                   const float min_x = 0.0f,
+                                                   const float max_x = 1.0f)
 {
-  static const array<packed_float3> linear = [] {
-    array<packed_float3> a(2);
-    a[0] = zero_float3();
-    a[1] = one_float3();
-    return a;
-  }();
-  return table.size() ? table : linear;
+  if (table.size()) {
+    return table;
+  }
+  array<packed_float3> identity(2);
+  identity[0] = make_float3(min_x);
+  identity[1] = make_float3(max_x);
+  return identity;
 }
 
-static const array<float> &curve_table_or_default(const array<float> &table)
+static array<float> curve_table_or_default(const array<float> &table,
+                                           const float min_x,
+                                           const float max_x)
 {
-  static const array<float> linear = [] {
-    array<float> a(2);
-    a[0] = 0.0f;
-    a[1] = 1.0f;
-    return a;
-  }();
-  return table.size() ? table : linear;
+  if (table.size()) {
+    return table;
+  }
+  array<float> identity(2);
+  identity[0] = min_x;
+  identity[1] = max_x;
+  return identity;
 }
 
 /* Curves node */
@@ -7490,7 +7495,7 @@ void CurvesNode::constant_fold(const ConstantFolder &folder, ShaderInput *value_
 
   /* evaluate fully constant node */
   if (folder.all_inputs_constant()) {
-    const array<packed_float3> &table = curve_table_or_default(curves);
+    const array<packed_float3> &table = curve_table_or_default(curves, min_x, max_x);
 
     float3 pos = (value - make_float3(min_x, min_x, min_x)) / (max_x - min_x);
     float3 result;
@@ -7510,7 +7515,7 @@ void CurvesNode::constant_fold(const ConstantFolder &folder, ShaderInput *value_
 
 void CurvesNode::compile(SVMCompiler &compiler, ShaderInput *value_in, ShaderOutput *value_out)
 {
-  const array<packed_float3> &table = curve_table_or_default(curves);
+  const array<packed_float3> &table = curve_table_or_default(curves, min_x, max_x);
 
   compiler.add_node(this,
                     NODE_CURVES,
@@ -7528,7 +7533,7 @@ void CurvesNode::compile(SVMCompiler &compiler, ShaderInput *value_in, ShaderOut
 
 void CurvesNode::compile(OSLCompiler &compiler, const char *name)
 {
-  compiler.parameter_color_array("ramp", curve_table_or_default(curves));
+  compiler.parameter_color_array("ramp", curve_table_or_default(curves, min_x, max_x));
   compiler.parameter(this, "min_x");
   compiler.parameter(this, "max_x");
   compiler.parameter(this, "extrapolate");
@@ -7643,7 +7648,7 @@ void FloatCurveNode::constant_fold(const ConstantFolder &folder)
 
   /* evaluate fully constant node */
   if (folder.all_inputs_constant()) {
-    const array<float> &table = curve_table_or_default(curve);
+    const array<float> &table = curve_table_or_default(curve, min_x, max_x);
 
     const float pos = (value - min_x) / (max_x - min_x);
     const float result = float_ramp_lookup(table.data(), pos, true, extrapolate, table.size());
@@ -7659,7 +7664,7 @@ void FloatCurveNode::constant_fold(const ConstantFolder &folder)
 
 void FloatCurveNode::compile(SVMCompiler &compiler)
 {
-  const array<float> &table = curve_table_or_default(curve);
+  const array<float> &table = curve_table_or_default(curve, min_x, max_x);
 
   compiler.add_node(this,
                     NODE_FLOAT_CURVE,
@@ -7679,7 +7684,7 @@ void FloatCurveNode::compile(SVMCompiler &compiler)
 
 void FloatCurveNode::compile(OSLCompiler &compiler)
 {
-  const array<float> &table = curve_table_or_default(curve);
+  const array<float> &table = curve_table_or_default(curve, min_x, max_x);
   compiler.parameter_array("ramp", table.data(), table.size());
   compiler.parameter(this, "min_x");
   compiler.parameter(this, "max_x");

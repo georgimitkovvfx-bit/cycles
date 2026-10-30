@@ -386,6 +386,12 @@ if not kwargs["old_version"]:
     for name in %(angles)r:
         for parm in node.parmTuple(name):
             to_degrees(parm)
+%(extra)s"""
+
+# Vector Curves had Min X 0 before version 2: with the -1 to 1 curves they are reset to, the
+# saved 0 would map x to 2x - 1 instead of the curve's identity.
+VECTOR_CURVES_SYNC = """    if node.parm("min_x").eval() == 0 and node.parm("max_x").eval() == 1:
+        node.parm("min_x").set(-1)
 """
 
 
@@ -438,8 +444,9 @@ def create_hda(node_data, install_dir, layouts, problems):
     angles = [p["parm_ui"] for p in params if p.get("degrees")]
     if ramps or angles:
         hda_def.setVersion("2")
+        extra = VECTOR_CURVES_SYNC if node_name == "vector_curves" else ""
         hda_def.addSection("SyncNodeVersion",
-                           SYNC_NODE_VERSION % {"ramps": ramps, "angles": angles})
+                           SYNC_NODE_VERSION % {"ramps": ramps, "angles": angles, "extra": extra})
         hda_def.setExtraFileOption("SyncNodeVersion/IsPython", True)
         hda_def.setExtraFileOption("SyncNodeVersion/IsScript", True)
     hda_def.save(hda_path)
