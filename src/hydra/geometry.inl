@@ -251,6 +251,7 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
       {"visible_transmission", PATH_RAY_VISIBILITY_TRANSMIT},
       {"visible_volume_scatter", PATH_RAY_VISIBILITY_VOLUME_SCATTER},
       {"visible_shadow", PATH_RAY_VISIBILITY_SHADOW},
+      {"visible_raycast", PATH_RAY_VISIBILITY_RAYCAST},
   };
   static const ustring objectSettings[] = {
       ustring("is_shadow_catcher"),

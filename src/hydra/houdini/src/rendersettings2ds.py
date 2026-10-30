@@ -480,6 +480,7 @@ GEOMETRY_SETTINGS = {
     "primvars:cycles:object:visible_transmission": {"type": "boolean", "default": True},
     "primvars:cycles:object:visible_volume_scatter": {"type": "boolean", "default": True},
     "primvars:cycles:object:visible_shadow": {"type": "boolean", "default": True},
+    "primvars:cycles:object:visible_raycast": {"type": "boolean", "default": True},
     "primvars:cycles:object:is_shadow_catcher": {"type": "boolean", "default": False},
     "primvars:cycles:object:use_holdout": {"type": "boolean", "default": False},
     "primvars:cycles:object:is_caustics_caster": {"type": "boolean", "default": False},
@@ -508,6 +509,8 @@ GEOMETRY_LAYOUT = [
               "Object visibility for volume scatter rays."),
             S("primvars:cycles:object:visible_shadow", "Shadow",
               "Object visibility for shadow rays."),
+            S("primvars:cycles:object:visible_raycast", "Raycast",
+              "Object visibility for the rays of Raycast nodes."),
         ], open=True),
         P("Mask", [
             S("primvars:cycles:object:is_shadow_catcher", "Shadow Catcher",
