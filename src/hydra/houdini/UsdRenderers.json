@@ -9,7 +9,9 @@
         "needsselection" : true,
         "depthstyle" : "opengl",
         "restartrendersettings" : [ "cycles:device", "cycles:threads", "cycles:shading_system",
-                                    "cycles:use_resolution_divider", "cycles:curve_shape" ],
+                                    "cycles:use_resolution_divider", "cycles:curve_shape",
+                                    "cycles:use_texture_cache", "cycles:auto_texture_cache",
+                                    "cycles:texture_cache_path", "cycles:texture_limit" ],
         "husk.default_output" : "cycles.exr"
     }
 }

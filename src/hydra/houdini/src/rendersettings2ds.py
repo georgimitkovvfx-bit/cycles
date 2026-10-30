@@ -69,6 +69,16 @@ SESSION_SETTINGS = {
     },
     "cycles:ao_bounces": {"type": "int", "default": 1},
     "cycles:ao_factor": {"type": "float", "default": 1.0},
+    "cycles:motion_steps": {"type": "int", "default": 1},
+    "cycles:use_texture_cache": {"type": "boolean", "default": True},
+    "cycles:auto_texture_cache": {"type": "boolean", "default": False},
+    "cycles:texture_cache_path": {"type": "string", "default": ""},
+    "cycles:texture_limit": {
+        "type": "menu",
+        "default": "off",
+        "enum_values": {"off": "No Limit", "128": "128", "256": "256", "512": "512",
+                        "1024": "1024", "2048": "2048", "4096": "4096", "8192": "8192"},
+    },
 }
 
 # Blender's defaults for final renders (Blender 5.2) where they differ from the delegate's, set by
@@ -404,6 +414,12 @@ LAYOUT = [
           "results when viewing closely. Changing it restarts the render.",
           viewport=True),
     ]),
+    P("Simplify", [
+        S("cycles:texture_limit", "Texture Size Limit",
+          "Limit the size of image textures, for less memory use. Changing it restarts the "
+          "render.",
+          viewport=True),
+    ]),
     P("Motion Blur", [
         S("cycles:integrator:motion_blur", "Motion Blur",
           "Render motion blur over the shutter of the camera (Shutter Open and Close on the "
@@ -411,6 +427,11 @@ LAYOUT = [
           "and accelerations of points and instances, and velocity fields of volumes (vel, v "
           "or velocity). The Vector pass is empty with motion blur, like in Blender.",
           viewport=True),
+        S("cycles:motion_steps", "Motion Steps",
+          "Accuracy of motion blur of transforms, points and instances: more steps use more "
+          "memory (2^steps + 1 motion samples over the shutter, like Blender's object "
+          "motion steps).",
+          range=(1, 7, True, True)),
     ], toggle="cycles:integrator:motion_blur"),
     P("Film", [
         S("cycles:film:exposure", "Exposure",
@@ -469,6 +490,18 @@ LAYOUT = [
               "feedback while navigating. Changing it restarts the render.",
               viewport=True),
         ], open=True),
+        P("Texture Cache", [
+            S("cycles:use_texture_cache", "Texture Cache",
+              "Use tiled and mipmapped .tx files, loading only the tiles and mip levels the "
+              "render needs: .tx, tiled and mipmapped textures are used directly, other images "
+              "use the cache files of the Cache Directory or of a blender_tx folder next to "
+              "them when those exist. Changing it restarts the render."),
+            S("cycles:auto_texture_cache", "Auto Generate",
+              "Generate missing cache files when rendering. Changing it restarts the render."),
+            S("cycles:texture_cache_path", "Cache Directory",
+              "Directory of the cache files, absolute or relative to each image. Empty uses a "
+              "blender_tx folder next to each image. Changing it restarts the render."),
+        ], open=True, toggle="cycles:use_texture_cache"),
     ]),
 ]
 
