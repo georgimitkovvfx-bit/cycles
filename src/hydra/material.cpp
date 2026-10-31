@@ -790,6 +790,33 @@ static ShaderOutput *FindOutput(ShaderNode *node, const std::string &name)
 
 }  // namespace
 
+/* Settings like Blender's Material Properties > Settings, from "config:cycles:<socket>"
+ * attributes of the material prim (Houdini's Cycles Material Builder authors them). Unset
+ * settings get the Cycles defaults, which are Blender's. */
+static void ApplyMaterialSettings(Shader *shader, const HdMaterialNetworkSchema &network)
+{
+  static const char *const settings[] = {"displacement_method",
+                                         "emission_sampling_method",
+                                         "use_transparent_shadow",
+                                         "use_bump_map_correction",
+                                         "volume_sampling_method",
+                                         "volume_interpolation_method",
+                                         "volume_step_rate"};
+  const HdSampledDataSourceContainerSchema config = network.GetConfig();
+  for (const char *name : settings) {
+    const SocketType *socket = shader->type->find_input(ustring(name));
+    const HdSampledDataSourceHandle value = config ?
+                                                config.Get(TfToken(string("cycles:") + name)) :
+                                                nullptr;
+    if (value) {
+      SetNodeValue(shader, *socket, value->GetValue(0.0f));
+    }
+    else {
+      shader->set_default_value(*socket);
+    }
+  }
+}
+
 static void AddInstanceIdAOV(ShaderGraph *graph)
 {
   /* Instance AOV is provided for every network, to make picking work. */
@@ -957,6 +984,8 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     const AttributeRequestSet attributes = _shader->attributes;
+    /* Before the graph: set_graph() hashes the displacement for the displacement method. */
+    ApplyMaterialSettings(_shader, network);
     _shader->set_graph(std::move(graph));
     _shader->tag_update(lock.scene);
 
