@@ -439,7 +439,7 @@ def build_contents(subnet, sockets, ds_dir):
         parm_name = hou.text.encodeParm(setting["name"])
         settings.parm(hou.text.encodeParm(setting["name"] + "_control")).set("set")
         parm = settings.parm(parm_name)
-        if socket["type"] == "menu":
+        if socket["type"] in ("menu", "string"):
             parm.set(string_ref(parm_name))
         else:
             parm.setExpression('ch("../%s")' % parm_name)
