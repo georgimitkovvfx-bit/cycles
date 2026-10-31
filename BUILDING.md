@@ -106,6 +106,12 @@ point the configure step to it:
 
     -DEMBREE_ROOT_DIR="<path to Embree install>"
 
+The precompiled OpenPGL (path guiding) is a static library containing Embree's common code, which fails to link
+next to a static Embree. Either turn path guiding off (`-DWITH_CYCLES_PATH_GUIDING=OFF`) or build OpenPGL as a
+shared library against Houdini's TBB and point to it (its DLL is installed with the plugin):
+
+    -Dopenpgl_DIR="<OpenPGL install>/lib/cmake/openpgl-<version>"
+
 OSL is off for Houdini builds unless an OSL built against Houdini's OpenImageIO is given: the precompiled OSL
 links Blender's OpenImageIO, which cannot be mixed with Houdini's. Build OSL (1.15) as static libraries with
 `BUILD_SHARED_LIBS=OFF`, `OSL_USE_OPTIX=ON` and `USE_LLVM_BITCODE=ON` (for OptiX), against Houdini's OpenImageIO
