@@ -97,7 +97,49 @@ class RadiansParmTranslator(SimpleParmTranslator):
                      SimpleParmTranslator.valueFromParm(self, parm_tuple, usd_time_code))
 
 
+def material_settings_node(shader_node):
+    """The material builder whose parameters hold the material settings (tag
+    cycles_material_setting, added by the USD Cycles Material Builder tool), if any."""
+    node = shader_node.parent()
+    while isinstance(node, hou.VopNode):
+        if any("cycles_material_setting" in p.parmTemplate().tags() for p in node.parms()):
+            return node
+        node = node.parent()
+    return None
+
+
+def author_material_settings(prim, shader_node):
+    """Material settings like Blender's Material Properties > Settings as config:cycles:<setting>
+    attributes of the material, which the delegate reads (unauthored: the Cycles defaults)."""
+    node = material_settings_node(shader_node)
+    if node is None or not prim:
+        return
+    for parm in node.parms():
+        setting = parm.parmTemplate().tags().get("cycles_material_setting")
+        if not setting:
+            continue
+        name = "config:cycles:" + setting
+        if parm.isAtDefault():
+            prim.RemoveProperty(name)
+            continue
+        template = parm.parmTemplate()
+        if template.type() == hou.parmTemplateType.Menu:
+            prim.CreateAttribute(name, Sdf.ValueTypeNames.Token).Set(parm.evalAsString())
+        elif template.type() == hou.parmTemplateType.Toggle:
+            prim.CreateAttribute(name, Sdf.ValueTypeNames.Bool).Set(bool(parm.eval()))
+        else:
+            prim.CreateAttribute(name, Sdf.ValueTypeNames.Float).Set(float(parm.eval()))
+
+
 class CyclesShaderTranslatorHelper(ShaderTranslatorHelper):
+    def createAndConnectUsdTerminalShader(self, shader_node, requested_shader_type,
+                                          shader_node_output_name):
+        result = ShaderTranslatorHelper.createAndConnectUsdTerminalShader(
+            self, shader_node, requested_shader_type, shader_node_output_name)
+        author_material_settings(self.usdStage().GetPrimAtPath(self.usdMainAncestorPath()),
+                                 shader_node)
+        return result
+
     def parameterTranslator(self, parm_tuple):
         tags = parm_tuple.parmTemplate().tags()
         if "cycles_socket" in tags:
