@@ -32,6 +32,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | GPU rendering | OptiX and CUDA, chosen automatically (OptiX > CUDA > CPU), results match the CPU |
 | Denoising | OpenImageDenoise (GPU or CPU) and OptiX; **DLSS** Ray Reconstruction for the viewport (needs an NVIDIA RTX GPU and driver 620 or newer; final renders and other GPUs fall back to OpenImageDenoise or the fastest available denoiser) |
 | Shaders | All user-facing Cycles shader nodes (96, plus Cycles 5.3's Integer Math, Boolean Math and Get Vector Component), as Houdini VOP nodes inside a **USD Cycles Material Builder** |
+| Material settings | Displacement (bump, true displacement, both), Emission Sampling, Transparent Shadows, Bump Map Correction and the volume Sampling, Interpolation and Step Rate: the Settings tab of the USD Cycles Material Builder, like Blender's material Settings panel (`config:cycles:*` attributes on the material) |
 | Shader node UI | Blender 5.3 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
@@ -96,8 +97,11 @@ too; it found that dome light textures were rotated (fixed).
   evaluation makes the sample paths diverge.
 - **Light linking:** at most 64 light and 64 shadow linking sets (Cycles); point instances use the links of their
   prototype, not per-instance ones.
-- **Path guiding** is not built yet (the settings do nothing): Blender's OpenPGL library carries its own copy of
-  Embree, which clashes with the static Embree this build needs; it has to be built as a separate library.
+- **Path guiding** is not enabled (the settings do nothing). It builds with OpenPGL as a separate library
+  (`openpgl.dll`), but guided CPU renders of an indirectly lit room come out about 40% too bright with every
+  guiding option, so it stays off until that is understood (is Blender the same?).
+- Material settings are only on builders made with the USD Cycles Material Builder tool from this version on
+  (older builders have no Settings tab).
 
 ### Viewport
 - Depth, ID and slap comp AOVs the viewport does not show refresh about 0.25 s after a change and then once per
@@ -121,8 +125,8 @@ too; it found that dome light textures were rotated (fixed).
 
 Next, roughly in this order:
 
-1. Path guiding (OpenPGL as its own library); material settings (true displacement, emission sampling, volume
-   step rate); subdivision settings; curve bases.
+1. Path guiding (biased guided renders to resolve); subdivision settings (dicing rate for true displacement);
+   curve bases.
 2. Gaussian splats (`particleField`), panoramic cameras, portal lights.
 3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
@@ -204,6 +208,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | Merge Cycles `main` from blender/cycles (159 commits up to `3eb35f859`, Cycles 5.3) | DLSS, new nodes and fixes from upstream; conflicts resolved for the Vertex Color node, volume names and object visibility | `4bc6af713` |
 | `WITH_CYCLES_DLSS` and `DLSS_SDK_ROOT` options, `FindDLSS.cmake`, the conforming preprocessor for the DLSS SDK headers on MSVC | Upstream only enables DLSS in Blender's own build | `de6ed1d84` |
 | Set `WITH_EMBREE` in the standalone build | Upstream renamed the Embree conditions for Blender's build, so standalone Cycles silently built without Embree | `d171a557f` |
+| `WITH_CYCLES_PATH_GUIDING` option, the versioned precompiled OpenPGL directory, and a shared OpenPGL (`openpgl_DIR`) installed with the plugin | The option was never declared, so path guiding was never built; the static OpenPGL cannot be linked next to a static Embree | `3c859c27f` |
 | Cherry-pick the 23 Cycles commits of Blender `main` after the last blender/cycles sync (texture cache, multi-GPU and path guiding fixes, OSL texture crash, DLSS particle instances), and update `third_party/atomic` from Blender (they need `atomic_load_uint32`) | Upstream fixes before the next standalone sync; the OSL fix conflicted with `70adce657` | `49cccba01`..`764041981`, `f01a8ad39` |
 
 ### Rendering fixes
@@ -273,6 +278,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Motion blur:** three evenly spaced motion steps over the camera shutter for transforms, mesh points (time samples or velocities) and the camera. | `acb24e055` |
 | **Motion steps** render setting (`cycles:motion_steps`, 2^steps + 1 motion times like Blender's object Motion Steps). | `a001d80a7` |
 | **Texture cache** render settings (`cycles:use_texture_cache`, `cycles:auto_texture_cache`, `cycles:texture_cache_path`) and the texture size limit (`cycles:texture_limit`), set when the scene is created. | `47547d102` |
+| **Material settings** from `config:cycles:<setting>` attributes of the material prim (Hydra's material network config): displacement method, emission sampling, transparent shadows, bump map correction, volume sampling, interpolation and step rate. | `65381afb4` |
 | **Light and shadow linking:** `HdsiLightLinkingSceneIndex` gives lights the category of their `lightLink` / `shadowLink` collections and geometry the categories it belongs to; these become Cycles light and shadow sets like Blender's light linking. | `78168abc8` |
 | **Primvars as attributes:** all numeric types and scalar constants (`c3b4eb536`); all interpolations on points and curves, constant primvars on volumes as object attributes (`6d86055d6`); Houdini attribute names as aliases made only when a shader asks for them, the UV map as face-varying float2, `displayColor`/`Cd` as the vertex color at every interpolation, volume standard names, the constant color on every instance (`0c7b5de34`); face-varying normals as corner normals (`a77312a17`). | `c3b4eb536`, `6d86055d6`, `0c7b5de34`, `a77312a17` |
 | **Instance primvars as object attributes:** point instancer and native instance primvars, composed through nested instancers, stored only for names the shaders read. | `f751e8b3f` |
@@ -298,6 +304,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Layouts from Blender 5.3** (the new Integer Math, Boolean Math and Get Vector Component nodes, Glass anisotropy, Principled dispersion). | `af84eb068`, `545cd2dce` |
 | **Slider ranges from Blender's node declarations,** read from the Blender source because the Python API only gives generic ranges. Fixes sliders from −10000 to 10000, and IOR inputs that were clamped below their defaults. | `702fd2b44` |
 | **Texture Cache, Texture Size Limit and Motion Steps** in the render settings (the texture settings restart the render). | `7c0826efb` |
+| **Settings tab on the USD Cycles Material Builder** like Blender's material Settings panel; the Cycles shader translator authors the changed settings on the material. | `8d4ff2701` |
+| **The Cache Directory of the Cycles Render Settings LOP was never authored** (strings were linked like numbers). | `7f61eb12d` |
 | **Cycles tab on the Render Settings LOP and in the viewport display options,** laid out like Blender's render properties: Sampling, Denoise, Path Guiding, Light Paths, Clamping, Caustics, Fast GI, Volumes, Film, Performance. Generated from the delegate's own settings, so defaults and menus always match. | `16f63cd20`, `de6ced211` |
 | **Cycles Render Settings LOP:** one node that creates the render settings, product and var prims (`Products/renderproduct`, `Vars/beauty`) with every Cycles setting authored, like Karma's. | `8abcbdb5f`, `bb487a793` |
 | **Tab menu sub-menus like Blender's Add menu,** parsed from Blender's `node_add_menu_shader.py`; nodes not in Blender's menu (Mix (Legacy), Scene Time, ...) in the closest sub-menu. | `f400ddc23`, `3d7bbdf1a` |
