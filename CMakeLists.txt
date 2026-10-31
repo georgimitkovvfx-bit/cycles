@@ -130,6 +130,7 @@ option(WITH_CYCLES_OPENVDB          "Build with OpenVDB support" ON)
 option(WITH_CYCLES_PUGIXML          "Build with XML support" ON)
 option(WITH_CYCLES_NANOVDB          "Build with NanoVDB support" ON)
 option(WITH_CYCLES_OSL              "Build with OSL support" ON)
+option(WITH_CYCLES_PATH_GUIDING     "Build with OpenPGL path guiding support (CPU only)" ON)
 option(WITH_CYCLES_USD              "Build with USD support" ON)
 
 option(WITH_LEGACY_LIBRARIES        "Build with older VFX platform 2024 libraries, for compatibility with Houdini or USD" OFF)
