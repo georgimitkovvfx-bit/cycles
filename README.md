@@ -110,6 +110,10 @@ too; it found that dome light textures were rotated (fixed).
   husk (Cycles sets it for the whole process).
 - Orbiting pivoted at the camera (like a first-person camera); fixed by declaring the depth AOV as OpenGL
   style depth, still to be confirmed in the GUI.
+- With a dome light the viewport image comes through CPU buffers instead of the faster OpenGL path (Houdini draws
+  the dome's environment map over OpenGL textures), so reduced resolution passes are not shown then.
+- Transparent background with a dome light: transparent pixels show Houdini's environment map display behind
+  the render (as with Karma); turn off Display Environment Maps to see the render's alpha.
 
 ### UI
 - Port locations are wrong on some shader nodes (the Principled BSDF inputs listed last is fixed).
@@ -255,6 +259,8 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **UsdPreviewSurface:** diffuseColor default 0.18 and opacityThreshold cutouts (`d33094a9e`), USD's clearcoatRoughness default (`94c95560a`). | `d33094a9e`, `94c95560a` |
 | **Crop windows and non-square pixels were ignored in husk:** the whole image was squeezed into the crop. husk passes the crop as the viewport and the resolution and pixel aspect as render settings; the camera now spans the display window and the render covers the crop inside it. | `27deea1d4` |
 | **The depth AOV was camera distance in meters** (1e10 for background) instead of Hydra's 0..1 window depth, which the Houdini viewport uses to composite guides. It is converted with the camera projection in the viewport (`houdini:viewport`); husk renders keep the distance. | `14fb1d2c8` |
+| **Crash writing AOVs while the viewport resized them:** the session thread wrote the depth AOV into a buffer that Houdini reallocated on its own thread. Render buffers and the AOV bindings are locked while the output driver writes them. | `dacbd0d75` |
+| **Only the dome showed in the viewport once a dome light was on:** Houdini's *Display Environment Maps* draws the dome's texture over AOVs given as OpenGL textures. With a dome light the color AOV goes through the CPU buffers like Karma's. | `7387e37d6` |
 
 ### Render delegate features
 
@@ -328,6 +334,7 @@ node generator is ported from that repository's `shaders` branch, by Christopher
 | **Fixes for older scenes and promoted parameters:** Fast GI settings of older Cycles LOPs kept and converted (`0521c6e3f`), animated angles converted to degrees (`2ebc565fa`), promoted angle parameters authored in radians (`b1b39fe1c`), curve channel edits authored (`af9b1be31`). | see the list |
 | **DLSS in the Denoiser menu**, Raycast in the object Ray Visibility panel, and Tab menu entries for the Integer Math, Boolean Math and Get Vector Component nodes. | `04b777417`, `ce53c975f`, `ab710a14c` |
 | **Cycles tab on the Render Geometry Settings LOP** (`HdCyclesPlugin_Geometry.ds`) for the per-object settings, laid out like Blender's object Visibility panel. | `30aa47d9d` |
+| **Cryptomatte and data passes were color converted when saved:** husk converts color-typed render vars from the OCIO `scene_linear` role to the file's output color space, which broke the Cryptomatte IDs (and positions, normals, UVs, vectors) with ACEScg configs. The LOP authors them as `float3`/`float4`. | `0760fa75c` |
 
 ### Documentation
 
