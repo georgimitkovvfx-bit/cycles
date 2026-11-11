@@ -92,18 +92,21 @@ def ensure_cycles_parms(node, ds_dir):
 # Render passes, laid out like Blender's view layer passes: (folder, [(row, [(parm, label,
 # [render var (name, source, source type, data type)])])]). Data and light passes have Blender's
 # names. Light path expressions have the names of Karma's AOVs and include the albedo, like
-# Karma's; Blender's light passes are divided by the color pass.
+# Karma's; Blender's light passes are divided by the color pass. Passes that hold data, not
+# colors, have float types: husk converts color types from the OCIO scene_linear role to the
+# output color space when saving (wrong for positions, IDs, ... unless scene_linear is the
+# output space).
 AOV_FOLDERS = [
     ("Data", [
         ("Include", [
             ("aov_depth", "Z", [("Depth", "depth", "raw", "float")]),
             ("aov_mist", "Mist", [("Mist", "mist", "raw", "float")]),
-            ("aov_position", "Position", [("Position", "position", "raw", "color3f")]),
-            ("aov_normal", "Normal", [("Normal", "normal", "raw", "color3f")]),
-            ("aov_vector", "Vector", [("Vector", "motion", "raw", "color4f")]),
-            ("aov_uv", "UV", [("UV", "uv", "raw", "color3f")]),
+            ("aov_position", "Position", [("Position", "position", "raw", "float3")]),
+            ("aov_normal", "Normal", [("Normal", "normal", "raw", "float3")]),
+            ("aov_vector", "Vector", [("Vector", "motion", "raw", "float4")]),
+            ("aov_uv", "UV", [("UV", "uv", "raw", "float3")]),
             ("aov_denoising", "Denoising Data", [
-                ("Denoising Normal", "denoising_normal", "raw", "color3f"),
+                ("Denoising Normal", "denoising_normal", "raw", "float3"),
                 ("Denoising Albedo", "denoising_albedo", "raw", "color3f"),
                 ("Denoising Depth", "denoising_depth", "raw", "float")]),
         ]),
@@ -229,7 +232,7 @@ levels = top.evalParm("aov_cryptomatte_levels")
 for parm, layer in CRYPTOMATTE:
     if top.evalParm(parm):
         for i in range((levels + 1) // 2):
-            add_var("%%s%%02d" %% (layer, i), "%%s%%02d" %% (layer, i), "raw", "color4f")
+            add_var("%%s%%02d" %% (layer, i), "%%s%%02d" %% (layer, i), "raw", "float4")
 
 for i in range(1, top.evalParm("shader_aovs") + 1):
     name = top.evalParm("shader_aov_name%%d" %% i)
