@@ -46,6 +46,7 @@ HdCyclesOutputDriver::HdCyclesOutputDriver(HdCyclesSession *renderParam)
 
 void HdCyclesOutputDriver::write_render_tile(const Tile &tile)
 {
+  const auto bindingsLock = _renderParam->LockAovBindings();
   update_render_buffers(tile, true);
 
   // Update convergence state of all render buffers
@@ -64,6 +65,8 @@ bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)
 
 void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool final)
 {
+  // The bound render buffers stay alive and bound while this writes them
+  const auto bindingsLock = _renderParam->LockAovBindings();
   std::vector<float> pixels;
 
   // The Cycles display driver updates the display AOV texture while rendering. The final
@@ -99,6 +102,8 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         continue;
       }
 
+      // Hydra must not resize the buffer between the size check and the write
+      const auto lock = renderBuffer->LockData();
       const HdFormat format = renderBuffer->GetFormat();
       if (format == HdFormatInvalid) {
         continue;  // Skip invalid AOV bindings

@@ -9,6 +9,8 @@
 
 #include <pxr/imaging/hd/renderBuffer.h>
 
+#include <mutex>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
@@ -75,6 +77,13 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
                    const int channels,
                    bool isId = false);
 
+  /* The Cycles session thread writes the pixels while Hydra allocates and maps the buffer on
+   * its own threads: hold this while reading the size and writing the data. */
+  std::unique_lock<std::recursive_mutex> LockData()
+  {
+    return std::unique_lock(_dataMutex);
+  }
+
  private:
   void _Deallocate() override;
 
@@ -85,6 +94,7 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
   bool _floatIds = false;
 
   std::vector<uint8_t> _data;
+  std::recursive_mutex _dataMutex;
   PXR_NS::VtValue _resource;
   mutable std::atomic_bool _resourceUsed = false;
 

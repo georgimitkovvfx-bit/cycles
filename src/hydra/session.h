@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -146,18 +147,28 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _viewport = viewport;
   }
 
+  /* The Cycles session thread writes the AOVs (output driver) while Hydra changes the bindings
+   * and deletes render buffers: the output driver holds this while using the bound buffers. */
+  std::unique_lock<std::recursive_mutex> LockAovBindings() const
+  {
+    return std::unique_lock(_aovBindingsMutex);
+  }
+
   PXR_NS::HdRenderPassAovBinding GetDisplayAovBinding() const
   {
+    const auto lock = LockAovBindings();
     return _displayAovBinding;
   }
 
   void SetDisplayAovBinding(const PXR_NS::HdRenderPassAovBinding &aovBinding)
   {
+    const auto lock = LockAovBindings();
     _displayAovBinding = aovBinding;
   }
 
-  const PXR_NS::HdRenderPassAovBindingVector &GetAovBindings() const
+  PXR_NS::HdRenderPassAovBindingVector GetAovBindings() const
   {
+    const auto lock = LockAovBindings();
     return _aovBindings;
   }
 
@@ -191,7 +202,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   static std::string GetPrimvar(const std::string &sourceName, const PXR_NS::TfToken &sourceType);
 
   // Name of the Cycles pass holding an AOV, which can be shared with other AOVs
-  const std::string &GetPassName(const PXR_NS::TfToken &aovName) const;
+  std::string GetPassName(const PXR_NS::TfToken &aovName) const;
 
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
@@ -256,6 +267,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   int _motionSteps = 1;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;
+  mutable std::recursive_mutex _aovBindingsMutex;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
   std::vector<std::pair<std::string, std::string>> _primvarAovs;

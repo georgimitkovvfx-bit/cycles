@@ -424,6 +424,7 @@ void HdCyclesSession::SetTransparentBackground(const std::optional<bool> transpa
 
 bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBindings)
 {
+  const auto lock = LockAovBindings();
   Scene *const scene = session->scene.get();
   const bool neededUV = scene->need_global_attribute(ATTR_STD_UV);
 
@@ -674,14 +675,16 @@ void HdCyclesSession::UpdateDefaultSurface()
   scene->default_surface->tag_update(scene);
 }
 
-const string &HdCyclesSession::GetPassName(const TfToken &aovName) const
+string HdCyclesSession::GetPassName(const TfToken &aovName) const
 {
+  const auto lock = LockAovBindings();
   const auto it = _passNames.find(aovName);
   return it != _passNames.end() ? it->second : aovName.GetString();
 }
 
 void HdCyclesSession::ResetConverged()
 {
+  const auto lock = LockAovBindings();
   for (const HdRenderPassAovBinding &aovBinding : _aovBindings) {
     if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(aovBinding.renderBuffer)) {
       renderBuffer->SetConverged(false);
@@ -706,6 +709,8 @@ void HdCyclesSession::RequestResync(const bool materials, const bool rprims)
 
 void HdCyclesSession::RemoveAovBinding(HdRenderBuffer *renderBuffer)
 {
+  // Waits for the output driver to stop writing to the buffer, which is deleted after this
+  const auto lock = LockAovBindings();
   for (HdRenderPassAovBinding &aovBinding : _aovBindings) {
     if (renderBuffer == aovBinding.renderBuffer) {
       aovBinding.renderBuffer = nullptr;
