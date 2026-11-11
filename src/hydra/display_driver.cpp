@@ -284,9 +284,9 @@ void HdCyclesDisplayDriver::draw(const Params &params)
     texDesc.sampleCount = HgiSampleCount1;
 
     texture_ = _hgi->CreateTexture(texDesc);
-
-    renderBuffer->SetResource(VtValue(texture_));
   }
+  // Also after the render pass gave the buffer back to the output driver (dome lights)
+  renderBuffer->SetResource(VtValue(texture_));
 
   HgiGLTexture *const texture = dynamic_cast<HgiGLTexture *>(texture_.Get());
   if (!texture || !need_update_ || pbo_size_.x != params.size.x || pbo_size_.y != params.size.y) {

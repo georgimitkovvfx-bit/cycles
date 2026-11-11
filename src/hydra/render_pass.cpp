@@ -100,18 +100,26 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         _renderParam->RequestResync(true, true);
         _renderParam->UpdateDefaultSurface();
       }
+    }
 
-      if (renderDelegate->IsDisplaySupported()) {
-        // Update display pass to the first requested color AOV
-        const HdRenderPassAovBinding displayAovBinding = !aovBindings.empty() ?
-                                                             aovBindings.front() :
-                                                             HdRenderPassAovBinding();
-        if (displayAovBinding.aovName == HdAovTokens->color && displayAovBinding.renderBuffer) {
-          _renderParam->SetDisplayAovBinding(displayAovBinding);
+    if (renderDelegate->IsDisplaySupported()) {
+      /* The display driver draws the first requested color AOV into an OpenGL texture. Houdini
+       * draws the environment map of a dome light over AOVs given as textures (its viewport
+       * shows only the dome then), so with a dome light the output driver writes that AOV
+       * like the others, as Houdini expects from Karma. */
+      HdRenderPassAovBinding displayAovBinding;
+      if (!aovBindings.empty() && aovBindings.front().aovName == HdAovTokens->color &&
+          aovBindings.front().renderBuffer && !_renderParam->HasDomeLight())
+      {
+        displayAovBinding = aovBindings.front();
+      }
+      const HdRenderPassAovBinding previous = _renderParam->GetDisplayAovBinding();
+      if (displayAovBinding != previous) {
+        if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(previous.renderBuffer))
+        {
+          renderBuffer->SetResource(VtValue());
         }
-        else {
-          _renderParam->SetDisplayAovBinding(HdRenderPassAovBinding());
-        }
+        _renderParam->SetDisplayAovBinding(displayAovBinding);
       }
     }
 

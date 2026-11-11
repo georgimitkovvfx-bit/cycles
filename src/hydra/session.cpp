@@ -280,6 +280,7 @@ void HdCyclesSession::UpdateScene()
       }
     }
 
+    _hasDomeLight = background_light != nullptr;
     if (!background_light) {
       scene->background->set_shader(scene->default_background);
       scene->background->set_transparent(_transparentBackground.value_or(true));
