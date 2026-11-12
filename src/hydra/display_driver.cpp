@@ -251,6 +251,10 @@ void HdCyclesDisplayDriver::zero()
 
 void HdCyclesDisplayDriver::draw(const Params &params)
 {
+  // Before the checks below: update_begin() fails without the context, also while no color AOV
+  // is bound (dome lights), which logs an error at every display update.
+  gl_context_create();
+
   auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(
       _renderParam->GetDisplayAovBinding().renderBuffer);
   if (!renderBuffer ||  // Ensure this render buffer matches the texture dimensions
@@ -262,8 +266,6 @@ void HdCyclesDisplayDriver::draw(const Params &params)
   if (!renderBuffer->IsResourceUsed()) {
     return;
   }
-
-  gl_context_create();
 
   // Cycles 'DisplayDriver' only supports 'half4' format
   TF_VERIFY(renderBuffer->GetFormat() == HdFormatFloat16Vec4);
