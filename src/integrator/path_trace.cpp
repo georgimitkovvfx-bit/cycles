@@ -806,7 +806,7 @@ void PathTrace::update_display(const RenderWork &render_work)
     output_driver_->update_render_tile(tile);
   }
 
-  if (display_) {
+  if (display_ && display_->update_needed()) {
     LOG_DEBUG << "Perform copy to GPUDisplay work.";
 
     const PassType pass_type = film_->get_display_pass();

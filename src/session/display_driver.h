@@ -145,6 +145,13 @@ class DisplayDriver {
    * For efficiency, changes in this resolution should be handled without re-allocating resources,
    * but rather by using a subset of the full resolution buffer. */
   virtual bool update_begin(const Params &params, const int width, const int height) = 0;
+
+  /* Whether the display shows the render now. When false, display updates are skipped without
+   * calling update_begin(), for example while the host shows the output driver's result. */
+  virtual bool update_needed()
+  {
+    return true;
+  }
   virtual void update_end() = 0;
 
   /* Optionally flush outstanding display commands before ending the render loop. */
