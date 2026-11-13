@@ -170,8 +170,10 @@ void HdCyclesMesh::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyBit
     PopulatePoints(sceneDelegate);
   }
 
-  // Must happen after topology update, so that normals attribute size can be calculated
-  if (dirtyBits & HdChangeTracker::DirtyNormals) {
+  // Must happen after topology update, so that normals attribute size can be calculated. Moved
+  // points need it too: Cycles computes the normals of meshes without authored ones only when
+  // the attribute is missing, and Hydra sends no DirtyNormals for them.
+  if (dirtyBits & (HdChangeTracker::DirtyNormals | HdChangeTracker::DirtyPoints)) {
     PopulateNormals(sceneDelegate);
   }
 
@@ -216,6 +218,7 @@ void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
 {
   _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
   _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
+  _geom->subd_attributes.remove(ATTR_STD_VERTEX_NORMAL);
 
   // Authored normals should only exist on triangle meshes
   if (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE) {
