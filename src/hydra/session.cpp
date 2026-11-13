@@ -274,8 +274,9 @@ void HdCyclesSession::UpdateScene()
 {
   Scene *const scene = session->scene.get();
 
-  // Update background depending on presence of a background light
-  if (scene->light_manager->need_update()) {
+  // Update background depending on presence of a background light. The session thread may have
+  // cleared the light manager's tags since a light was added or removed.
+  if (std::exchange(lightsChanged, false) || scene->light_manager->need_update()) {
     Light *background_light = nullptr;
     bool have_lights = false;
     for (Object *object : scene->objects) {
@@ -309,6 +310,11 @@ void HdCyclesSession::UpdateScene()
       scene->default_background->tag_update(scene);
     }
     else {
+      // The light manager enables the background light (MIS) by the background shader: decide
+      // again, the session thread may have updated the lights before the shader was set here.
+      if (scene->background->get_shader() != background_light->get_shader()) {
+        scene->light_manager->tag_update(scene, LightManager::SHADER_MODIFIED);
+      }
       scene->background->set_shader(background_light->get_shader());
       scene->background->set_transparent(_transparentBackground.value_or(false));
     }

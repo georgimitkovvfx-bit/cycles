@@ -416,6 +416,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(_object->name.string());
+  static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
 
   if (!keep_nodes) {
     /* Delete the object before the light, since the object references the light. */
@@ -434,6 +435,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
   }
 
   const SceneLock lock(renderParam);
+  static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
 
   _object = lock.scene->create_node<Object>();
   _object->name = GetId().GetString();

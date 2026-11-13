@@ -245,6 +245,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // session thread updates the device and clears the update tags whenever it gets the lock, also
   // between a sync and the render pass that resets the render for it.
   std::atomic<bool> sceneChanged = false;
+  // A light was added or removed since the last UpdateScene(), set with the scene locked
+  bool lightsChanged = false;
 
   // Whether a requested re-sync has not reached the render yet
   bool IsResyncing() const
