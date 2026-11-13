@@ -36,6 +36,7 @@
 #include "session/session.h"
 
 #include <array>
+#include <filesystem>
 
 #include <pxr/base/tf/getenv.h>
 #include <pxr/imaging/hd/materialSchema.h>
@@ -153,6 +154,13 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   if (it != settings.end() && VtValue::Cast<bool>(it->second).GetWithDefault(false)) {
     params.shadingsystem = SHADINGSYSTEM_OSL;
   }
+
+  // Like Blender, only final renders use tiles: the viewport shows every sample, a tiled render
+  // reaches the render buffers when it is done (see HdCyclesSession::CreateSession).
+  it = settings.find(HdCyclesRenderSettingsTokens->houdiniViewport);
+  params.use_auto_tile = it == settings.end() ||
+                         !VtValue::Cast<bool>(it->second).GetWithDefault(false);
+  params.temp_dir = std::filesystem::temp_directory_path().string();
 
   // Lower resolution start of renders after a change, fixed when the session is created
   it = settings.find(HdCyclesRenderSettingsTokens->useResolutionDivider);
@@ -762,6 +770,7 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     /* Houdini redraws a viewport render that has not converged about every 0.2 s: show new
      * samples at each redraw, instead of every 2 s after a few seconds. */
     session->params.max_display_update_interval = _renderParam->IsViewport() ? 0.2 : 0.0;
+    session->params.use_auto_tile = !_renderParam->IsViewport();
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniFps) {
     const double fps = _renderParam->GetFramesPerSecond();

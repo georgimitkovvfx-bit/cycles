@@ -17,6 +17,7 @@
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "session/session.h"
+#include "util/path.h"
 #include "util/string.h"
 
 #include <pxr/imaging/hd/renderBuffer.h>
@@ -236,6 +237,15 @@ HdCyclesSession::~HdCyclesSession()
 void HdCyclesSession::CreateSession(const SessionParams &params, const SceneParams &scene_params)
 {
   session = new Session(params, scene_params);
+
+  /* A render in several tiles writes them to a file, then the full image goes to the output driver
+   * from it (like Blender after the render). Called by the session thread when the last tile is
+   * done. */
+  session->full_buffer_written_cb = [this](string_view filename) {
+    const string path(filename);
+    session->process_full_buffer_from_disk(path);
+    path_remove(path);
+  };
 
   Scene *const scene = session->scene.get();
 
