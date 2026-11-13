@@ -466,6 +466,7 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   // Update passes with requested AOV bindings
   _aovBindings = aovBindings;
   _passNames.clear();
+  _lengthAovs.clear();
 
   // Cryptomatte: the kernel writes every rank of the enabled types, in this order, so create all
   // those passes, also the ones no AOV reads.
@@ -508,6 +509,9 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     if (type == PASS_NONE) {
       TF_WARN("Unknown pass %s", aovBinding.aovName.GetText());
       continue;
+    }
+    if (type == PASS_DEPTH || type == PASS_POSITION || type == PASS_DENOISING_DEPTH) {
+      _lengthAovs.insert(aovBinding.aovName);
     }
     if (type == PASS_MOTION) {
       /* Cycles writes four floats per pixel, more than a smaller buffer holds. */

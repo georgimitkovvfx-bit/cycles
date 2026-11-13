@@ -207,6 +207,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Name of the Cycles pass holding an AOV, which can be shared with other AOVs
   std::string GetPassName(const PXR_NS::TfToken &aovName) const;
 
+  // Whether an AOV holds a distance or position (depth, position), which Cycles writes in meters
+  bool IsLengthAov(const PXR_NS::TfToken &aovName) const
+  {
+    return _lengthAovs.count(aovName) != 0;
+  }
+
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
   // Mark the render buffers as not converged, so that the render pass is executed again
@@ -279,6 +285,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   mutable std::recursive_mutex _aovBindingsMutex;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
+  std::set<PXR_NS::TfToken> _lengthAovs;
   std::vector<std::pair<std::string, std::string>> _primvarAovs;
   std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
       _renderSettingsPrimvarAovs;

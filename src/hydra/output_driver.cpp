@@ -57,6 +57,26 @@ void HdCyclesOutputDriver::write_render_tile(const Tile &tile)
   }
 }
 
+void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
+                                         float *data,
+                                         const size_t num_pixels,
+                                         const size_t channels) const
+{
+  const double metersPerUnit = _renderParam->GetStageMetersPerUnit();
+  if (aovName == HdAovTokens->depth && channels == 1 && _renderParam->IsViewport()) {
+    convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix(), metersPerUnit);
+  }
+  else if (_renderParam->IsLengthAov(aovName) && metersPerUnit != 1.0) {
+    // Cycles works in meters (the stage scaled by metersPerUnit), Karma writes stage units
+    const float scale = float(1.0 / metersPerUnit);
+    for (size_t i = 0; i < num_pixels * channels; ++i) {
+      if (data[i] < 1e9f) {  // Not the background depth
+        data[i] *= scale;
+      }
+    }
+  }
+}
+
 bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)
 {
   update_render_buffers(tile, false);
@@ -120,13 +140,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         float *const data = static_cast<float *>(renderBuffer->Map());
         TF_VERIFY(
             tile.get_pass_pixels(_renderParam->GetPassName(aovBinding.aovName), channels, data));
-        if (aovBinding.aovName == HdAovTokens->depth && channels == 1 &&
-            _renderParam->IsViewport()) {
-          convert_depth(data,
-                        tile.size.x * tile.size.y,
-                        _renderParam->GetProjectionMatrix(),
-                        _renderParam->GetStageMetersPerUnit());
-        }
+        convert_units(aovBinding.aovName, data, tile.size.x * tile.size.y, channels);
         renderBuffer->Unmap();
       }
       else {
@@ -134,13 +148,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         if (tile.get_pass_pixels(
                 _renderParam->GetPassName(aovBinding.aovName), channels, pixels.data()))
         {
-          if (aovBinding.aovName == HdAovTokens->depth && channels == 1 &&
-            _renderParam->IsViewport()) {
-            convert_depth(pixels.data(),
-                          tile.size.x * tile.size.y,
-                          _renderParam->GetProjectionMatrix(),
-                          _renderParam->GetStageMetersPerUnit());
-          }
+          convert_units(aovBinding.aovName, pixels.data(), tile.size.x * tile.size.y, channels);
           // Integer buffers hold IDs (Hydra's primId/instanceId/elementId, Karma's primid)
           const bool isId = format == HdFormatInt32;
           renderBuffer->Map();
