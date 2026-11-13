@@ -698,7 +698,15 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   /* Houdini's viewport creates the render delegate without settings and sets them afterwards,
    * also the ones it restarts the delegate for. Recreate the session for those while nothing
    * uses it, then set the other settings again on it. */
-  _settingsMap[key] = value;
+  /* Houdini sets the settings of a render settings prim that went away (display flag moved above
+   * it) to empty values: they go back to their defaults, not to zero (zero film exposure renders
+   * black). */
+  if (value.IsEmpty()) {
+    _settingsMap.erase(key);
+  }
+  else {
+    _settingsMap[key] = value;
+  }
   if (IsSessionSetting(key)) {
     /* A thread count limits TBB in the whole process, which hangs Houdini with one thread: keep
      * the count the session was created with (all threads, unless husk set it). */
@@ -728,18 +736,23 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
         VtValue::Cast<double>(value).GetWithDefault(_renderParam->GetStageMetersPerUnit()));
   }
   else if (key == HdCyclesRenderSettingsTokens->timeLimit) {
-    session->set_time_limit(
-        VtValue::Cast<double>(value).GetWithDefault(session->params.time_limit));
+    session->set_time_limit(value.IsEmpty() ? SessionParams().time_limit :
+                                              VtValue::Cast<double>(value).GetWithDefault(
+                                                  session->params.time_limit));
   }
   else if (key == HdCyclesRenderSettingsTokens->samples) {
     static const int max_samples = Integrator::MAX_SAMPLES;
-    int samples = VtValue::Cast<int>(value).GetWithDefault(session->params.samples);
+    int samples = value.IsEmpty() ?
+                      SessionParams().samples :
+                      VtValue::Cast<int>(value).GetWithDefault(session->params.samples);
     samples = std::min(std::max(1, samples), max_samples);
     session->set_samples(samples);
   }
   else if (key == HdCyclesRenderSettingsTokens->sampleOffset) {
-    session->params.sample_subset_offset = VtValue::Cast<int>(value).GetWithDefault(
-        session->params.sample_subset_offset);
+    session->params.sample_subset_offset = value.IsEmpty() ?
+                                               0 :
+                                               VtValue::Cast<int>(value).GetWithDefault(
+                                                   session->params.sample_subset_offset);
     session->params.sample_subset_length = Integrator::MAX_SAMPLES;
     session->params.use_sample_subset = session->params.sample_subset_offset > 0;
     ++_settingsVersion;
@@ -819,7 +832,12 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
                                   _settingsMap.count(HdCyclesRenderSettingsTokens->aoFactor);
       const SocketType *socket = node->type->find_input(socketName);
       if (socket && !(fastGiSocket && fastGiAuthored)) {
-        SetNodeValue(node, *socket, value);
+        if (value.IsEmpty()) {
+          node->set_default_value(*socket);
+        }
+        else {
+          SetNodeValue(node, *socket, value);
+        }
         ++_settingsVersion;
 
         /* The session overwrites the integrator sample subset with its own on every reset. */
