@@ -199,6 +199,10 @@ SceneLock::SceneLock(const HdRenderParam *renderParam)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),
       sceneLock(scene->mutex)
 {
+  /* The session thread unlocks the scene while it loads kernels (Scene::device_update), then
+   * uploads the shaders it compiled before and clears their update tags: changes made meanwhile
+   * are lost (black surfaces, unwritten shader AOVs) unless it redoes the update. */
+  scene->scene_updated_while_loading_kernels = true;
 }
 
 SceneLock::~SceneLock() = default;
