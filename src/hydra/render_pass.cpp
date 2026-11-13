@@ -22,6 +22,7 @@
 
 #include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/renderPassState.h>
+#include <pxr/imaging/hd/utils.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -193,7 +194,20 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     if (const auto *const camera = static_cast<const HdCyclesCamera *>(
             renderPassState->GetCamera()))
     {
-      camera->ApplyCameraSettings(_renderParam, scene->camera, aspectRatio);
+      // husk sends the render settings' aspectRatioConformPolicy as a setting, unless the host
+      // overrides the window policy of the camera
+      CameraUtilConformWindowPolicy windowPolicy = renderPassState->GetWindowPolicy();
+      const VtValue conform = renderDelegate->GetRenderSetting(
+          HdCyclesRenderSettingsTokens->aspectRatioConformPolicy);
+      if (!renderPassState->GetOverrideWindowPolicy() && !_renderParam->IsViewport()) {
+        const TfToken policy = conform.IsHolding<TfToken>() ?
+                                   conform.UncheckedGet<TfToken>() :
+                                   TfToken(conform.GetWithDefault<std::string>(""));
+        if (!policy.IsEmpty()) {
+          windowPolicy = HdUtils::ToConformWindowPolicy(policy);
+        }
+      }
+      camera->ApplyCameraSettings(_renderParam, scene->camera, windowPolicy, aspectRatio);
     }
     else {
       HdCyclesCamera::ApplyCameraSettings(_renderParam,

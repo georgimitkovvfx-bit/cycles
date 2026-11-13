@@ -36,6 +36,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((houdiniViewport, "houdini:viewport")) \
     (resolution) \
     (pixelAspectRatio) \
+    (aspectRatioConformPolicy) \
     ((houdiniFps, "houdini:fps")) \
     (disableMotionBlur) \
     ((motionSteps, "cycles:motion_steps")) \

@@ -149,7 +149,8 @@ void HdCyclesFileReader::read(Session *session, const char *filepath, const bool
         HdSprim *sprim = render_index->GetSprim(HdPrimTypeTokens->camera, prim.GetPath());
         if (sprim) {
           HdCyclesCamera *camera = dynamic_cast<HdCyclesCamera *>(sprim);
-          camera->ApplyCameraSettings(render_delegate.GetRenderParam(), session->scene->camera);
+          camera->ApplyCameraSettings(
+              render_delegate.GetRenderParam(), session->scene->camera, camera->GetWindowPolicy());
           break;
         }
       }

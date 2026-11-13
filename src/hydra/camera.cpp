@@ -185,9 +185,10 @@ void HdCyclesCamera::Finalize(HdRenderParam *renderParam)
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
                                          Camera *cam,
+                                         CameraUtilConformWindowPolicy windowPolicy,
                                          float aspectRatio) const
 {
-  ApplyCameraSettings(renderParam, _data, _windowPolicy, cam, aspectRatio);
+  ApplyCameraSettings(renderParam, _data, windowPolicy, cam, aspectRatio);
 
   const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
 

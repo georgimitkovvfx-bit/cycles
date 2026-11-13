@@ -18,10 +18,11 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
   HdCyclesCamera(const PXR_NS::SdfPath &sprimId);
   ~HdCyclesCamera() override;
 
-  /* The camera window is conformed to the aspect ratio of the image, or to the given aspect
-   * ratio when it is not zero (for images displayed with non-square pixels). */
+  /* The camera window is conformed with the window policy to the aspect ratio of the image, or to
+   * the given aspect ratio when it is not zero (for images displayed with non-square pixels). */
   void ApplyCameraSettings(PXR_NS::HdRenderParam *renderParam,
                            CCL_NS::Camera *cam,
+                           PXR_NS::CameraUtilConformWindowPolicy windowPolicy,
                            float aspectRatio = 0.0f) const;
 
   static void ApplyCameraSettings(PXR_NS::HdRenderParam *renderParam,
