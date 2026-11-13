@@ -197,6 +197,7 @@ PassType HdCyclesSession::GetPassType(const TfToken &aovName)
 
 SceneLock::SceneLock(const HdRenderParam *renderParam)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),
+      session(const_cast<HdCyclesSession *>(static_cast<const HdCyclesSession *>(renderParam))),
       sceneLock(scene->mutex)
 {
   /* The session thread unlocks the scene while it loads kernels (Scene::device_update), then
@@ -205,7 +206,14 @@ SceneLock::SceneLock(const HdRenderParam *renderParam)
   scene->scene_updated_while_loading_kernels = true;
 }
 
-SceneLock::~SceneLock() = default;
+SceneLock::~SceneLock()
+{
+  /* Still locked: the session thread can clear the update tags as soon as the lock is released,
+   * before the render pass checks them to reset the render. */
+  if (scene->need_reset()) {
+    session->sceneChanged = true;
+  }
+}
 
 HdCyclesSession::HdCyclesSession(Session *session_, const bool keep_nodes)
     : session(session_), keep_nodes(keep_nodes), _ownCyclesSession(false)

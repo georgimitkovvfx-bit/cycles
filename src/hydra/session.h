@@ -23,6 +23,8 @@
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
+class HdCyclesSession;
+
 struct SceneLock {
   SceneLock(const PXR_NS::HdRenderParam *renderParam);
   ~SceneLock();
@@ -30,6 +32,7 @@ struct SceneLock {
   CCL_NS::Scene *scene;
 
  private:
+  HdCyclesSession *session;
   CCL_NS::thread_scoped_lock sceneLock;
 };
 
@@ -238,6 +241,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::atomic<bool> rprimsResyncing = false;
   // Prims were marked dirty for the next sync, which restarts the render
   std::atomic<bool> resyncPending = false;
+  // Scene changes the render was not reset for yet, set by SceneLock with the scene locked. The
+  // session thread updates the device and clears the update tags whenever it gets the lock, also
+  // between a sync and the render pass that resets the render for it.
+  std::atomic<bool> sceneChanged = false;
 
   // Whether a requested re-sync has not reached the render yet
   bool IsResyncing() const

@@ -58,7 +58,7 @@ bool HdCyclesRenderPass::IsConverged() const
 {
   /* Changed settings or re-synced prims restart the render at the next execute. */
   if (GetRenderIndex()->GetRenderDelegate()->GetRenderSettingsVersion() != _lastSettingsVersion ||
-      _renderParam->IsResyncing())
+      _renderParam->IsResyncing() || _renderParam->sceneChanged)
   {
     return false;
   }
@@ -206,8 +206,12 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
     _renderParam->SetProjectionMatrix(renderPassState->GetProjectionMatrix());
 
-    // Reset session if the session, scene, camera or AOV bindings changed
-    if (scene->need_reset() || settingsVersion != _lastSettingsVersion || displayChanged) {
+    // Reset session if the session, scene, camera or AOV bindings changed. The session thread may
+    // have updated the scene since the sync changed it (sceneChanged).
+    const bool sceneChanged = _renderParam->sceneChanged.exchange(false);
+    if (scene->need_reset() || sceneChanged || settingsVersion != _lastSettingsVersion ||
+        displayChanged)
+    {
       _lastSettingsVersion = settingsVersion;
 
       // Reset convergence state of all render buffers
