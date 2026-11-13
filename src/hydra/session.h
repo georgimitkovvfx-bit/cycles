@@ -47,12 +47,6 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Override the automatic background transparency, which depends on presence of a dome light
   void SetTransparentBackground(const std::optional<bool> transparent);
 
-  // Whether the scene has a dome light, as of the last UpdateScene()
-  bool HasDomeLight() const
-  {
-    return _hasDomeLight;
-  }
-
   // Light and shadow linking: the link categories of each light and the categories each object
   // belongs to (from HdsiLightLinkingSceneIndex), by object name. UpdateScene turns them into
   // Cycles light and shadow sets. Called with the scene locked.
@@ -273,7 +267,6 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   int _motionSteps = 1;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;
-  std::atomic<bool> _hasDomeLight = false;
   mutable std::recursive_mutex _aovBindingsMutex;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;

@@ -135,8 +135,9 @@ void HdCyclesDisplayDriver::next_tile_begin() {}
 
 bool HdCyclesDisplayDriver::update_needed()
 {
-  // No color AOV bound (dome lights, other first AOV): the output driver writes the AOVs
-  return _renderParam->GetDisplayAovBinding().renderBuffer != nullptr;
+  // No color AOV bound (dome lights, other first AOV): the output driver writes the AOVs.
+  // No context before the first draw: update_begin() would fail and log an error.
+  return gl_context_ && _renderParam->GetDisplayAovBinding().renderBuffer != nullptr;
 }
 
 bool HdCyclesDisplayDriver::update_begin(const Params &params,
@@ -290,9 +291,8 @@ void HdCyclesDisplayDriver::draw(const Params &params)
     texDesc.sampleCount = HgiSampleCount1;
 
     texture_ = _hgi->CreateTexture(texDesc);
+    renderBuffer->SetResource(VtValue());  // Empty until the first upload below
   }
-  // Also after the render pass gave the buffer back to the output driver (dome lights)
-  renderBuffer->SetResource(VtValue(texture_));
 
   HgiGLTexture *const texture = dynamic_cast<HgiGLTexture *>(texture_.Get());
   if (!texture || !need_update_ || pbo_size_.x != params.size.x || pbo_size_.y != params.size.y) {
@@ -388,6 +388,10 @@ void HdCyclesDisplayDriver::draw(const Params &params)
   glFlush();
 
   need_update_ = false;
+
+  /* Houdini shows the texture once it holds an image, until then the pixels the output driver
+   * writes. Set again after the render pass gave the buffer back to the output driver. */
+  renderBuffer->SetResource(VtValue(texture_));
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

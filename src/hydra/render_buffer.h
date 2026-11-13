@@ -67,6 +67,12 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
 
   bool IsResourceUsed() const;
 
+  // Whether a resource (the display driver's texture) is set; Houdini reads the pixels otherwise
+  bool HasResource() const
+  {
+    return _hasResource;
+  }
+
   PXR_NS::VtValue GetResource(bool multiSampled = false) const override;
 
   void SetResource(const PXR_NS::VtValue &resource);
@@ -97,6 +103,7 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
   std::recursive_mutex _dataMutex;
   PXR_NS::VtValue _resource;
   mutable std::atomic_bool _resourceUsed = false;
+  std::atomic_bool _hasResource = false;
 
   std::atomic_int _mapped = 0;
   std::atomic_bool _converged = false;

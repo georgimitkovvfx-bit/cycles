@@ -137,6 +137,7 @@ VtValue HdCyclesRenderBuffer::GetResource(bool multiSampled) const
 void HdCyclesRenderBuffer::SetResource(const VtValue &resource)
 {
   _resource = resource;
+  _hasResource = !resource.IsEmpty();
 }
 
 namespace {

@@ -102,14 +102,20 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       }
     }
 
+    bool displayChanged = false;
     if (renderDelegate->IsDisplaySupported()) {
       /* The display driver draws the first requested color AOV into an OpenGL texture. Houdini
        * draws the environment map of a dome light over AOVs given as textures (its viewport
        * shows only the dome then), so with a dome light the output driver writes that AOV
        * like the others, as Houdini expects from Karma. */
+      // From the render index: the scene's light state lags one reset behind
+      const bool hasDomeLight = !GetRenderIndex()
+                                     ->GetSprimSubtree(HdPrimTypeTokens->domeLight,
+                                                       SdfPath::AbsoluteRootPath())
+                                     .empty();
       HdRenderPassAovBinding displayAovBinding;
       if (!aovBindings.empty() && aovBindings.front().aovName == HdAovTokens->color &&
-          aovBindings.front().renderBuffer && !_renderParam->HasDomeLight())
+          aovBindings.front().renderBuffer && !hasDomeLight)
       {
         displayAovBinding = aovBindings.front();
       }
@@ -120,6 +126,8 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
           renderBuffer->SetResource(VtValue());
         }
         _renderParam->SetDisplayAovBinding(displayAovBinding);
+        // The new target got none of the updates so far (black once the render converged)
+        displayChanged = true;
       }
     }
 
@@ -199,7 +207,7 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     _renderParam->SetProjectionMatrix(renderPassState->GetProjectionMatrix());
 
     // Reset session if the session, scene, camera or AOV bindings changed
-    if (scene->need_reset() || settingsVersion != _lastSettingsVersion) {
+    if (scene->need_reset() || settingsVersion != _lastSettingsVersion || displayChanged) {
       _lastSettingsVersion = settingsVersion;
 
       // Reset convergence state of all render buffers

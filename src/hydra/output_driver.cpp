@@ -69,12 +69,14 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
   const auto bindingsLock = _renderParam->LockAovBindings();
   std::vector<float> pixels;
 
-  // The Cycles display driver updates the display AOV texture while rendering. The final
-  // image also goes to the buffer, which Houdini reads for slap comps and snapshots.
+  // The Cycles display driver updates the display AOV texture while rendering. Until its texture
+  // holds an image (no GL context yet, render done before the first upload) the buffer gets the
+  // updates. The final image also goes to the buffer, which Houdini reads for slap comps and
+  // snapshots.
   const HdRenderPassAovBinding displayAovBinding = _renderParam->GetDisplayAovBinding();
   const auto *const displayBuffer = static_cast<HdCyclesRenderBuffer *>(
       displayAovBinding.renderBuffer);
-  const bool skipDisplayAov = !final && displayBuffer && displayBuffer->IsResourceUsed();
+  const bool skipDisplayAov = !final && displayBuffer && displayBuffer->HasResource();
 
   /* The Houdini viewport reads the AOVs it does not display only on demand: depth for the tumble
    * pivot, IDs for picking, slap comp inputs. Reading them back takes 30-50 ms per update of a 2K
