@@ -15,9 +15,21 @@
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
-template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Base {
+/* Hydra syncs only the prims of the render tags a render pass draws: the render pass hides the
+ * Cycles objects of the others (a mesh that became a guide, the viewer's purpose toggles). */
+class HdCyclesRenderTagVisibility {
+ public:
+  virtual ~HdCyclesRenderTagVisibility() = default;
+  /* With the scene locked. */
+  virtual void SetRenderTagVisible(CCL_NS::Scene *scene, bool visible) = 0;
+};
+
+template<typename Base, typename CyclesBase>
+class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
  public:
   HdCyclesGeometry(const PXR_NS::SdfPath &rprimId);
+
+  void SetRenderTagVisible(CCL_NS::Scene *scene, bool visible) override;
 
   void Sync(PXR_NS::HdSceneDelegate *sceneDelegate,
             PXR_NS::HdRenderParam *renderParam,
@@ -49,6 +61,9 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
 
   CyclesBase *_geom = nullptr;
   std::vector<CCL_NS::Object *> _instances;
+  // Ray visibility of the instances from the prim, and whether its render tag is drawn
+  unsigned int _visibility = ~0u;
+  bool _renderTagVisible = true;
   const HdCyclesSession *_session = nullptr;
 
  private:

@@ -5,6 +5,7 @@
 
 #include "hydra/render_pass.h"
 #include "hydra/camera.h"
+#include "hydra/geometry.h"
 #include "hydra/output_driver.h"
 #include "hydra/render_buffer.h"
 #include "hydra/render_delegate.h"
@@ -74,7 +75,7 @@ bool HdCyclesRenderPass::IsConverged() const
 }
 
 void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassState,
-                                  const TfTokenVector & /*renderTags*/)
+                                  const TfTokenVector &renderTags)
 {
   Scene *const scene = _renderParam->session->scene.get();
   Session *const session = _renderParam->session;
@@ -88,6 +89,28 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         GetRenderIndex()->GetRenderDelegate());
 
     const unsigned int settingsVersion = renderDelegate->GetRenderSettingsVersion();
+
+    // Hydra syncs only the prims of the drawn render tags: hide the others, which keep their
+    // Cycles objects (a prim whose purpose became guide, the viewer's purpose toggles). An empty
+    // list draws every tag.
+    HdRenderIndex *const renderIndex = GetRenderIndex();
+    const unsigned int renderTagVersion = renderIndex->GetChangeTracker().GetRenderTagVersion();
+    if (renderTags != _lastRenderTags || renderTagVersion != _lastRenderTagVersion) {
+      _lastRenderTags = renderTags;
+      _lastRenderTagVersion = renderTagVersion;
+      for (const SdfPath &id : renderIndex->GetRprimIds()) {
+        // The render index hands out const prims, the Cycles objects are this delegate's
+        if (auto *const prim = dynamic_cast<HdCyclesRenderTagVisibility *>(
+                const_cast<HdRprim *>(renderIndex->GetRprim(id))))
+        {
+          const TfToken tag = renderIndex->GetRenderTag(id);
+          prim->SetRenderTagVisible(
+              scene,
+              renderTags.empty() ||
+                  std::find(renderTags.begin(), renderTags.end(), tag) != renderTags.end());
+        }
+      }
+    }
 
     // Update requested AOV bindings
     const HdRenderPassAovBindingVector &aovBindings = renderPassState->GetAovBindings();

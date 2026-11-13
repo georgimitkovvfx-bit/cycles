@@ -257,6 +257,19 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 }
 
 template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetRenderTagVisible(Scene *scene, const bool visible)
+{
+  if (visible == _renderTagVisible) {
+    return;
+  }
+  _renderTagVisible = visible;
+  for (Object *instance : _instances) {
+    instance->set_visibility(visible ? _visibility : 0);
+    instance->tag_update(scene);
+  }
+}
+
+template<typename Base, typename CyclesBase>
 void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     const HdContainerDataSourceHandle &primDs)
 {
@@ -317,8 +330,9 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     values.emplace_back(socket, value);
   }
 
+  _visibility = visibility;
   for (Object *instance : _instances) {
-    instance->set_visibility(visibility);
+    instance->set_visibility(_renderTagVisible ? visibility : 0);
     // Settings without a primvar go back to their default
     for (const ustring &socketName : objectSettings) {
       instance->set_default_value(*Object::get_node_type()->find_input(socketName));
