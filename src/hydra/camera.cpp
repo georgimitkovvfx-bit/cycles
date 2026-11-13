@@ -206,6 +206,11 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
      * time offset per object to volume_shader_motion_blur if they need to be exact. */
     cam->set_motion_position(_shutterOpen == 0.0 ? MOTION_POSITION_START : MOTION_POSITION_CENTER);
   }
+  else {
+    // Cycles' defaults, not the shutter of the camera rendered before
+    cam->set_shuttertime(1.0f);
+    cam->set_motion_position(MOTION_POSITION_CENTER);
+  }
 }
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
@@ -259,6 +264,9 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     cam->set_focaldistance(data.GetFocusDistance() * metersPerUnit);
     cam->set_aperturesize(focalLength / (2.0f * data.GetFStop()));
   }
+  else {
+    cam->set_aperturesize(0.0f);  // No depth of field, also after a camera with it
+  }
 
   cam->set_matrix(convert_camera_transform(data.GetTransform(), metersPerUnit));
 }
@@ -274,6 +282,12 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   data.SetFromViewAndProjectionMatrix(worldToViewMatrix, projectionMatrix);
 
   ApplyCameraSettings(renderParam, data, CameraUtilFit, cam, aspectRatio);
+
+  // No camera prim: no motion blur, not the transforms and shutter of the camera rendered before
+  array<Transform> motion;
+  cam->set_motion(motion);
+  cam->set_shuttertime(1.0f);
+  cam->set_motion_position(MOTION_POSITION_CENTER);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
