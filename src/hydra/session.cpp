@@ -293,6 +293,9 @@ void HdCyclesSession::UpdateScene()
           bgNode->set_color((have_lights) ? zero_float3() : make_float3(0.5f));
         }
       }
+      /* Recompile: the shader kept its color from before (white world light after removing a
+       * dome light while other lights stay). */
+      scene->default_background->tag_update(scene);
     }
     else {
       scene->background->set_shader(background_light->get_shader());
