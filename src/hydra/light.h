@@ -6,6 +6,7 @@
 #pragma once
 
 #include "hydra/config.h"
+#include "util/types.h"
 
 #include <pxr/imaging/hd/dataSource.h>
 #include <pxr/imaging/hd/light.h>
@@ -37,6 +38,8 @@ class HdCyclesLight final : public PXR_NS::HdLight {
   // (HdCyclesSession::SetWorldMaterial)
   CCL_NS::Shader *_shader = nullptr;
   PXR_NS::TfToken _lightType;
+  // Color times intensity of a dome light, baked into its world shader
+  CCL_NS::float3 _domeStrength = CCL_NS::one_float3();
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
