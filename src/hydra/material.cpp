@@ -1159,10 +1159,27 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
     ShaderInput *input = FindInput(nodeDesc.node, inputName);
 
     if (!input) {
-      TF_WARN("Ignoring connection on '%s.%s', input '%s' was not found",
-              nodePath.GetText(),
-              dstSocketName.GetText(),
-              dstSocketName.GetText());
+      if (inputMapping) {
+        if (inputMapping->hasParameterMapping(dstSocketName)) {
+          TF_WARN("USD input '%s' on node '%s' maps to unavailable Cycles input '%s' on '%s'",
+                  dstSocketName.GetText(),
+                  nodePath.GetText(),
+                  inputName.c_str(),
+                  nodeDesc.node->name.c_str());
+        }
+        else {
+          TF_WARN("Unsupported USD input '%s' on node '%s' ('%s'); connection ignored",
+                  dstSocketName.GetText(),
+                  nodePath.GetText(),
+                  nodeDesc.node->name.c_str());
+        }
+      }
+      else {
+        TF_WARN("Ignoring connection on '%s.%s', input '%s' was not found",
+                nodePath.GetText(),
+                dstSocketName.GetText(),
+                inputName.c_str());
+      }
       continue;
     }
 
@@ -1208,7 +1225,7 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
               upstreamOutputName.GetText(),
               nodePath.GetText(),
               dstSocketName.GetText(),
-              upstreamOutputName.GetText());
+              outputName.c_str());
       continue;
     }
 
@@ -1397,6 +1414,11 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     else if (terminalName == HdMaterialTerminalTokens->displacement ||
              terminalName == CyclesMaterialTokens->cyclesDisplacement)
     {
+      if (nodeIt->second.mapping) {
+        /* Unsupported mapped USD inputs and connections are reported while
+         * processing the node. */
+        continue;
+      }
       inputName = outputName = "Displacement";
     }
     else if (terminalName == HdMaterialTerminalTokens->volume ||
@@ -1425,7 +1447,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
 
     ShaderInput *const input = inputName ? graph->output()->input(inputName) : nullptr;
     if (!input) {
-      TF_RUNTIME_ERROR("Could not find terminal input '%s.%s'",
+      TF_WARN("Could not find terminal input '%s.%s'",
                        upstreamNodePath.GetText(),
                        inputName ? inputName : "<null>");
       continue;
@@ -1433,7 +1455,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
 
     ShaderOutput *const output = outputName ? FindOutput(node, outputName) : nullptr;
     if (!output) {
-      TF_RUNTIME_ERROR("Could not find terminal output '%s.%s'",
+      TF_WARN("Could not find terminal output '%s.%s'",
                        upstreamNodePath.GetText(),
                        outputName ? outputName : "<null>");
       continue;
@@ -1443,7 +1465,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
   }
 
   /* Return no graph if nothing got successfully linked due unsupported nodes,
-   * avoids the surface becoming transparennt then. */
+   * avoids the surface becoming transparent then. */
   bool any_output_linked = false;
   for (ShaderInput *input : graph->output()->inputs) {
     any_output_linked |= input->link != nullptr;
@@ -1472,7 +1494,7 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
   session->ReleaseWorldShader(_shader);
 
   if (!keep_nodes) {
-    lock.scene->delete_node(_shader);
+    static_cast<HdCyclesSession *>(renderParam)->DeleteNode(_shader);
   }
   _shader = nullptr;
 }

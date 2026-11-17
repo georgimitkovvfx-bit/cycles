@@ -17,17 +17,13 @@
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 extern Transform convert_transform(const GfMatrix4d &matrix);
-static Transform convert_camera_transform(const GfMatrix4d &matrix, const float metersPerUnit)
+static Transform convert_camera_transform(const GfMatrix4d &matrix)
 {
   Transform t = convert_transform(matrix);
   // Flip Z axis
   t.x.z *= -1.0f;
   t.y.z *= -1.0f;
   t.z.z *= -1.0f;
-  // Scale translation
-  t.x.w *= metersPerUnit;
-  t.y.w *= metersPerUnit;
-  t.z.w *= metersPerUnit;
   return t;
 }
 
@@ -190,11 +186,9 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
 {
   ApplyCameraSettings(renderParam, _data, windowPolicy, cam, aspectRatio);
 
-  const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
-
   array<Transform> motion(_transformSamples.count);
   for (size_t i = 0; i < _transformSamples.count; ++i) {
-    motion[i] = convert_camera_transform(_transformSamples.values[i], metersPerUnit);
+    motion[i] = convert_camera_transform(_transformSamples.values[i]);
   }
   cam->set_motion(motion);
 
@@ -240,7 +234,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   auto focalLength = 1.0f;
   if (data.GetProjection() == GfCamera::Perspective) {
     viewplane *= 2.0 / viewplane.GetSize()[1];  // Normalize viewplane
-    focalLength = data.GetFocalLength() * GfCamera::FOCAL_LENGTH_UNIT * metersPerUnit;
+    focalLength = data.GetFocalLength() * GfCamera::FOCAL_LENGTH_UNIT;
 
     cam->set_fov(GfDegreesToRadians(data.GetFieldOfView(GfCamera::FOVVertical)));
     /* The motion pass projects with these at the previous and next frame, their default zooms.
@@ -250,11 +244,12 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     cam->set_fov_post(cam->get_fov());
   }
 
+  /* Lens properties are in tenths of a scene unit, convert sensor size to meters. */
   cam->set_sensorwidth(data.GetHorizontalAperture() * GfCamera::APERTURE_UNIT * metersPerUnit);
   cam->set_sensorheight(data.GetVerticalAperture() * GfCamera::APERTURE_UNIT * metersPerUnit);
 
-  cam->set_nearclip(data.GetClippingRange().GetMin() * metersPerUnit);
-  cam->set_farclip(data.GetClippingRange().GetMax() * metersPerUnit);
+  cam->set_nearclip(data.GetClippingRange().GetMin());
+  cam->set_farclip(data.GetClippingRange().GetMax());
 
   cam->set_viewplane_left(viewplane.GetMin()[0]);
   cam->set_viewplane_right(viewplane.GetMax()[0]);
@@ -262,14 +257,14 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   cam->set_viewplane_top(viewplane.GetMax()[1]);
 
   if (data.GetFStop() != 0.0f) {
-    cam->set_focaldistance(data.GetFocusDistance() * metersPerUnit);
+    cam->set_focaldistance(data.GetFocusDistance());
     cam->set_aperturesize(focalLength / (2.0f * data.GetFStop()));
   }
   else {
     cam->set_aperturesize(0.0f);  // No depth of field, also after a camera with it
   }
 
-  cam->set_matrix(convert_camera_transform(data.GetTransform(), metersPerUnit));
+  cam->set_matrix(convert_camera_transform(data.GetTransform()));
 }
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,

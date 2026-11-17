@@ -638,9 +638,7 @@ HdAovDescriptor HdCyclesDelegate::GetDefaultAovDescriptor(const TfToken &name) c
   if (name == HdAovTokens->normal) {
     return HdAovDescriptor(HdFormatFloat32Vec3, false, VtValue(GfVec3f(0.0f)));
   }
-  if (name == HdAovTokens->primId || name == HdAovTokens->instanceId ||
-      name == HdAovTokens->elementId)
-  {
+  if (name == HdAovTokens->primId || name == HdAovTokens->instanceId) {
     return HdAovDescriptor(HdFormatInt32, false, VtValue(-1));
   }
 
@@ -744,6 +742,10 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   if (key == HdCyclesRenderSettingsTokens->stageMetersPerUnit) {
     _renderParam->SetStageMetersPerUnit(
         VtValue::Cast<double>(value).GetWithDefault(_renderParam->GetStageMetersPerUnit()));
+  }
+  else if (key == HdCyclesRenderSettingsTokens->stageUpAxis) {
+    _renderParam->SetStageUpAxis(
+      VtValue::Cast<TfToken>(value).GetWithDefault(_renderParam->GetStageUpAxis()));
   }
   else if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     session->set_time_limit(value.IsEmpty() ? SessionParams().time_limit :
@@ -943,6 +945,9 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
 
   if (key == HdCyclesRenderSettingsTokens->stageMetersPerUnit) {
     return VtValue(_renderParam->GetStageMetersPerUnit());
+  }
+  if (key == HdCyclesRenderSettingsTokens->stageUpAxis) {
+    return VtValue(_renderParam->GetStageUpAxis());
   }
   if (key == HdCyclesRenderSettingsTokens->device) {
     return VtValue(TfToken(Device::string_from_type(session->params.device.type)));

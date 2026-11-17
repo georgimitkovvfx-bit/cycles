@@ -22,6 +22,15 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
+void RemoveUVTangents(AttributeSet &attributes, const ustring &name)
+{
+  for (const char *suffix :
+       {".tangent", ".tangent_sign", ".undisplaced_tangent", ".undisplaced_tangent_sign"})
+  {
+    attributes.remove(ustring(name.string() + suffix));
+  }
+}
+
 template<typename T>
 VtValue ComputeTriangulatedUniformPrimvar(VtValue value, const VtIntArray &primitiveParams)
 {
@@ -162,6 +171,15 @@ HdDirtyBits HdCyclesMesh::_PropagateDirtyBits(HdDirtyBits bits) const
 
 void HdCyclesMesh::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyBits, bool &rebuild)
 {
+  /* Rebuild subdivision and displacement from the authored geometry when primvars change.
+   * Decided here, under the scene lock, because displacement depends on shader state. */
+  if ((dirtyBits & HdChangeTracker::DirtyPrimvar) &&
+      (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE || _geom->has_true_displacement()))
+  {
+    dirtyBits |= HdChangeTracker::DirtyTopology | HdChangeTracker::DirtyPoints |
+                 HdChangeTracker::DirtyNormals;
+  }
+
   if (HdChangeTracker::IsTopologyDirty(dirtyBits, GetId())) {
     PopulateTopology(sceneDelegate);
   }
@@ -293,6 +311,12 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
   const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
   AttributeSet &attributes = subdivision ? _geom->subd_attributes : _geom->attributes;
 
+  /* Remove UVs before reading them again. */
+  while (const Attribute *previous = attributes.find(ATTR_STD_UV)) {
+    RemoveUVTangents(_geom->attributes, previous->name);
+    attributes.remove(previous->name);
+  }
+
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
   const TfToken uvName = FindUVPrimvar(primvars);
@@ -375,6 +399,15 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
 
       const ustring ownName(primvarName.GetString());
       for (const ustring &name : names) {
+        /* Recreate, in case the type, role or interpolation changed. */
+        if (Attribute *previous = attributes.find(name)) {
+          if (previous->std == ATTR_STD_NONE || previous->std == ATTR_STD_UV ||
+              previous->std == ATTR_STD_VERTEX_COLOR)
+          {
+            RemoveUVTangents(_geom->attributes, name);
+            attributes.remove(name);
+          }
+        }
         ApplyPrimvars(
             attributes, name, value, elem, name == ownName ? std : ATTR_STD_NONE, unusedPoints);
         /* Copies of the UV map under other names subdivide smoothly like the UV map. */
@@ -384,6 +417,25 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
         }
       }
     }
+  }
+
+  /* Tangents are derived from UVs and may include named or fallback maps. */
+  for (const AttributeStandard std : {ATTR_STD_UV_TANGENT,
+                                      ATTR_STD_UV_TANGENT_SIGN,
+                                      ATTR_STD_UV_TANGENT_UNDISPLACED,
+                                      ATTR_STD_UV_TANGENT_SIGN_UNDISPLACED})
+  {
+    while (_geom->attributes.find(std)) {
+      _geom->attributes.remove(std);
+    }
+  }
+
+  if (!subdivision && !_geom->is_modified()) {
+    /* An attribute-only edit does not need a BVH update. */
+    _geom->add_vertex_normals();
+    _geom->update_tangents(scene, true);
+    _geom->update_tangents(scene, false);
+    _geom->tag_update(scene, false);
   }
 }
 
@@ -429,8 +481,16 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
     holeIndices = ds->GetTypedValue(0.0f);
   }
 
-  _topology = HdMeshTopology(
-      scheme, orientation, faceVertexCounts, faceVertexIndices, holeIndices, refineLevel);
+  /* Use refinement only for supported subdivision meshes, so triangle indices
+   * and face-varying primvars agree about which holes to omit. */
+  const bool useSubdivision = refineLevel > 0 && (scheme == PxOsdOpenSubdivTokens->bilinear ||
+                                                  scheme == PxOsdOpenSubdivTokens->catmullClark);
+  _topology = HdMeshTopology(scheme,
+                             orientation,
+                             faceVertexCounts,
+                             faceVertexIndices,
+                             holeIndices,
+                             useSubdivision ? refineLevel : 0);
 
   /* Geom subsets are published as child prims of the mesh in the scene index. */
   HdGeomSubsets geomSubsetsList;

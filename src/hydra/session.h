@@ -7,6 +7,7 @@
 
 #include "hydra/config.h"
 #include "scene/pass.h"
+#include "util/set.h"
 #include "util/thread.h"
 #include "util/transform.h"
 
@@ -43,6 +44,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   HdCyclesSession(CCL_NS::Session *session_, const bool keep_nodes);
   HdCyclesSession(const CCL_NS::SessionParams &params, const CCL_NS::SceneParams &scene_params);
   ~HdCyclesSession() override;
+
+  /* Queue node for deletion on the next UpdateScene(). Must be called with the scene locked. */
+  void DeleteNode(CCL_NS::Object *node);
+  void DeleteNode(CCL_NS::Geometry *node);
+  void DeleteNode(CCL_NS::Shader *node);
 
   void UpdateScene();
 
@@ -159,6 +165,16 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return std::unique_lock(_aovBindingsMutex);
   }
 
+  PXR_NS::TfToken GetStageUpAxis() const
+  {
+    return _stageUpAxis;
+  }
+
+  void SetStageUpAxis(const PXR_NS::TfToken stageUpAxis)
+  {
+    _stageUpAxis = stageUpAxis;
+  }
+
   PXR_NS::HdRenderPassAovBinding GetDisplayAovBinding() const
   {
     const auto lock = LockAovBindings();
@@ -208,12 +224,6 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   // Name of the Cycles pass holding an AOV, which can be shared with other AOVs
   std::string GetPassName(const PXR_NS::TfToken &aovName) const;
-
-  // Whether an AOV holds a distance or position (depth, position), which Cycles writes in meters
-  bool IsLengthAov(const PXR_NS::TfToken &aovName) const
-  {
-    return _lengthAovs.count(aovName) != 0;
-  }
 
   // World material of a dome light ("inputs:cycles:light:world_material", empty for none), the
   // light's own shader and its rotation. UpdateScene() uses the material's shader as background
@@ -328,7 +338,6 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   mutable std::recursive_mutex _aovBindingsMutex;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
-  std::set<PXR_NS::TfToken> _lengthAovs;
   std::vector<std::pair<std::string, std::string>> _primvarAovs;
   std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
       _renderSettingsPrimvarAovs;
@@ -336,6 +345,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::map<PXR_NS::SdfPath, std::pair<bool, bool>> _motionPassSettings;
   bool _motionPassBound = false;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
+  PXR_NS::TfToken _stageUpAxis = PXR_NS::TfToken("Y");
+  CCL_NS::set<CCL_NS::Object *> _deletedObjects;
+  CCL_NS::set<CCL_NS::Geometry *> _deletedGeometry;
+  CCL_NS::set<CCL_NS::Shader *> _deletedShaders;
+
+  void FlushDeletedNodes();
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

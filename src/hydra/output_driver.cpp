@@ -16,20 +16,17 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
-// Cycles writes the distance along the camera axis in meters (1e10 for background), Hydra expects
-// window depth in 0..1 like an OpenGL depth buffer. Houdini uses it for the tumble pivot.
-void convert_depth(float *depth,
-                   const size_t num_pixels,
-                   const GfMatrix4d &projection,
-                   const double metersPerUnit)
+// Cycles writes the distance along the camera axis (1e10 for background), Hydra expects window
+// depth in 0..1 like an OpenGL depth buffer. Houdini uses it for the tumble pivot.
+void convert_depth(float *depth, const size_t num_pixels, const GfMatrix4d &projection)
 {
   for (size_t i = 0; i < num_pixels; ++i) {
     if (depth[i] >= 1e9f) {
       depth[i] = 1.0f;
       continue;
     }
-    // Point on the view axis at that distance (camera looks down -Z), in stage units
-    const double z = -depth[i] / metersPerUnit;
+    // Point on the view axis at that distance (camera looks down -Z)
+    const double z = -depth[i];
     const double clip_z = z * projection[2][2] + projection[3][2];
     const double clip_w = z * projection[2][3] + projection[3][3];
     const double ndc_z = clip_w != 0.0 ? clip_z / clip_w : 1.0;
@@ -62,18 +59,8 @@ void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
                                          const size_t num_pixels,
                                          const size_t channels) const
 {
-  const double metersPerUnit = _renderParam->GetStageMetersPerUnit();
   if (aovName == HdAovTokens->depth && channels == 1 && _renderParam->IsViewport()) {
-    convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix(), metersPerUnit);
-  }
-  else if (_renderParam->IsLengthAov(aovName) && metersPerUnit != 1.0) {
-    // Cycles works in meters (the stage scaled by metersPerUnit), Karma writes stage units
-    const float scale = float(1.0 / metersPerUnit);
-    for (size_t i = 0; i < num_pixels * channels; ++i) {
-      if (data[i] < 1e9f) {  // Not the background depth
-        data[i] *= scale;
-      }
-    }
+    convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix());
   }
 }
 

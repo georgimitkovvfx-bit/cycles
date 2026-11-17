@@ -230,7 +230,12 @@ HdCyclesSession::HdCyclesSession(const SessionParams &params, const SceneParams 
 HdCyclesSession::~HdCyclesSession()
 {
   if (_ownCyclesSession) {
+    /* Scene destruction releases all remaining nodes in dependency order. */
     delete session;
+  }
+  else {
+    const SceneLock lock(this);
+    FlushDeletedNodes();
   }
 }
 
@@ -270,19 +275,62 @@ void HdCyclesSession::CreateSession(const SessionParams &params, const ScenePara
 bool HdCyclesSession::IsSessionUnused() const
 {
   const Scene *const scene = session->scene.get();
-  return _ownCyclesSession && scene->geometry.empty() && scene->objects.empty() &&
-         scene->shaders.size() == _numDefaultShaders;
+  /* Nodes waiting in FlushDeletedNodes() count as deleted. */
+  return _ownCyclesSession && scene->geometry.size() == _deletedGeometry.size() &&
+         scene->objects.size() == _deletedObjects.size() &&
+         scene->shaders.size() == _numDefaultShaders + _deletedShaders.size();
 }
 
 void HdCyclesSession::RecreateSession(const SessionParams &params, const SceneParams &scene_params)
 {
+  /* Scene destruction releases all nodes, also those waiting for deletion. */
+  _deletedObjects.clear();
+  _deletedGeometry.clear();
+  _deletedShaders.clear();
   delete session;
   CreateSession(params, scene_params);
+}
+
+void HdCyclesSession::DeleteNode(Object *node)
+{
+  _deletedObjects.insert(node);
+}
+
+void HdCyclesSession::DeleteNode(Geometry *node)
+{
+  _deletedGeometry.insert(node);
+}
+
+void HdCyclesSession::DeleteNode(Shader *node)
+{
+  _deletedShaders.insert(node);
+}
+
+void HdCyclesSession::FlushDeletedNodes()
+{
+  Scene *const scene = session->scene.get();
+
+  /* Batch deletion to avoid quadratic cost, in dependency order: objects reference
+   * geometry, geometry references shaders. */
+  if (!_deletedObjects.empty()) {
+    scene->delete_nodes(_deletedObjects);
+    _deletedObjects.clear();
+  }
+  if (!_deletedGeometry.empty()) {
+    scene->delete_nodes(_deletedGeometry);
+    _deletedGeometry.clear();
+  }
+  if (!_deletedShaders.empty()) {
+    scene->delete_nodes(_deletedShaders);
+    _deletedShaders.clear();
+  }
 }
 
 void HdCyclesSession::UpdateScene()
 {
   Scene *const scene = session->scene.get();
+
+  FlushDeletedNodes();
 
   // Update background depending on presence of a background light. The session thread may have
   // cleared the light manager's tags since a light was added or removed.
@@ -734,7 +782,6 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   // Update passes with requested AOV bindings
   _aovBindings = aovBindings;
   _passNames.clear();
-  _lengthAovs.clear();
 
   // Cryptomatte: the kernel writes every rank of the enabled types, in this order, so create all
   // those passes, also the ones no AOV reads.
@@ -777,9 +824,6 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     if (type == PASS_NONE) {
       TF_WARN("Unknown pass %s", aovBinding.aovName.GetText());
       continue;
-    }
-    if (type == PASS_DEPTH || type == PASS_POSITION || type == PASS_DENOISING_DEPTH) {
-      _lengthAovs.insert(aovBinding.aovName);
     }
     if (type == PASS_MOTION) {
       /* Cycles writes four floats per pixel, more than a smaller buffer holds. */

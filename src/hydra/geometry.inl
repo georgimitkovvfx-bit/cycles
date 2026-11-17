@@ -126,7 +126,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   /* A prototype that no point of its instancer uses has no instances. */
   if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
     // This needs to be corrected in the AOV
-    _instances[0]->set_pass_id(Base::GetPrimId() + 1);
+    for (Object *instance : _instances) {
+      instance->set_pass_id(Base::GetPrimId() + 1);
+    }
   }
 
   if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
@@ -180,7 +182,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
     // Resize instance list
     for (size_t i = newSize; i < oldSize; ++i) {
-      lock.scene->delete_node(_instances[i]);
+      static_cast<HdCyclesSession *>(renderParam)->DeleteNode(_instances[i]);
     }
     _instances.resize(newSize);
     for (size_t i = oldSize; i < newSize; ++i) {
@@ -191,26 +193,17 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       static_cast<HdCyclesSession *>(renderParam)->TagLightLinking();
     }
 
-    /* After the resize: a prototype without instances has no object left to write to. */
-    if (!_instances.empty()) {
-      // Make sure the first object attribute is the instanceId
-      assert(_instances[0]->attributes.size() >= 1 &&
-             _instances[0]->attributes.front().name() == HdAovTokens->instanceId.GetString());
-      _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(),
-                                                     instancer ? +0.0f : -1.0f);
-    }
-
-    // Update transforms of all instances. The prototype and the instances move over the same
+    // Update transforms and instance IDs of all instances. The prototype and the instances move over the same
     // motion steps, or one of them does not move.
     const size_t numSteps = std::max(_geomTransformMotion.size(),
                                      stepTransforms.size() > 1 ? stepTransforms.size() : 0);
     for (size_t i = 0; i < transforms.size(); ++i) {
-      const float metersPerUnit =
-          static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
+      Object *const instance = _instances[i];
+      instance->set_tfm(convert_transform(_geomTransform * transforms[i]));
 
-      const Transform tfm = transform_scale(make_float3(metersPerUnit)) *
-                            convert_transform(_geomTransform * transforms[i]);
-      _instances[i]->set_tfm(tfm);
+      // The first object attribute is the instanceId, see InitializeInstance()
+      instance->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(),
+                                                instancer ? static_cast<float>(i) : -1.0f);
 
       array<Transform> motion(numSteps);
       for (size_t step = 0; step < numSteps; ++step) {
@@ -219,10 +212,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
                                               _geomTransformMotion[step];
         const GfMatrix4d &instanceTransform = stepTransforms.size() > 1 ? stepTransforms[step][i] :
                                                                           transforms[i];
-        motion[step] = transform_scale(make_float3(metersPerUnit)) *
-                       convert_transform(geomTransform * instanceTransform);
+        motion[step] = convert_transform(geomTransform * instanceTransform);
       }
-      _instances[i]->set_motion(motion);
+      instance->set_motion(motion);
     }
 
     if (instancePrimvarsDirty) {
@@ -483,16 +475,16 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(Base::GetId().GetString());
 
-  /* Delete the instances before the geometry, since the objects reference the geometry. */
   if (!keep_nodes) {
-    lock.scene->delete_nodes(set<Object *>(_instances.begin(), _instances.end()));
+    HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+    for (Object *instance : _instances) {
+      session->DeleteNode(instance);
+    }
+    session->DeleteNode(_geom);
   }
   _instances.clear();
   _instances.shrink_to_fit();
 
-  if (!keep_nodes) {
-    lock.scene->delete_node(_geom);
-  }
   _geom = nullptr;
 }
 
@@ -521,15 +513,12 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
   Object *instance = _instances[index];
   instance->set_geometry(_geom);
 
-  instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(),
-                                    _instances.size() == 1 ? -1.0f : static_cast<float>(index));
+  // Value is set in Sync()
+  instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(), -1.0f);
 
   instance->set_color(index > 0 ? _instances[0]->get_color() : make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));
-  if (index == 0) {
-    /* Also when instances come back after a sync without any, which leaves the prim id clean. */
-    instance->set_pass_id(Base::GetPrimId() + 1);
-  }
+  instance->set_pass_id(Base::GetPrimId() + 1);
 
   // Cryptomatte object and asset names: the prim and its parent
   instance->name = _geom->name;

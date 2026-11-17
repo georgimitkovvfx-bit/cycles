@@ -21,7 +21,7 @@ class HdCyclesOutputDriver final : public CCL_NS::OutputDriver {
   bool update_render_tile(const Tile &tile) override;
 
   void update_render_buffers(const Tile &tile, bool final);
-  // Depth and positions in stage units, the viewport depth as window depth
+  // The viewport depth as window depth
   void convert_units(const PXR_NS::TfToken &aovName,
                      float *data,
                      size_t num_pixels,
