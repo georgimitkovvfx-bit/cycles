@@ -1230,7 +1230,9 @@ void LightManager::device_update_background(Device *device,
     kbackground->map_res_x = 0;
     kbackground->map_res_y = 0;
     kbackground->map_dD = FLT_MAX;
-    kbackground->use_mis = (kbackground->portal_weight > 0.0f);
+    /* Portals only guide the sampling of a background light: without one, MIS would look up
+     * the light tree with an invalid background object index. */
+    kbackground->use_mis = false;
     return;
   }
 
