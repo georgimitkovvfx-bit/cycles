@@ -73,6 +73,15 @@ SESSION_SETTINGS = {
     "cycles:use_texture_cache": {"type": "boolean", "default": True},
     "cycles:auto_texture_cache": {"type": "boolean", "default": False},
     "cycles:texture_cache_path": {"type": "string", "default": ""},
+    "cycles:tile_size": {"type": "int", "default": 2048},
+    "cycles:pixel_size": {
+        "type": "menu",
+        "default": "1",
+        "enum_values": {"1": "1x", "2": "2x", "4": "4x", "8": "8x"},
+    },
+    "cycles:use_spatial_splits": {"type": "boolean", "default": False},
+    "cycles:use_compact_bvh": {"type": "boolean", "default": True},
+    "cycles:curve_subdivisions": {"type": "int", "default": 3},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -101,6 +110,8 @@ BLENDER_DEFAULTS = {
     "cycles:film:filter_width": 1.5,
     "cycles:background:transparent_roughness_threshold": 0.1,
     "cycles:curve_shape": "thick",
+    "cycles:curve_subdivisions": 2,
+    "cycles:use_compact_bvh": False,
 }
 
 # Menu labels and items for socket enums, where the title cased token is not good enough.
@@ -414,6 +425,10 @@ LAYOUT = [
           "for fast rendering. 3D Curves render curves as circular 3D geometry, for accurate "
           "results when viewing closely. Changing it restarts the render.",
           viewport=True),
+        S("cycles:curve_subdivisions", "Curve Subdivisions",
+          "Number of subdivisions used in curve intersection, as a power of 2 (Blender uses 2). "
+          "Changing it restarts the render.",
+          range=(0, 4, True, False)),
     ]),
     P("Simplify", [
         S("cycles:texture_limit", "Texture Size Limit",
@@ -490,6 +505,25 @@ LAYOUT = [
               "Render the first samples after a change at a lower resolution, for faster "
               "feedback while navigating. Changing it restarts the render.",
               viewport=True),
+            S("cycles:pixel_size", "Pixel Size",
+              "Pixel size for viewport rendering, larger pixels render faster. Final renders "
+              "always use full resolution. Changing it restarts the render.",
+              viewport=True),
+        ], open=True),
+        P("Memory", [
+            S("cycles:tile_size", "Tile Size",
+              "Render high resolution images in tiles of this size, to reduce memory usage. "
+              "Tiles are cached to disk while rendering. Final renders only. Changing it "
+              "restarts the render.",
+              range=(8, 8192, True, True)),
+        ], open=True),
+        P("Acceleration Structure", [
+            S("cycles:use_spatial_splits", "Use Spatial Splits",
+              "Use BVH spatial splits: longer build time, faster render. CPU only (Embree). "
+              "Changing it restarts the render."),
+            S("cycles:use_compact_bvh", "Use Compact BVH",
+              "Use a compact BVH structure: uses less memory but renders slower. CPU only "
+              "(Embree; Blender turns it off). Changing it restarts the render."),
         ], open=True),
         P("Texture Cache", [
             S("cycles:use_texture_cache", "Texture Cache",

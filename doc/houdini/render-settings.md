@@ -37,7 +37,7 @@ The top of the node has the parameters of the stock Render Settings LOP that a r
 **Blender Defaults** sets 4096 samples, denoising on, the Blue-Noise (pure) sampling pattern,
 Light Threshold 0.01, bounces of 12 total, 4 diffuse, 4 glossy, 12 transmission, 0 volume and
 8 transparent, a Blackman-Harris pixel filter of width 1.5, a transparent glass Roughness Threshold
-of 0.1 and 3D Curves. Denoising stays on the GPU, while Blender denoises final renders on the CPU.
+of 0.1, 3D Curves with 2 Curve Subdivisions, and Use Compact BVH off. Denoising stays on the GPU, while Blender denoises final renders on the CPU.
 The button changes values, not defaults: **Revert to Defaults** on a parameter returns it to the
 Cycles default.
 
@@ -87,6 +87,9 @@ render session, and Houdini restarts the viewport render when they change (they 
 | Curves Shape | `cycles:curve_shape` |
 | Texture Cache, Auto Generate, Cache Directory | `cycles:use_texture_cache`, `cycles:auto_texture_cache`, `cycles:texture_cache_path` |
 | Texture Size Limit | `cycles:texture_limit` |
+| Curve Subdivisions | `cycles:curve_subdivisions` |
+| Pixel Size, Tile Size | `cycles:pixel_size`, `cycles:tile_size` |
+| Use Spatial Splits, Use Compact BVH | `cycles:use_spatial_splits`, `cycles:use_compact_bvh` |
 
 Motion blur, the camera shutter and Motion Steps change without a restart.
 
@@ -234,6 +237,7 @@ The **Fast GI Approximation** toggle in the panel header turns the panel on; the
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Shape | `cycles:curve_shape` | Rounded Ribbons | Form of curves. Rounded Ribbons render curves as flat ribbons with rounded normals, for fast rendering. 3D Curves render curves as circular 3D geometry, for accurate results when viewing closely. Choices: Rounded Ribbons (`ribbon`), 3D Curves (`thick`). Also in the viewport display options. **Restarts the render.** |
+| Curve Subdivisions | `cycles:curve_subdivisions` | 3 | Number of subdivisions used in curve intersection, as a power of 2 (Blender uses 2). **Restarts the render.** |
 
 ### Simplify
 
@@ -298,6 +302,20 @@ The **Transparent** toggle in the panel header turns the panel on; the other set
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Start at Low Resolution | `cycles:use_resolution_divider` | On | Render the first samples after a change at a lower resolution, for faster feedback while navigating. Also in the viewport display options. **Restarts the render.** |
+| Pixel Size | `cycles:pixel_size` | 1x | Pixel size for viewport rendering, larger pixels render faster. Final renders always use full resolution. Choices: `1`, `2`, `4`, `8`. Also in the viewport display options. **Restarts the render.** |
+
+### Performance > Memory
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Tile Size | `cycles:tile_size` | 2048 | Render high resolution images in tiles of this size, to reduce memory usage. Tiles are cached to disk while rendering. Final renders only (the viewport never tiles). **Restarts the render.** |
+
+### Performance > Acceleration Structure
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Use Spatial Splits | `cycles:use_spatial_splits` | Off | Use BVH spatial splits: longer build time, faster render. CPU only (Embree). **Restarts the render.** |
+| Use Compact BVH | `cycles:use_compact_bvh` | On | Use a compact BVH structure: uses less memory but renders slower. CPU only (Embree). Blender turns it off (Blender Defaults button). **Restarts the render.** |
 
 ### Performance > Texture Cache
 

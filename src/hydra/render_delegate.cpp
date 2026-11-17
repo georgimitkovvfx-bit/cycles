@@ -134,7 +134,12 @@ bool IsSessionSetting(const TfToken &key)
          key == HdCyclesRenderSettingsTokens->useTextureCache ||
          key == HdCyclesRenderSettingsTokens->autoTextureCache ||
          key == HdCyclesRenderSettingsTokens->textureCachePath ||
-         key == HdCyclesRenderSettingsTokens->textureLimit;
+         key == HdCyclesRenderSettingsTokens->textureLimit ||
+         key == HdCyclesRenderSettingsTokens->tileSize ||
+         key == HdCyclesRenderSettingsTokens->pixelSize ||
+         key == HdCyclesRenderSettingsTokens->useSpatialSplits ||
+         key == HdCyclesRenderSettingsTokens->useCompactBvh ||
+         key == HdCyclesRenderSettingsTokens->curveSubdivisions;
 }
 
 SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
@@ -160,8 +165,19 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   // Like Blender, only final renders use tiles: the viewport shows every sample, a tiled render
   // reaches the render buffers when it is done (see HdCyclesSession::CreateSession).
   it = settings.find(HdCyclesRenderSettingsTokens->houdiniViewport);
-  params.use_auto_tile = it == settings.end() ||
-                         !VtValue::Cast<bool>(it->second).GetWithDefault(false);
+  const bool viewport = it != settings.end() &&
+                        VtValue::Cast<bool>(it->second).GetWithDefault(false);
+  params.use_auto_tile = !viewport;
+  it = settings.find(HdCyclesRenderSettingsTokens->tileSize);
+  if (it != settings.end()) {
+    params.tile_size = std::clamp(
+        VtValue::Cast<int>(it->second).GetWithDefault(params.tile_size), 8, 8192);
+  }
+  // Blender's viewport Pixel Size: final renders always use full resolution pixels
+  it = settings.find(HdCyclesRenderSettingsTokens->pixelSize);
+  if (viewport && it != settings.end()) {
+    params.pixel_size = std::max(1, std::atoi(GetStringSetting(it->second, "1").c_str()));
+  }
   params.temp_dir = std::filesystem::temp_directory_path().string();
 
   // Lower resolution start of renders after a change, fixed when the session is created
@@ -255,6 +271,21 @@ SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionPar
   it = settings.find(HdCyclesRenderSettingsTokens->textureLimit);
   if (it != settings.end()) {
     params.texture_limit = std::max(0, std::atoi(GetStringSetting(it->second, "off").c_str()));
+  }
+
+  // Blender's Performance > Acceleration Structure and Curves > Curve Subdivisions
+  it = settings.find(HdCyclesRenderSettingsTokens->useSpatialSplits);
+  if (it != settings.end()) {
+    params.use_bvh_spatial_split = VtValue::Cast<bool>(it->second).GetWithDefault(false);
+  }
+  it = settings.find(HdCyclesRenderSettingsTokens->useCompactBvh);
+  if (it != settings.end()) {
+    params.use_bvh_compact_structure = VtValue::Cast<bool>(it->second).GetWithDefault(true);
+  }
+  it = settings.find(HdCyclesRenderSettingsTokens->curveSubdivisions);
+  if (it != settings.end()) {
+    params.hair_subdivisions = std::clamp(
+        VtValue::Cast<int>(it->second).GetWithDefault(params.hair_subdivisions), 0, 24);
   }
 
   return params;
@@ -775,6 +806,13 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
      * samples at each redraw, instead of every 2 s after a few seconds. */
     session->params.max_display_update_interval = _renderParam->IsViewport() ? 0.2 : 0.0;
     session->params.use_auto_tile = !_renderParam->IsViewport();
+    /* Pixel Size only applies to the viewport: set it again when it came before this setting
+     * (may recreate the session, so nothing after this uses it). */
+    const auto pixelSize = _settingsMap.find(HdCyclesRenderSettingsTokens->pixelSize);
+    if (pixelSize != _settingsMap.end()) {
+      const VtValue pixelSizeValue = pixelSize->second;
+      SetRenderSetting(HdCyclesRenderSettingsTokens->pixelSize, pixelSizeValue);
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniFps) {
     const double fps = _renderParam->GetFramesPerSecond();
@@ -963,6 +1001,21 @@ VtValue HdCyclesDelegate::GetRenderSetting(const TfToken &key) const
   }
   if (key == HdCyclesRenderSettingsTokens->curveShape) {
     return VtValue(TfToken(scene->params.hair_shape == CURVE_THICK ? "thick" : "ribbon"));
+  }
+  if (key == HdCyclesRenderSettingsTokens->tileSize) {
+    return VtValue(session->params.tile_size);
+  }
+  if (key == HdCyclesRenderSettingsTokens->pixelSize) {
+    return VtValue(TfToken(std::to_string(session->params.pixel_size)));
+  }
+  if (key == HdCyclesRenderSettingsTokens->useSpatialSplits) {
+    return VtValue(scene->params.use_bvh_spatial_split);
+  }
+  if (key == HdCyclesRenderSettingsTokens->useCompactBvh) {
+    return VtValue(scene->params.use_bvh_compact_structure);
+  }
+  if (key == HdCyclesRenderSettingsTokens->curveSubdivisions) {
+    return VtValue(scene->params.hair_subdivisions);
   }
   if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     return VtValue(session->params.time_limit);

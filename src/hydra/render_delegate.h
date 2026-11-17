@@ -28,6 +28,11 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((autoTextureCache, "cycles:auto_texture_cache")) \
     ((textureCachePath, "cycles:texture_cache_path")) \
     ((textureLimit, "cycles:texture_limit")) \
+    ((tileSize, "cycles:tile_size")) \
+    ((pixelSize, "cycles:pixel_size")) \
+    ((useSpatialSplits, "cycles:use_spatial_splits")) \
+    ((useCompactBvh, "cycles:use_compact_bvh")) \
+    ((curveSubdivisions, "cycles:curve_subdivisions")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \
     ((sampleOffset, "cycles:sample_offset")) \
