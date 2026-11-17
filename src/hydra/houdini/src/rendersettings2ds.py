@@ -605,6 +605,9 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:max_bounces": {"type": "int", "default": 1024},
     "inputs:cycles:light:use_mis": {"type": "boolean", "default": True},
     "inputs:cycles:light:use_caustics": {"type": "boolean", "default": False},
+    "inputs:cycles:light:use_soft_falloff": {"type": "boolean", "default": False},
+    "inputs:cycles:light:spread": {"type": "float", "default": 180.0},
+    "inputs:cycles:light:is_portal": {"type": "boolean", "default": False},
     "inputs:cycles:light:visible_camera": {"type": "boolean", "default": False},
     "inputs:cycles:light:visible_diffuse": {"type": "boolean", "default": True},
     "inputs:cycles:light:visible_glossy": {"type": "boolean", "default": True},
@@ -612,6 +615,7 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:visible_volume_scatter": {"type": "boolean", "default": True},
     "inputs:cycles:light:lightgroup": {"type": "string", "default": ""},
     "inputs:cycles:light:world_material": {"type": "string", "default": ""},
+    "inputs:cycles:light:map_resolution": {"type": "int", "default": 0},
 }
 
 # Prim path field with Houdini's prim picker button.
@@ -634,6 +638,19 @@ LIGHT_LAYOUT = [
         S("inputs:cycles:light:use_caustics", "Shadow Caustics",
           "Generate approximate caustics in shadows of refractive surfaces. Lights, caster and "
           "receiver objects must have shadow caustics options set to enable this."),
+        S("inputs:cycles:light:use_soft_falloff", "Soft Falloff",
+          "Sphere lights only: apply falloff to avoid sharp edges when the light geometry "
+          "intersects with other objects. Off by default, so the light is a sphere like in USD "
+          "and Karma (in Blender it is on)."),
+        S("inputs:cycles:light:spread", "Spread",
+          "Rect and disk lights only: how widely the emitted light fans out, in degrees, as "
+          "in the case of a gridded softbox. 180 emits in all directions of the front "
+          "hemisphere.",
+          range=(0, 180, True, True)),
+        S("inputs:cycles:light:is_portal", "Portal",
+          "Rect and disk lights only: use the light as a portal. It emits no light itself, but "
+          "guides the sampling of the world (dome light) through windows and openings, to "
+          "reduce noise in interiors."),
     ], open=True),
     P("Visibility", [
         P("Ray Visibility", [
@@ -662,6 +679,10 @@ LIGHT_LAYOUT = [
           "texture, its volume fills the scene. Sky and environment textures follow the light's "
           "rotation, with their pole on the light's +Y like dome light textures.",
           tags=PRIM_PATH_TAGS),
+        S("inputs:cycles:light:map_resolution", "Map Resolution",
+          "Dome lights only: resolution of the importance map used to sample the world. 0 is "
+          "Auto: the resolution of the environment texture (Blender's Sampling Auto).",
+          range=(0, 8192, True, False)),
     ], open=True),
 ]
 

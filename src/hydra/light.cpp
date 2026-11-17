@@ -40,6 +40,10 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((maxBounces, "inputs:cycles:light:max_bounces"))
     ((lightgroup, "inputs:cycles:light:lightgroup"))
     ((worldMaterial, "inputs:cycles:light:world_material"))
+    ((spread, "inputs:cycles:light:spread"))
+    ((isPortal, "inputs:cycles:light:is_portal"))
+    ((softFalloff, "inputs:cycles:light:use_soft_falloff"))
+    ((mapResolution, "inputs:cycles:light:map_resolution"))
 );
 // clang-format on
 
@@ -159,7 +163,12 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       _light->set_cast_shadow(ds->GetTypedValue(0.0f));
     }
 
-    if (_lightType == HdPrimTypeTokens->distantLight) {
+    if (_lightType == HdPrimTypeTokens->domeLight) {
+      /* Blender's world Map Resolution, 0 is Auto (from the environment texture). */
+      static_cast<BackgroundLight *>(_light)->set_map_resolution(
+          max(GetTypedValue<int>(lightDs, _tokens->mapResolution, 0), 0));
+    }
+    else if (_lightType == HdPrimTypeTokens->distantLight) {
       const float angleDeg = GetTypedValue<float>(lightDs, HdLightTokens->angle, 0.53f);
       const float angleRad = GfDegreesToRadians(angleDeg);
       static_cast<SunLight *>(_light)->set_angle(angleRad);
@@ -181,7 +190,9 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     {
       AreaLight *area_light = static_cast<AreaLight *>(_light);
 
-      area_light->set_spread(M_PI_F);
+      area_light->set_spread(GfDegreesToRadians(
+          clamp(GetTypedValue<float>(lightDs, _tokens->spread, 180.0f), 0.0f, 180.0f)));
+      area_light->set_is_portal(GetTypedValue<bool>(lightDs, _tokens->isPortal, false));
 
       if (_lightType == HdPrimTypeTokens->diskLight) {
         const float radius = GetTypedValue<float>(lightDs, HdLightTokens->radius, 0.5f);
@@ -220,6 +231,8 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       }
 
       spot_light->set_smooth(0.0f);
+      /* Blender's Soft Falloff, off by default: a USD sphere light is a sphere, like in Karma. */
+      spot_light->set_is_sphere(!GetTypedValue<bool>(lightDs, _tokens->softFalloff, false));
       _light->set_light_type(LIGHT_POINT);
     }
 

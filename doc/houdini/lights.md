@@ -16,8 +16,9 @@ light source too.
 | Dome light | World background light | `texture:file` as a latitude-longitude environment map |
 | Cylinder light | Not supported | Cycles has no cylinder light; these lights do not render |
 
-Mesh lights (the UsdLux mesh light API) and portal lights are not supported;
-use an emissive material on the geometry instead.
+Mesh lights (the UsdLux mesh light API) and USD portal lights (`PortalLight`) are not supported;
+use an emissive material on the geometry instead, and a rect light with the Cycles **Portal**
+setting (below) as a portal.
 
 ## Intensity
 
@@ -50,6 +51,13 @@ settings use Blender's defaults, except that lights are invisible to camera rays
 | Max Bounces | `inputs:cycles:light:max_bounces` | 1024 | Maximum number of bounces the light contributes to the render |
 | Multiple Importance | `inputs:cycles:light:use_mis` | On | Use multiple importance sampling for the light; reduces noise for area lights and sharp glossy materials |
 | Shadow Caustics | `inputs:cycles:light:use_caustics` | Off | Generate approximate caustics in shadows of refractive surfaces. The light, the caster and the receiver objects must all have their shadow caustics options on (see [objects.md](objects.md)) |
+| Soft Falloff | `inputs:cycles:light:use_soft_falloff` | Off | Sphere lights only: apply falloff to avoid sharp edges where the light's sphere intersects other objects. Off by default so the light is a true sphere like in USD and Karma (in Blender it is on) |
+| Spread | `inputs:cycles:light:spread` | 180 | Rect and disk lights only: how widely the light fans out, in degrees (like a gridded softbox). 180 emits over the whole front hemisphere |
+| Portal | `inputs:cycles:light:is_portal` | Off | Rect and disk lights only: the light emits nothing itself but guides world (dome light) sampling through windows and openings, to reduce noise in interiors |
+
+Blender's other light settings are the standard USD ones on the Light LOP's other tabs: power is
+Intensity/Exposure, Radius/Size are Radius/Width/Height, Spot Size and Blend are Shaping > Cone
+Angle and Cone Softness, Cast Shadow is Shadow > Enable.
 
 ### Visibility > Ray Visibility
 
@@ -75,6 +83,7 @@ up in that group's pass.
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | World Material | `inputs:cycles:light:world_material` | (empty) | Dome lights only: a material used as the Cycles world, like a Blender world. Its surface replaces the dome's color and texture, its volume fills the scene. See [world.md](world.md) |
+| Map Resolution | `inputs:cycles:light:map_resolution` | 0 | Dome lights only: resolution of the importance map used to sample the world. 0 is Auto, the resolution of the environment texture (Blender's world Sampling: Auto) |
 
 ## Light and shadow linking
 
