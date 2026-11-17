@@ -37,6 +37,7 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((useCaustics, "inputs:cycles:light:use_caustics"))
     ((maxBounces, "inputs:cycles:light:max_bounces"))
     ((lightgroup, "inputs:cycles:light:lightgroup"))
+    ((worldMaterial, "inputs:cycles:light:world_material"))
 );
 // clang-format on
 
@@ -232,9 +233,25 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   }
   // Need to update shader graph when transform changes in case transform was baked into it
   else if (_object->tfm_is_modified() && (_lightType == HdPrimTypeTokens->domeLight ||
-                                          _light->get_shader()->has_surface_spatial_varying))
+                                          _shader->has_surface_spatial_varying))
   {
     PopulateShaderGraph(lightDs);
+  }
+
+  if (_lightType == HdPrimTypeTokens->domeLight &&
+      (*dirtyBits & (DirtyBits::DirtyTransform | DirtyBits::DirtyParams)))
+  {
+    /* A material as the world, like in Blender: its surface is the background, its volume fills
+     * the scene. Sky and environment textures follow the light's rotation. */
+    const std::string material = GetTypedValue<std::string>(lightDs, _tokens->worldMaterial, "");
+    Transform rotation = _object->get_tfm();
+    for (int i = 0; i < 3; i++) {
+      transform_set_column(&rotation, i, normalize(transform_get_column(&rotation, i)));
+    }
+    transform_set_column(&rotation, 3, zero_float3());
+    static_cast<HdCyclesSession *>(renderParam)
+        ->SetWorldMaterial(
+            _light, _shader, SdfPath::IsValidPathString(material) ? material : "", rotation);
   }
 
   if (_light->is_modified()) {
@@ -400,7 +417,7 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
     }
   }
 
-  Shader *const shader = _light->get_shader();
+  Shader *const shader = _shader;
   shader->set_graph(std::move(graph));
   shader->tag_update((Scene *)_light->get_owner());
 
@@ -416,6 +433,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(_object->name.string());
+  static_cast<HdCyclesSession *>(renderParam)->RemoveWorldMaterial(_light);
   static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
 
   if (!keep_nodes) {
@@ -426,6 +444,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
 
   _light = nullptr;
   _object = nullptr;
+  _shader = nullptr;
 }
 
 void HdCyclesLight::Initialize(HdRenderParam *renderParam)
@@ -468,6 +487,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
   _object->set_visibility(PATH_RAY_VISIBILITY_ALL & ~PATH_RAY_VISIBILITY_CAMERA);
 
   Shader *const shader = lock.scene->create_node<Shader>();
+  _shader = shader;
   array<Node *> used_shaders;
   used_shaders.push_back_slow(shader);
   _light->set_used_shaders(used_shaders);

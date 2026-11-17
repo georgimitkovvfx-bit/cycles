@@ -32,6 +32,9 @@ class HdCyclesLight final : public PXR_NS::HdLight {
 
   CCL_NS::Object *_object = nullptr;
   CCL_NS::Light *_light = nullptr;
+  // The light's own shader: a dome light uses its world material's shader instead when it has one
+  // (HdCyclesSession::SetWorldMaterial)
+  CCL_NS::Shader *_shader = nullptr;
   PXR_NS::TfToken _lightType;
 };
 

@@ -72,12 +72,14 @@ const TfTokenVector kSupportedRPrimTypes = {
 
 const TfTokenVector kSupportedSPrimTypes = {
     HdPrimTypeTokens->camera,
-    HdPrimTypeTokens->material,
+    /* Hydra syncs sprims in this order: lights before materials, so that a world material
+     * knows its dome light (HdCyclesSession::SetWorldMaterial) on the first sync. */
     HdPrimTypeTokens->diskLight,
     HdPrimTypeTokens->distantLight,
     HdPrimTypeTokens->domeLight,
     HdPrimTypeTokens->rectLight,
     HdPrimTypeTokens->sphereLight,
+    HdPrimTypeTokens->material,
 };
 
 const TfTokenVector kSupportedBPrimTypes = {

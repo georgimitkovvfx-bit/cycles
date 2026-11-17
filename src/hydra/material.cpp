@@ -15,6 +15,8 @@
 #endif
 #include "scene/scene.h"
 #include "scene/shader.h"
+// After shader.h, so that Background::set_shader uses the correct set()
+#include "scene/background.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/colorspace.h"
@@ -908,6 +910,38 @@ HdDirtyBits HdCyclesMaterial::GetInitialDirtyBitsMask() const
   return DirtyBits::DirtyResource | DirtyBits::DirtyParams;
 }
 
+/* Cycles' sky and environment textures have their pole on +Z and their center on +X, USD dome
+ * lights on their +Y and +Z, like the dome light textures (light.cpp): look up light space
+ * (x, y, z) as (z, x, y), in the texture mapping, so that Cycles still samples the sun of a sky
+ * texture directly (LightManager::device_update_background).
+ * shortcut: overrides the Texture Mapping parameters of these nodes, compose them with the
+ * rotation if anyone sets them on a world material. */
+static void OrientWorldTextures(ShaderGraph *graph, const Transform &lightRotation)
+{
+  const Transform swap = make_transform(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0);
+  /* swap * inverse(light) = r * swap, as Euler angles of transform_euler() (Z * Y * X). */
+  const Transform r = swap * transform_inverse(lightRotation) * transform_inverse(swap);
+  const float3 euler = make_float3(atan2f(r.z.y, r.z.z),
+                                   asinf(clamp(-r.z.x, -1.0f, 1.0f)),
+                                   atan2f(r.y.x, r.x.x));
+  for (ShaderNode *node : graph->nodes) {
+    if (node->type != SkyTextureNode::get_node_type() &&
+        node->type != EnvironmentTextureNode::get_node_type())
+    {
+      continue;
+    }
+    TextureMapping &mapping = static_cast<TextureNode *>(node)->tex_mapping;
+    mapping.type = TextureMapping::VECTOR;
+    mapping.translation = zero_float3();
+    mapping.rotation = euler;
+    mapping.scale = one_float3();
+    mapping.x_mapping = TextureMapping::Z;
+    mapping.y_mapping = TextureMapping::X;
+    mapping.z_mapping = TextureMapping::Y;
+    mapping.use_minmax = false;
+  }
+}
+
 void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
                             HdRenderParam *renderParam,
                             HdDirtyBits *dirtyBits)
@@ -973,6 +1007,11 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     SetUdimTiles(graph.get());
+    const Transform *const worldRotation =
+        static_cast<HdCyclesSession *>(renderParam)->GetWorldRotation(id.GetString());
+    if (worldRotation) {
+      OrientWorldTextures(graph.get(), *worldRotation);
+    }
     AddInstanceIdAOV(graph.get());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
@@ -981,6 +1020,10 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       _shader = lock.scene->create_node<Shader>();
       // Cryptomatte material name
       _shader->name = id.GetString();
+      /* A dome light may use the material as world since before it existed. */
+      if (worldRotation) {
+        static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
+      }
     }
 
     const AttributeRequestSet attributes = _shader->attributes;
@@ -1417,9 +1460,13 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
   }
 
   const SceneLock lock(renderParam);
-  const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
+  HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+  const bool keep_nodes = session->keep_nodes;
 
   _nodes.clear();
+
+  /* The world material of a dome light: UpdateScene() picks the light's own shader again. */
+  session->ReleaseWorldShader(_shader);
 
   if (!keep_nodes) {
     lock.scene->delete_node(_shader);

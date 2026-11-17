@@ -322,10 +322,24 @@ void HdCyclesSession::UpdateScene()
     else {
       // The light manager enables the background light (MIS) by the background shader: decide
       // again, the session thread may have updated the lights before the shader was set here.
-      if (scene->background->get_shader() != background_light->get_shader()) {
+      Shader *shader = background_light->get_shader();
+      const auto world = _worldMaterials.find(background_light);
+      if (world != _worldMaterials.end()) {
+        shader = world->second.lightShader;
+        if (!world->second.material.empty()) {
+          for (Shader *material : scene->shaders) {
+            if (material != shader && material->name == world->second.material) {
+              shader = material;
+              break;
+            }
+          }
+        }
+        SetLightShader(background_light, shader);
+      }
+      if (scene->background->get_shader() != shader) {
         scene->light_manager->tag_update(scene, LightManager::SHADER_MODIFIED);
       }
-      scene->background->set_shader(background_light->get_shader());
+      scene->background->set_shader(shader);
       scene->background->set_transparent(_transparentBackground.value_or(false));
     }
 
@@ -333,6 +347,77 @@ void HdCyclesSession::UpdateScene()
   }
 
   UpdateLightLinking();
+}
+
+void HdCyclesSession::SetWorldMaterial(Light *light,
+                                       Shader *lightShader,
+                                       const std::string &material,
+                                       const Transform &rotation)
+{
+  const auto it = _worldMaterials.find(light);
+  if (it != _worldMaterials.end() && it->second.material == material &&
+      (material.empty() || it->second.rotation == rotation))
+  {
+    return;
+  }
+  const bool hadMaterial = it != _worldMaterials.end() && !it->second.material.empty();
+  _worldMaterials[light] = {material, rotation, lightShader};
+  lightsChanged = true;
+  /* Materials orient their sky and environment textures by the light they are the world of. */
+  if (hadMaterial || !material.empty()) {
+    RequestResync(true, false);
+  }
+}
+
+void HdCyclesSession::RemoveWorldMaterial(Light *light)
+{
+  const auto it = _worldMaterials.find(light);
+  if (it == _worldMaterials.end()) {
+    return;
+  }
+  if (!it->second.material.empty()) {
+    RequestResync(true, false);
+  }
+  _worldMaterials.erase(it);
+  lightsChanged = true;
+}
+
+void HdCyclesSession::ReleaseWorldShader(Shader *shader)
+{
+  Scene *const scene = session->scene.get();
+  if (scene->background->get_shader() == shader) {
+    scene->background->set_shader(scene->default_background);
+    scene->background->tag_update(scene);
+    lightsChanged = true;
+  }
+  for (const auto &[light, world] : _worldMaterials) {
+    if (light->get_shader() == shader) {
+      SetLightShader(light, world.lightShader);
+      lightsChanged = true;
+    }
+  }
+}
+
+void HdCyclesSession::SetLightShader(Light *light, Shader *shader)
+{
+  if (light->get_shader() == shader) {
+    return;
+  }
+  array<Node *> usedShaders(1);
+  usedShaders[0] = shader;
+  shader->tag_used(session->scene.get());
+  light->set_used_shaders(usedShaders);
+  light->tag_update(session->scene.get());
+}
+
+const Transform *HdCyclesSession::GetWorldRotation(const std::string &material) const
+{
+  for (const auto &[light, world] : _worldMaterials) {
+    if (world.material == material) {
+      return &world.rotation;
+    }
+  }
+  return nullptr;
 }
 
 void HdCyclesSession::SetLightLinks(const std::string &light,

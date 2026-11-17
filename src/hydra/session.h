@@ -8,6 +8,7 @@
 #include "hydra/config.h"
 #include "scene/pass.h"
 #include "util/thread.h"
+#include "util/transform.h"
 
 #include <pxr/imaging/hd/renderDelegate.h>
 
@@ -213,6 +214,20 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _lengthAovs.count(aovName) != 0;
   }
 
+  // World material of a dome light ("inputs:cycles:light:world_material", empty for none), the
+  // light's own shader and its rotation. UpdateScene() uses the material's shader as background
+  // and light shader, like a Blender world: Cycles builds the world volume from the shaders of
+  // the background light. Called with the scene locked.
+  void SetWorldMaterial(CCL_NS::Light *light,
+                        CCL_NS::Shader *lightShader,
+                        const std::string &material,
+                        const CCL_NS::Transform &rotation);
+  void RemoveWorldMaterial(CCL_NS::Light *light);
+  // Stop using the shader of a material as world, before it is deleted
+  void ReleaseWorldShader(CCL_NS::Shader *shader);
+  // Rotation of the dome light that uses the material as world, nullptr when no light does
+  const CCL_NS::Transform *GetWorldRotation(const std::string &material) const;
+
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
   // Mark the render buffers as not converged, so that the render pass is executed again
@@ -267,6 +282,13 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::unordered_map<std::string, std::pair<PXR_NS::TfToken, PXR_NS::TfToken>> _lightLinks;
   std::unordered_map<std::string, PXR_NS::VtArray<PXR_NS::TfToken>> _categories;
   bool _lightLinkingDirty = false;
+  struct WorldMaterial {
+    std::string material;
+    CCL_NS::Transform rotation;
+    CCL_NS::Shader *lightShader;
+  };
+  std::map<CCL_NS::Light *, WorldMaterial> _worldMaterials;
+  void SetLightShader(CCL_NS::Light *light, CCL_NS::Shader *shader);
 
   size_t _numDefaultShaders = 0;
   bool _resyncEnabled = false;
