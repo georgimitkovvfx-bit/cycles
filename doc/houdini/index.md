@@ -21,7 +21,8 @@ or change it will find the internals in [developers.md](developers.md).
 | Other materials | Karma and MaterialX materials (Standard Surface, OpenPBR, glTF PBR, about 100 MaterialX nodes) and UsdPreviewSurface are translated to Cycles |
 | OSL | Open Shading Language on the CPU and with OptiX, a **Cycles Script** node for `.osl`/`.oso` files, and Houdini's OSL Generic Shader Builder |
 | Lights | USD sphere, rect, disk, distant and dome lights, matching Karma's intensities; light and shadow linking; per-light Cycles settings and light groups |
-| Objects | Meshes (with subdivision), curves, points, volumes, point instancers and native instances, implicit USD shapes; per-object ray visibility, holdout, shadow catcher and more |
+| Cameras | USD perspective and orthographic cameras with depth of field and exposure; Cycles panoramic cameras (equirectangular, fisheye, mirror ball, cubemap face, central cylindrical), aperture blades and rolling shutter |
+| Objects | Meshes (with adaptive subdivision), curves, points, volumes, point instancers and native instances, implicit USD shapes; per-object ray visibility, holdout, shadow catcher and more |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs |
 | AOVs | Blender's view layer passes, Karma's common light path expressions, Cryptomatte, light groups, shader AOVs, primvar AOVs, split image per render var |
 | Motion blur | Transforms, deforming meshes, curves, points, instancers, volumes with velocity fields and the camera |
@@ -38,6 +39,7 @@ or change it will find the internals in [developers.md](developers.md).
 | [osl.md](osl.md) | Open Shading Language: the render setting, the Cycles Script node, Houdini's OSL nodes |
 | [lights.md](lights.md) | USD lights, intensities, per-light settings, light and shadow linking, dome lights |
 | [world.md](world.md) | World and environment shaders |
+| [cameras.md](cameras.md) | Camera settings: panoramic cameras, aperture blades, rolling shutter, exposure |
 | [objects.md](objects.md) | Per-object settings, primvars in shaders, instances, implicit shapes, curves, points, subdivision |
 | [volumes.md](volumes.md) | VDB and Houdini volumes, volume shaders and volume settings |
 | [aovs.md](aovs.md) | Render passes, light path expressions, Cryptomatte, light groups, shader and primvar AOVs |

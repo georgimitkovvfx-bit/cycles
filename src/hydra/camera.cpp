@@ -27,6 +27,53 @@ static Transform convert_camera_transform(const GfMatrix4d &matrix)
   return t;
 }
 
+namespace {
+
+/* Value of a "cycles:camera:<setting>" attribute of the camera prim, empty if not authored.
+ * Attributes outside the camera schema are in its namespaced properties, by namespace. */
+VtValue GetCameraSetting(const HdCameraSchema &cameraSchema, const std::string &setting)
+{
+  const TfToken name("cycles:camera:" + setting);
+  if (const HdContainerDataSourceHandle cameraDs = cameraSchema.GetContainer()) {
+    if (auto ds = HdSampledDataSource::Cast(cameraDs->Get(name))) {
+      return ds->GetValue(0.0f);
+    }
+  }
+  const HdSampledDataSourceContainerContainerSchema namespaces =
+      cameraSchema.GetNamespacedProperties();
+  for (const TfToken &ns : {TfToken("cycles"), name}) {
+    const HdSampledDataSourceContainerSchema properties = namespaces.Get(ns);
+    if (!properties) {
+      continue;
+    }
+    for (const TfToken &key : {name, TfToken("camera:" + setting)}) {
+      if (auto ds = properties.Get(key)) {
+        return ds->GetValue(0.0f);
+      }
+    }
+  }
+  return VtValue();
+}
+
+template<typename T>
+T GetCameraSetting(const HdCameraSchema &cameraSchema, const std::string &setting, const T &fallback)
+{
+  return VtValue::Cast<T>(GetCameraSetting(cameraSchema, setting)).GetWithDefault(fallback);
+}
+
+std::string GetCameraStringSetting(const HdCameraSchema &cameraSchema,
+                                   const std::string &setting,
+                                   const std::string &fallback)
+{
+  const VtValue value = GetCameraSetting(cameraSchema, setting);
+  if (value.IsHolding<TfToken>()) {
+    return value.UncheckedGet<TfToken>().GetString();
+  }
+  return value.IsHolding<std::string>() ? value.UncheckedGet<std::string>() : fallback;
+}
+
+}  // namespace
+
 HdCyclesCamera::HdCyclesCamera(const SdfPath &sprimId) : HdCamera(sprimId)
 {
   // Synchronize default values
@@ -169,6 +216,50 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
       _focusDistance = focusDistance;
       _data.SetFocusDistance(focusDistance);
     }
+
+    /* USD exposure (exposure, exposure:time/iso/fStop/responsivity) like Karma applies it. */
+    _exposureScale = 1.0f;
+    if (auto ds = cameraSchema.GetLinearExposureScale()) {
+      _exposureScale = ds->GetTypedValue(0.0f);
+    }
+    else if (auto ds = cameraSchema.GetExposure()) {
+      _exposureScale = exp2f(ds->GetTypedValue(0.0f));
+    }
+
+    const CyclesSettings defaults;
+    CyclesSettings &settings = _settings;
+    settings.blades = std::max(0, GetCameraSetting(cameraSchema, "blades", defaults.blades));
+    settings.bladesRotation = GetCameraSetting(
+        cameraSchema, "blades_rotation", defaults.bladesRotation);
+    settings.apertureRatio = GetCameraSetting(
+        cameraSchema, "aperture_ratio", defaults.apertureRatio);
+    settings.rollingShutterType = GetCameraStringSetting(
+        cameraSchema, "rolling_shutter_type", defaults.rollingShutterType);
+    settings.rollingShutterDuration = GetCameraSetting(
+        cameraSchema, "rolling_shutter_duration", defaults.rollingShutterDuration);
+    settings.panoramaType = GetCameraStringSetting(
+        cameraSchema, "panorama_type", defaults.panoramaType);
+    settings.fisheyeFov = GetCameraSetting(cameraSchema, "fisheye_fov", defaults.fisheyeFov);
+    settings.fisheyeLens = GetCameraSetting(cameraSchema, "fisheye_lens", defaults.fisheyeLens);
+    settings.latitudeMin = GetCameraSetting(cameraSchema, "latitude_min", defaults.latitudeMin);
+    settings.latitudeMax = GetCameraSetting(cameraSchema, "latitude_max", defaults.latitudeMax);
+    settings.longitudeMin = GetCameraSetting(
+        cameraSchema, "longitude_min", defaults.longitudeMin);
+    settings.longitudeMax = GetCameraSetting(
+        cameraSchema, "longitude_max", defaults.longitudeMax);
+    for (int i = 0; i < 5; ++i) {
+      settings.fisheyePolynomial[i] = GetCameraSetting(cameraSchema,
+                                                       "fisheye_polynomial_k" + std::to_string(i),
+                                                       defaults.fisheyePolynomial[i]);
+    }
+    settings.centralCylindricalRangeUMin = GetCameraSetting(
+        cameraSchema, "central_cylindrical_range_u_min", defaults.centralCylindricalRangeUMin);
+    settings.centralCylindricalRangeUMax = GetCameraSetting(
+        cameraSchema, "central_cylindrical_range_u_max", defaults.centralCylindricalRangeUMax);
+    settings.centralCylindricalRangeVMin = GetCameraSetting(
+        cameraSchema, "central_cylindrical_range_v_min", defaults.centralCylindricalRangeVMin);
+    settings.centralCylindricalRangeVMax = GetCameraSetting(
+        cameraSchema, "central_cylindrical_range_v_max", defaults.centralCylindricalRangeVMax);
   }
 
   *dirtyBits = DirtyBits::Clean;
@@ -184,7 +275,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
                                          CameraUtilConformWindowPolicy windowPolicy,
                                          float aspectRatio) const
 {
-  ApplyCameraSettings(renderParam, _data, windowPolicy, cam, aspectRatio);
+  const bool panorama = ApplyCyclesSettings(_settings, cam);
+  ApplyCameraSettings(renderParam, _data, windowPolicy, cam, aspectRatio, panorama);
 
   array<Transform> motion(_transformSamples.count);
   for (size_t i = 0; i < _transformSamples.count; ++i) {
@@ -212,7 +304,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
                                          const GfCamera &dataUnconformedWindow,
                                          CameraUtilConformWindowPolicy windowPolicy,
                                          Camera *cam,
-                                         float aspectRatio)
+                                         float aspectRatio,
+                                         const bool panorama)
 {
   const float width = cam->get_full_width();
   const float height = cam->get_full_height();
@@ -221,7 +314,11 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   CameraUtilConformWindow(
       &data, windowPolicy, (aspectRatio != 0.0f) ? aspectRatio : width / height);
 
-  if (data.GetProjection() == GfCamera::Orthographic) {
+  // Each socket is set once per render pass: a value changed back still restarts the render
+  if (panorama) {
+    // Set by ApplyCyclesSettings
+  }
+  else if (data.GetProjection() == GfCamera::Orthographic) {
     cam->set_camera_type(CAMERA_ORTHOGRAPHIC);
   }
   else {
@@ -244,17 +341,21 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     cam->set_fov_post(cam->get_fov());
   }
 
-  /* Lens properties are in tenths of a scene unit, convert sensor size to meters. */
-  cam->set_sensorwidth(data.GetHorizontalAperture() * GfCamera::APERTURE_UNIT * metersPerUnit);
-  cam->set_sensorheight(data.GetVerticalAperture() * GfCamera::APERTURE_UNIT * metersPerUnit);
+  /* Lens properties are in tenths of a scene unit, convert sensor size to meters. Panoramic
+   * fisheye lenses use the sensor (the aperture conformed to the image) in the unit of the
+   * aperture and their lens, which Houdini authors in millimeters like Blender's. */
+  const float sensorScale = panorama ? 1.0f : GfCamera::APERTURE_UNIT * metersPerUnit;
+  cam->set_sensorwidth(data.GetHorizontalAperture() * sensorScale);
+  cam->set_sensorheight(data.GetVerticalAperture() * sensorScale);
 
   cam->set_nearclip(data.GetClippingRange().GetMin());
   cam->set_farclip(data.GetClippingRange().GetMax());
 
-  cam->set_viewplane_left(viewplane.GetMin()[0]);
-  cam->set_viewplane_right(viewplane.GetMax()[0]);
-  cam->set_viewplane_bottom(viewplane.GetMin()[1]);
-  cam->set_viewplane_top(viewplane.GetMax()[1]);
+  // The view plane of panoramic cameras is the whole image
+  cam->set_viewplane_left(panorama ? 0.0f : viewplane.GetMin()[0]);
+  cam->set_viewplane_right(panorama ? 1.0f : viewplane.GetMax()[0]);
+  cam->set_viewplane_bottom(panorama ? 0.0f : viewplane.GetMin()[1]);
+  cam->set_viewplane_top(panorama ? 1.0f : viewplane.GetMax()[1]);
 
   if (data.GetFStop() != 0.0f) {
     cam->set_focaldistance(data.GetFocusDistance());
@@ -277,6 +378,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   GfCamera data;
   data.SetFromViewAndProjectionMatrix(worldToViewMatrix, projectionMatrix);
 
+  ApplyCyclesSettings(CyclesSettings(), cam);
   ApplyCameraSettings(renderParam, data, CameraUtilFit, cam, aspectRatio);
 
   // No camera prim: no motion blur, not the transforms and shutter of the camera rendered before
@@ -284,6 +386,47 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   cam->set_motion(motion);
   cam->set_shuttertime(1.0f);
   cam->set_motion_position(MOTION_POSITION_CENTER);
+}
+
+bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera *cam)
+{
+  // Bokeh shape of the depth of field
+  cam->set_blades(uint(settings.blades));
+  cam->set_bladesrotation(GfDegreesToRadians(settings.bladesRotation));
+  cam->set_aperture_ratio(std::max(settings.apertureRatio, 0.01f));
+
+  cam->set_rolling_shutter_type(settings.rollingShutterType == "top" ?
+                                    Camera::ROLLING_SHUTTER_TOP :
+                                    Camera::ROLLING_SHUTTER_NONE);
+  cam->set_rolling_shutter_duration(std::clamp(settings.rollingShutterDuration, 0.0f, 1.0f));
+
+  /* Panoramic cameras replace the USD projection. Their view plane is the whole image, the
+   * sensor (aperture) is used by the fisheye lens types. */
+  const SocketType *panoramaSocket = Camera::get_node_type()->find_input(ustring("panorama_type"));
+  const ustring panoramaType(settings.panoramaType);
+  if (settings.panoramaType == "none" || !panoramaSocket->enum_values->exists(panoramaType)) {
+    return false;
+  }
+  cam->set_camera_type(CAMERA_PANORAMA);
+  cam->set_panorama_type(PanoramaType((*panoramaSocket->enum_values)[panoramaType]));
+  cam->set_fisheye_fov(GfDegreesToRadians(settings.fisheyeFov));
+  cam->set_fisheye_lens(settings.fisheyeLens);
+  cam->set_latitude_min(GfDegreesToRadians(settings.latitudeMin));
+  cam->set_latitude_max(GfDegreesToRadians(settings.latitudeMax));
+  cam->set_longitude_min(GfDegreesToRadians(settings.longitudeMin));
+  cam->set_longitude_max(GfDegreesToRadians(settings.longitudeMax));
+  cam->set_fisheye_polynomial_k0(settings.fisheyePolynomial[0]);
+  cam->set_fisheye_polynomial_k1(settings.fisheyePolynomial[1]);
+  cam->set_fisheye_polynomial_k2(settings.fisheyePolynomial[2]);
+  cam->set_fisheye_polynomial_k3(settings.fisheyePolynomial[3]);
+  cam->set_fisheye_polynomial_k4(settings.fisheyePolynomial[4]);
+  cam->set_central_cylindrical_range_u_min(
+      GfDegreesToRadians(settings.centralCylindricalRangeUMin));
+  cam->set_central_cylindrical_range_u_max(
+      GfDegreesToRadians(settings.centralCylindricalRangeUMax));
+  cam->set_central_cylindrical_range_v_min(settings.centralCylindricalRangeVMin);
+  cam->set_central_cylindrical_range_v_max(settings.centralCylindricalRangeVMax);
+  return true;
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

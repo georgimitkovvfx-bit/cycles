@@ -11,6 +11,8 @@
 #include <pxr/imaging/hd/camera.h>
 #include <pxr/imaging/hd/timeSampleArray.h>
 
+#include <string>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 class HdCyclesCamera final : public PXR_NS::HdCamera {
@@ -19,7 +21,8 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
   ~HdCyclesCamera() override;
 
   /* The camera window is conformed with the window policy to the aspect ratio of the image, or to
-   * the given aspect ratio when it is not zero (for images displayed with non-square pixels). */
+   * the given aspect ratio when it is not zero (for images displayed with non-square pixels).
+   * Panoramic cameras get a view plane of the whole image and the sensor in millimeters. */
   void ApplyCameraSettings(PXR_NS::HdRenderParam *renderParam,
                            CCL_NS::Camera *cam,
                            PXR_NS::CameraUtilConformWindowPolicy windowPolicy,
@@ -29,13 +32,20 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
                                   const PXR_NS::GfCamera &dataUnconformedWindow,
                                   PXR_NS::CameraUtilConformWindowPolicy windowPolicy,
                                   CCL_NS::Camera *cam,
-                                  float aspectRatio = 0.0f);
+                                  float aspectRatio = 0.0f,
+                                  bool panorama = false);
   static void ApplyCameraSettings(PXR_NS::HdRenderParam *renderParam,
                                   const PXR_NS::GfMatrix4d &worldToViewMatrix,
                                   const PXR_NS::GfMatrix4d &projectionMatrix,
                                   const std::vector<PXR_NS::GfVec4d> &clipPlanes,
                                   CCL_NS::Camera *cam,
                                   float aspectRatio = 0.0f);
+
+  /* USD camera exposure as a multiplier of the film exposure (1 without a camera prim). */
+  float GetExposureScale() const
+  {
+    return _exposureScale;
+  }
 
   PXR_NS::HdDirtyBits GetInitialDirtyBitsMask() const override;
 
@@ -46,6 +56,37 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
   void Finalize(PXR_NS::HdRenderParam *renderParam) override;
 
  private:
+  /* Cycles camera settings from "cycles:camera:<setting>" attributes, like Blender's camera
+   * properties. Angles in degrees. */
+  struct CyclesSettings {
+    int blades = 0;
+    float bladesRotation = 0.0f;
+    float apertureRatio = 1.0f;
+    std::string rollingShutterType = "none";
+    float rollingShutterDuration = 0.1f;
+    std::string panoramaType = "none";
+    float fisheyeFov = 180.0f;
+    float fisheyeLens = 10.5f;
+    float latitudeMin = -90.0f;
+    float latitudeMax = 90.0f;
+    float longitudeMin = -180.0f;
+    float longitudeMax = 180.0f;
+    // Blender's defaults
+    float fisheyePolynomial[5] = {-1.1735143712967577e-05f,
+                                  -0.019988736953434998f,
+                                  -3.3525322965709175e-06f,
+                                  3.099275275886036e-06f,
+                                  -2.6064646454854524e-08f};
+    float centralCylindricalRangeUMin = -180.0f;
+    float centralCylindricalRangeUMax = 180.0f;
+    float centralCylindricalRangeVMin = -1.0f;
+    float centralCylindricalRangeVMax = 1.0f;
+  };
+  /* Returns whether the camera is panoramic. */
+  static bool ApplyCyclesSettings(const CyclesSettings &settings, CCL_NS::Camera *cam);
+
+  CyclesSettings _settings;
+  float _exposureScale = 1.0f;
   PXR_NS::GfCamera _data;
   PXR_NS::HdTimeSampleArray<PXR_NS::GfMatrix4d, 2> _transformSamples;
 };
