@@ -44,7 +44,7 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
   /* Motion blur from a velocity field: the kernel moves the density by velocity times
    * velocity_scale over the shutter, with velocities per second like Blender's default. The
    * frame rate is the one velocities of points use (HdsiVelocityMotionResolvingSceneIndex). */
-  const std::vector<float> motionTimes = _session->GetMotionTimes();
+  const std::vector<float> motionTimes = GetObjectMotionTimes();
   float velocityScale = 0.0f;
   if (!motionTimes.empty()) {
     double fps = 24.0;
@@ -126,6 +126,11 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
   {
     const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
     const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+
+    /* Blender's volume Step Size, in object space: 0 is automatic (from the voxel size). */
+    _geom->set_step_size(std::max(
+        0.0f,
+        VtValue::Cast<float>(GetObjectSetting(primvars, "volume_step_size")).GetWithDefault(0.0f)));
 
     /* Constant primvars are object attributes: Cycles clears the other attributes of a volume when
      * it builds the volume mesh. Fields of the same name win, like any geometry attribute. Set

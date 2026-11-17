@@ -831,6 +831,27 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->motionSteps) {
     _renderParam->SetMotionSteps(VtValue::Cast<int>(value).GetWithDefault(1));
   }
+  else if (key == HdCyclesRenderSettingsTokens->dicingRate ||
+           key == HdCyclesRenderSettingsTokens->previewDicingRate ||
+           key == HdCyclesRenderSettingsTokens->maxSubdivisions ||
+           key == HdCyclesRenderSettingsTokens->offscreenDicingScale)
+  {
+    // Blender's Subdivision panel, with Blender's defaults and limits
+    const auto get = [&](const TfToken &setting, const auto fallback) {
+      const auto it = _settingsMap.find(setting);
+      return it == _settingsMap.end() ?
+                 fallback :
+                 VtValue::Cast<decltype(fallback)>(it->second).GetWithDefault(fallback);
+    };
+    HdCyclesSession::DicingSettings dicing;
+    dicing.rate = std::max(0.1f, get(HdCyclesRenderSettingsTokens->dicingRate, 1.0f));
+    dicing.previewRate = std::max(0.1f,
+                                  get(HdCyclesRenderSettingsTokens->previewDicingRate, 8.0f));
+    dicing.maxLevel = std::clamp(get(HdCyclesRenderSettingsTokens->maxSubdivisions, 12), 0, 16);
+    dicing.offscreenScale = std::max(
+        1.0f, get(HdCyclesRenderSettingsTokens->offscreenDicingScale, 4.0f));
+    _renderParam->SetDicing(dicing);
+  }
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
            key == HdCyclesRenderSettingsTokens->shutterClose)
   {
@@ -890,6 +911,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
           SetNodeValue(node, *socket, value);
         }
         ++_settingsVersion;
+
+        /* The render pass multiplies it by the exposure of the camera. */
+        if (node == scene->film && socketName == "exposure") {
+          _renderParam->SetFilmExposure(scene->film->get_exposure());
+        }
 
         /* The session overwrites the integrator sample subset with its own on every reset. */
         if (node == scene->integrator &&

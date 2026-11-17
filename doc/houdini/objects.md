@@ -28,6 +28,21 @@ defaults (shown below), and removing a setting returns the object to its default
 
 The tables are generated from the same layout as the UI.
 
+### Relations
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Pass Index | `primvars:cycles:object:pass_id` | 0 | Index number for the Object Index pass (`IndexOB`) and the Object Index output of the Object Info node, like Blender's object Pass Index |
+
+### Motion Blur
+
+The **Motion Blur** toggle in the panel header turns the panel on; Steps only applies when it is on.
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Motion Blur | `primvars:cycles:object:use_motion_blur` | On | Use motion blur for this object, when the Motion Blur render setting is on. Off, the object renders sharp at the shutter center and has no motion vectors |
+| Steps | `primvars:cycles:object:motion_steps` | 0 | Motion steps of this object: 2^steps + 1 motion samples over the shutter, for curved motion. 0 uses the Motion Steps render setting |
+
 ### Visibility > Ray Visibility
 
 Turning off a ray type hides the object from that kind of ray, like Blender's object Ray
@@ -78,6 +93,22 @@ Shadow caustics also need **Shadow Caustics** on the light (see [lights.md](ligh
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Light Group | `primvars:cycles:object:lightgroup` | (empty) | Light group the object's emission belongs to. Render it with a light group pass on the Cycles Render Settings LOP, see [aovs.md](aovs.md#light-groups) |
+
+### Subdivision
+
+The **Adaptive Subdivision** toggle in the panel header turns the panel on. See
+[Subdivision](#subdivision-1) below.
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Adaptive Subdivision | `primvars:cycles:object:use_adaptive_subdivision` | Off | Subdivide subdivision surfaces to the dicing rate of the render settings in pixels of the render camera, up to Max Subdivisions, also without a refinement level. Off, they are subdivided up to their refinement level |
+| Dicing Scale | `primvars:cycles:object:dicing_rate` | 1 | Multiplier for the dicing rate of the render settings |
+
+### Volume
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Step Size | `primvars:cycles:object:volume_step_size` | 0 | Distance between volume samples in object space, with Biased volume rendering. 0 computes it from the voxel size. See [volumes.md](volumes.md#volume-settings) |
 
 **Limit:** per-object settings are read per prim, not per instance. All instances of a point
 instancer prototype share the prototype's settings.
@@ -157,13 +188,26 @@ Points render as spheres with the radius `widths / 2`. All primvar interpolation
 
 ## Subdivision
 
-Meshes with the `subdivisionScheme` `catmullClark` (or `bilinear`) are subdivided by Cycles when
-Hydra passes a refine level above 0 to the delegate; otherwise they render as their control mesh.
-Creases, corners and boundary interpolation rules are passed to Cycles. There are no Cycles
-dicing settings yet: subdivision uses a fixed dicing rate of 1.
+Meshes with the `subdivisionScheme` `catmullClark` (or `bilinear`) are subdivided by Cycles. Creases,
+corners and boundary interpolation rules are passed to Cycles. Cycles dices the surface into
+micropolygons of a size in pixels of the render camera (the dicing camera follows the camera you
+render through).
+
+- **Without Adaptive Subdivision** (default), a mesh is subdivided when Hydra passes a refine level
+  above 0 (Houdini's level of detail; `husk` passes one), up to that many levels, with micropolygons
+  of 1 pixel. Otherwise it renders as its control mesh.
+- **With Adaptive Subdivision** (Render Geometry Settings LOP, Cycles tab, Subdivision panel), the
+  mesh is always subdivided, up to **Max Subdivisions** levels, with micropolygons of the
+  **Dicing Rate** of the render settings (Render or Viewport) times the object's **Dicing Scale**.
+  Geometry outside the camera view is diced more coarsely by **Offscreen Scale**. This is Blender's
+  adaptive subdivision: detail where the camera sees it, for displacement-heavy assets.
+
+The dicing settings are in the render settings' **Subdivision** panel (see
+[render-settings.md](render-settings.md#subdivision)). Changing them dices the meshes again without
+restarting the render.
 
 For true displacement (material **Settings > Displacement**), the displaced detail is limited by
-the mesh's resolution after subdivision.
+the mesh's resolution after subdivision, so use Adaptive Subdivision with a small dicing rate.
 
 ## Units
 

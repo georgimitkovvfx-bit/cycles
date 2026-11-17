@@ -125,9 +125,22 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
   /* A prototype that no point of its instancer uses has no instances. */
   if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
-    // This needs to be corrected in the AOV
     for (Object *instance : _instances) {
-      instance->set_pass_id(Base::GetPrimId() + 1);
+      SetPrimIdAttribute(instance);
+    }
+  }
+
+  /* Per-object motion blur: transforms and points again at the object's motion steps. */
+  if (*dirtyBits & HdChangeTracker::DirtyPrimvar) {
+    const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
+    const bool useMotionBlur = VtValue::Cast<bool>(GetObjectSetting(primvars, "use_motion_blur"))
+                                   .GetWithDefault(true);
+    const int motionSteps = std::max(
+        0, VtValue::Cast<int>(GetObjectSetting(primvars, "motion_steps")).GetWithDefault(0));
+    if (useMotionBlur != _useMotionBlur || motionSteps != _motionSteps) {
+      _useMotionBlur = useMotionBlur;
+      _motionSteps = motionSteps;
+      *dirtyBits |= HdChangeTracker::DirtyTransform | HdChangeTracker::DirtyPoints;
     }
   }
 
@@ -138,8 +151,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       _geomTransform = matrixDs->GetTypedValue(0.0f);
 
       // Motion blur: transforms at the motion steps, rendered at the center one
-      const std::vector<float> motionTimes =
-          static_cast<HdCyclesSession *>(renderParam)->GetMotionTimes();
+      const std::vector<float> motionTimes = GetObjectMotionTimes();
       std::vector<float> sampleTimes;
       if (!motionTimes.empty() && matrixDs->GetContributingSampleTimesForInterval(
                                       motionTimes.front(), motionTimes.back(), &sampleTimes))
@@ -168,7 +180,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     if (instancer) {
       stepTransforms = instancer->ComputeInstanceTransforms(
           id,
-          static_cast<HdCyclesSession *>(renderParam)->GetMotionTimes(),
+          GetObjectMotionTimes(),
           instancePrimvarsDirty ? &instancePrimvars : nullptr);
     }
     else {
@@ -286,6 +298,15 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
       ustring("shadow_terminator_shading_offset"),
       ustring("ao_distance"),
       ustring("lightgroup"),
+      ustring("pass_id"),
+  };
+  // Settings of the geometry, read where it is synced
+  static const std::string geometrySettings[] = {
+      "use_motion_blur",
+      "motion_steps",
+      "use_adaptive_subdivision",
+      "dicing_rate",
+      "volume_step_size",
   };
   static const std::string prefix = "cycles:object:";
 
@@ -306,6 +327,12 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
       if (!VtValue::Cast<bool>(value).GetWithDefault(true)) {
         visibility &= ~ray->second;
       }
+      continue;
+    }
+
+    if (std::find(std::begin(geometrySettings), std::end(geometrySettings), setting) !=
+        std::end(geometrySettings))
+    {
       continue;
     }
 
@@ -390,7 +417,7 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstancePrimvars(
                                                          make_float3(0.8f, 0.8f, 0.8f));
     }
 
-    instance->attributes.resize(1); /* Keep the instanceId. */
+    instance->attributes.resize(2); /* Keep the instanceId and primId. */
     for (const auto &[name, pv] : attributes) {
       SetObjectAttribute(instance, name, pv->width, &pv->values[i * pv->width]);
     }
@@ -418,7 +445,7 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
 
   /* Motion blur: positions at the motion steps, from time samples of the points (the scene index
    * resolves velocities into those). Rendered at the center step. */
-  const std::vector<float> motionTimes = _session->GetMotionTimes();
+  const std::vector<float> motionTimes = GetObjectMotionTimes();
   std::vector<VtVec3fArray> motionPoints;
   const HdSampledDataSourceHandle pointsDs =
       primvars.GetPrimvar(HdTokens->points).GetPrimvarValue();
@@ -462,6 +489,29 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
     }
   }
   _geom->tag_position_modified();
+}
+
+template<typename Base, typename CyclesBase>
+std::vector<float> HdCyclesGeometry<Base, CyclesBase>::GetObjectMotionTimes() const
+{
+  return _useMotionBlur ? _session->GetMotionTimes(_motionSteps) : std::vector<float>();
+}
+
+template<typename Base, typename CyclesBase>
+VtValue HdCyclesGeometry<Base, CyclesBase>::GetObjectSetting(const HdPrimvarsSchema &primvars,
+                                                             const std::string &setting)
+{
+  return ReadPrimvar(primvars, TfToken("cycles:object:" + setting));
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetPrimIdAttribute(Object *instance) const
+{
+  /* The primId AOV (Houdini's viewport picking) is written by every shader from this attribute,
+   * like the instanceId, because the object's pass index is the Blender Pass Index. Plus one, so
+   * the background is -1 after the conversion of ID AOVs. */
+  instance->attributes[1] = ParamValue(HdAovTokens->primId.GetString(),
+                                       static_cast<float>(Base::GetPrimId() + 1));
 }
 
 template<typename Base, typename CyclesBase>
@@ -515,10 +565,15 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
 
   // Value is set in Sync()
   instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(), -1.0f);
+  instance->attributes.emplace_back(HdAovTokens->primId.GetString(), 0.0f);
+  SetPrimIdAttribute(instance);
 
   instance->set_color(index > 0 ? _instances[0]->get_color() : make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));
-  instance->set_pass_id(Base::GetPrimId() + 1);
+  // Pass Index of the object, like in Blender (UpdateObjectSettings)
+  if (index > 0) {
+    instance->set_pass_id(_instances[0]->get_pass_id());
+  }
 
   // Cryptomatte object and asset names: the prim and its parent
   instance->name = _geom->name;

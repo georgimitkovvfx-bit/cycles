@@ -44,6 +44,23 @@ Blender's object Motion Steps. The default gives 3 samples, enough for straight 
 for fast rotation or curved paths (a spinning wheel, a swinging arm); each step uses more memory.
 The samples are evenly spaced over the shutter, with the middle one at the shutter center.
 
+## Per-object motion blur
+
+The Render Geometry Settings LOP's **Cycles** tab has Blender's object **Motion Blur** panel (see
+[objects.md](objects.md#motion-blur)):
+
+- **Motion Blur** off renders the object sharp, at the shutter center, while the rest of the scene
+  blurs. Off, it also has no motion vectors in the Vector pass.
+- **Steps** gives the object its own motion steps (0 uses the render setting), for example more
+  steps for a spinning wheel only.
+
+## Rolling shutter
+
+The Camera LOP's **Cycles** tab (Motion Blur > Rolling Shutter, see [cameras.md](cameras.md)) adds
+Blender's rolling shutter: with **Top-Bottom**, the scanlines are exposed one after the other over
+the shutter, like a CMOS sensor, so fast moving objects lean. **Rolling Shutter Duration** is the
+time each scanline is exposed, as a fraction of the shutter (0.1 by default).
+
 ## Limits
 
 - Curve and point **widths** are not blurred, only their positions.

@@ -25,7 +25,7 @@ more render vars to the render product; the beauty (`color`, RGBA) is always ren
 | Include > Vector | `Vector` | `motion` | Motion vectors in pixels, to the previous and next frame (see [motion-blur.md](motion-blur.md#the-vector-pass)) |
 | Include > UV | `UV` | `uv` | The default UV map |
 | Include > Denoising Data | `Denoising Normal`, `Denoising Albedo`, `Denoising Depth` | `denoising_normal`, `denoising_albedo`, `denoising_depth` | The guiding passes used by denoisers, for denoising in compositing |
-| Indexes > Object Index | `IndexOB` | `object_id` | Object index |
+| Indexes > Object Index | `IndexOB` | `object_id` | The object's **Pass Index** (Render Geometry Settings LOP, see [objects.md](objects.md#relations)), 0 when not set |
 | Debug > Sample Count | `Debug Sample Count` | `sample_count` | Samples taken per pixel (useful with adaptive sampling) |
 
 The Z, Index, Normal, UV and Vector passes only see surfaces whose alpha is at least the
@@ -143,7 +143,7 @@ source is one Cycles knows:
 
 | Source name | Source type | Result |
 |---|---|---|
-| `color`, `depth`, `normal`, `primId` | `raw` | Hydra's standard AOVs: beauty, depth, normal, object index |
+| `color`, `depth`, `normal`, `primId`, `instanceId` | `raw` | Hydra's standard AOVs: beauty, depth, normal, and the Hydra prim and instance IDs (Houdini's viewport picks with them). The IDs are written by every shader, so they are not exact on anti-aliased object edges |
 | A Cycles pass name, for example `diffuse_direct`, `mist`, `ao`, `shadow_catcher`, `emission`, `background`, `denoising_albedo` | `raw` | That Cycles pass, with a format that fits the pass |
 | One of the light path expressions listed above | `lpe` | The Cycles pass with the same light paths, with albedo |
 | `CryptoObject00`, `CryptoMaterial01`, ... | `raw` | Cryptomatte ranks (two per render var) |

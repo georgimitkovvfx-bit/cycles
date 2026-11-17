@@ -82,6 +82,11 @@ SESSION_SETTINGS = {
     "cycles:use_spatial_splits": {"type": "boolean", "default": False},
     "cycles:use_compact_bvh": {"type": "boolean", "default": True},
     "cycles:curve_subdivisions": {"type": "int", "default": 3},
+    # Blender's Subdivision panel, for objects with Adaptive Subdivision
+    "cycles:dicing_rate": {"type": "float", "default": 1.0},
+    "cycles:preview_dicing_rate": {"type": "float", "default": 8.0},
+    "cycles:offscreen_dicing_scale": {"type": "float", "default": 4.0},
+    "cycles:max_subdivisions": {"type": "int", "default": 12},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -430,6 +435,26 @@ LAYOUT = [
           "Changing it restarts the render.",
           range=(0, 4, True, False)),
     ]),
+    P("Subdivision", [
+        S("cycles:dicing_rate", "Dicing Rate Render",
+          "Size of a micropolygon in pixels for final renders, for objects with Adaptive "
+          "Subdivision (Render Geometry Settings LOP).",
+          range=(0.1, 1000, True, False)),
+        S("cycles:preview_dicing_rate", "Viewport",
+          "Size of a micropolygon in pixels in the viewport, for objects with Adaptive "
+          "Subdivision.",
+          range=(0.1, 1000, True, False), viewport=True),
+        S("cycles:offscreen_dicing_scale", "Offscreen Scale",
+          "Multiplier for the dicing rate of geometry outside of the camera view. The dicing "
+          "rate of objects is gradually increased the further they are outside the camera "
+          "view. Lower values provide higher quality reflections and shadows for off screen "
+          "objects, while higher values use less memory.",
+          range=(1, 25, True, False)),
+        S("cycles:max_subdivisions", "Max Subdivisions",
+          "Stop subdividing when this level is reached even if the dice rate would produce "
+          "finer micropolygons.",
+          range=(0, 16, True, True)),
+    ]),
     P("Simplify", [
         S("cycles:texture_limit", "Texture Size Limit",
           "Limit the size of image textures, for less memory use. Changing it restarts the "
@@ -571,10 +596,30 @@ GEOMETRY_SETTINGS = {
                                                                 "default": 0.0},
     "primvars:cycles:object:ao_distance": {"type": "float", "default": 0.0},
     "primvars:cycles:object:lightgroup": {"type": "string", "default": ""},
+    "primvars:cycles:object:pass_id": {"type": "int", "default": 0},
+    "primvars:cycles:object:use_motion_blur": {"type": "boolean", "default": True},
+    "primvars:cycles:object:motion_steps": {"type": "int", "default": 0},
+    "primvars:cycles:object:use_adaptive_subdivision": {"type": "boolean", "default": False},
+    "primvars:cycles:object:dicing_rate": {"type": "float", "default": 1.0},
+    "primvars:cycles:object:volume_step_size": {"type": "float", "default": 0.0},
 }
 
-# Layout of the per-object settings, following Blender's Cycles object Visibility panel.
+# Layout of the per-object settings, following Blender's Cycles object panels.
 GEOMETRY_LAYOUT = [
+    P("Relations", [
+        S("primvars:cycles:object:pass_id", "Pass Index",
+          "Index number for the Object Index pass and the Object Index output of the Object "
+          "Info node.",
+          range=(0, 1000, True, False)),
+    ]),
+    P("Motion Blur", [
+        S("primvars:cycles:object:use_motion_blur", "Motion Blur",
+          "Use motion blur for this object, when the Motion Blur render setting is on."),
+        S("primvars:cycles:object:motion_steps", "Steps",
+          "Motion steps of this object: 2^steps + 1 motion samples over the shutter, for "
+          "curved motion. 0 uses the Motion Steps render setting.",
+          range=(0, 7, True, True)),
+    ], toggle="primvars:cycles:object:use_motion_blur"),
     P("Visibility", [
         P("Ray Visibility", [
             S("primvars:cycles:object:visible_camera", "Camera",
@@ -630,6 +675,22 @@ GEOMETRY_LAYOUT = [
               "on the Cycles Render Settings LOP)."),
         ], open=True),
     ]),
+    P("Subdivision", [
+        S("primvars:cycles:object:use_adaptive_subdivision", "Adaptive Subdivision",
+          "Subdivide subdivision surfaces (Catmull-Clark or Bilinear subdivision scheme) to the "
+          "dicing rate of the render settings in pixels of the render camera, up to Max "
+          "Subdivisions, also without a refinement level. Off, they are subdivided up to their "
+          "refinement level."),
+        S("primvars:cycles:object:dicing_rate", "Dicing Scale",
+          "Multiplier for the dicing rate of the render settings.",
+          range=(0.1, 1000, True, False)),
+    ], toggle="primvars:cycles:object:use_adaptive_subdivision"),
+    P("Volume", [
+        S("primvars:cycles:object:volume_step_size", "Step Size",
+          "Distance between volume samples in object space, with Biased volume rendering. 0 "
+          "computes it from the voxel size.",
+          range=(0, 100, True, False)),
+    ]),
 ]
 
 # Per-light settings, authored as "inputs:cycles:light:<setting>" attributes by the Light LOP.
@@ -651,6 +712,127 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:world_material": {"type": "string", "default": ""},
     "inputs:cycles:light:map_resolution": {"type": "int", "default": 0},
 }
+
+# Per-camera settings, authored as "cycles:camera:<setting>" attributes by the Camera LOP. Angles
+# are in degrees, like Blender's camera properties. Defaults are Blender's.
+PANORAMA_TYPES = {
+    "none": "None",
+    "equirectangular": "Equirectangular",
+    "equiangular_cubemap_face": "Equiangular Cubemap Face",
+    "mirrorball": "Mirror Ball",
+    "fisheye_equidistant": "Fisheye Equidistant",
+    "fisheye_equisolid": "Fisheye Equisolid",
+    "fisheye_lens_polynomial": "Fisheye Lens Polynomial",
+    "panorama_central_cylindrical": "Central Cylindrical",
+}
+CAMERA_SETTINGS = {
+    "cycles:camera:panorama_type": {"type": "menu", "default": "none",
+                                    "enum_values": PANORAMA_TYPES},
+    "cycles:camera:fisheye_fov": {"type": "float", "default": 180.0},
+    "cycles:camera:fisheye_lens": {"type": "float", "default": 10.5},
+    "cycles:camera:latitude_min": {"type": "float", "default": -90.0},
+    "cycles:camera:latitude_max": {"type": "float", "default": 90.0},
+    "cycles:camera:longitude_min": {"type": "float", "default": -180.0},
+    "cycles:camera:longitude_max": {"type": "float", "default": 180.0},
+    "cycles:camera:fisheye_polynomial_k0": {"type": "float", "default": -1.1735143712967577e-05},
+    "cycles:camera:fisheye_polynomial_k1": {"type": "float", "default": -0.019988736953434998},
+    "cycles:camera:fisheye_polynomial_k2": {"type": "float", "default": -3.3525322965709175e-06},
+    "cycles:camera:fisheye_polynomial_k3": {"type": "float", "default": 3.099275275886036e-06},
+    "cycles:camera:fisheye_polynomial_k4": {"type": "float", "default": -2.6064646454854524e-08},
+    "cycles:camera:central_cylindrical_range_u_min": {"type": "float", "default": -180.0},
+    "cycles:camera:central_cylindrical_range_u_max": {"type": "float", "default": 180.0},
+    "cycles:camera:central_cylindrical_range_v_min": {"type": "float", "default": -1.0},
+    "cycles:camera:central_cylindrical_range_v_max": {"type": "float", "default": 1.0},
+    "cycles:camera:blades": {"type": "int", "default": 0},
+    "cycles:camera:blades_rotation": {"type": "float", "default": 0.0},
+    "cycles:camera:aperture_ratio": {"type": "float", "default": 1.0},
+    "cycles:camera:rolling_shutter_type": {"type": "menu", "default": "none",
+                                           "enum_values": {"none": "None",
+                                                           "top": "Top-Bottom"}},
+    "cycles:camera:rolling_shutter_duration": {"type": "float", "default": 0.1},
+}
+
+
+def not_panorama(*types):
+    return "{ %s }" % " ".join("cycles:camera:panorama_type != %s" % t for t in types)
+
+
+# Layout of the per-camera settings, following Blender's camera properties.
+CAMERA_LAYOUT = [
+    P("Lens", [
+        S("cycles:camera:panorama_type", "Panorama Type",
+          "Render a panoramic image with this projection instead of the camera's perspective "
+          "or orthographic projection. Fisheye lens types use the camera's aperture as the "
+          "sensor size."),
+        S("cycles:camera:fisheye_fov", "Field of View",
+          "Field of view of the fisheye lens, in degrees.",
+          range=(10, 360, True, True),
+          hidewhen=not_panorama("fisheye_equidistant", "fisheye_equisolid",
+                                "fisheye_lens_polynomial")),
+        S("cycles:camera:fisheye_lens", "Fisheye Lens",
+          "Lens focal length of the fisheye lens (in the unit of the aperture, millimeters).",
+          range=(0.01, 100, True, False),
+          hidewhen=not_panorama("fisheye_equisolid")),
+        S("cycles:camera:latitude_min", "Latitude Min",
+          "Minimum latitude (vertical angle) of the panorama, in degrees.",
+          range=(-90, 90, True, True), hidewhen=not_panorama("equirectangular")),
+        S("cycles:camera:latitude_max", "Latitude Max",
+          "Maximum latitude (vertical angle) of the panorama, in degrees.",
+          range=(-90, 90, True, True), hidewhen=not_panorama("equirectangular")),
+        S("cycles:camera:longitude_min", "Longitude Min",
+          "Minimum longitude (horizontal angle) of the panorama, in degrees.",
+          range=(-180, 180, True, True), hidewhen=not_panorama("equirectangular")),
+        S("cycles:camera:longitude_max", "Longitude Max",
+          "Maximum longitude (horizontal angle) of the panorama, in degrees.",
+          range=(-180, 180, True, True), hidewhen=not_panorama("equirectangular")),
+    ] + [
+        S("cycles:camera:fisheye_polynomial_k%d" % i, "K%d" % i,
+          "Coefficient K%d of the lens polynomial." % i,
+          hidewhen=not_panorama("fisheye_lens_polynomial"))
+        for i in range(5)
+    ] + [
+        S("cycles:camera:central_cylindrical_range_u_min", "Min Longitude",
+          "Minimum longitude of the central cylindrical panorama, in degrees.",
+          range=(-180, 180, True, True), hidewhen=not_panorama("panorama_central_cylindrical")),
+        S("cycles:camera:central_cylindrical_range_u_max", "Max Longitude",
+          "Maximum longitude of the central cylindrical panorama, in degrees.",
+          range=(-180, 180, True, True), hidewhen=not_panorama("panorama_central_cylindrical")),
+        S("cycles:camera:central_cylindrical_range_v_min", "Min Height",
+          "Minimum height of the central cylindrical panorama.",
+          range=(-10, 10, False, False),
+          hidewhen=not_panorama("panorama_central_cylindrical")),
+        S("cycles:camera:central_cylindrical_range_v_max", "Max Height",
+          "Maximum height of the central cylindrical panorama.",
+          range=(-10, 10, False, False),
+          hidewhen=not_panorama("panorama_central_cylindrical")),
+    ], open=True),
+    P("Depth of Field", [
+        P("Aperture", [
+            S("cycles:camera:blades", "Blades",
+              "Number of blades in the aperture for polygonal bokeh (at least 3, 0 for a round "
+              "bokeh). The aperture size comes from the camera's F-Stop.",
+              range=(0, 16, True, False)),
+            S("cycles:camera:blades_rotation", "Rotation",
+              "Rotation of the blades in the aperture, in degrees.",
+              range=(-180, 180, True, True)),
+            S("cycles:camera:aperture_ratio", "Ratio",
+              "Distortion to simulate an anamorphic lens bokeh.",
+              range=(0.01, 2, True, False)),
+        ], open=True),
+    ], open=True),
+    P("Motion Blur", [
+        P("Rolling Shutter", [
+            S("cycles:camera:rolling_shutter_type", "Rolling Shutter",
+              "Type of rolling shutter effect matching CMOS-based cameras, with motion blur."),
+            S("cycles:camera:rolling_shutter_duration", "Rolling Shutter Duration",
+              "Scanline \"exposure\" time for the rolling shutter effect: 0 scans the image "
+              "over the whole shutter, 1 exposes all scanlines over the whole shutter.",
+              range=(0, 1, True, True),
+              disablewhen="{ cycles:camera:rolling_shutter_type == none }"),
+        ], open=True),
+    ], open=True),
+]
+
 
 # Prim path field with Houdini's prim picker button.
 PRIM_PATH_TAGS = (
@@ -921,7 +1103,8 @@ class Writer:
                 "/// %s for the Cycles render delegate." % (
                     "Viewport display options" if self.mode == "viewport" else
                     "Object settings" if self.layout is GEOMETRY_LAYOUT else
-                    "Light settings" if self.layout is LIGHT_LAYOUT else "Render settings"),
+                    "Light settings" if self.layout is LIGHT_LAYOUT else
+                    "Camera settings" if self.layout is CAMERA_LAYOUT else "Render settings"),
                 "",
                 '#include "$HFS/houdini/soho/parameters/CommonMacros.ds"',
                 "",
@@ -972,7 +1155,9 @@ def main():
                        ("Geometry", Writer(GEOMETRY_SETTINGS, "global",
                                            layout=GEOMETRY_LAYOUT).generate()),
                        ("Light", Writer(LIGHT_SETTINGS, "global",
-                                        layout=LIGHT_LAYOUT).generate())):
+                                        layout=LIGHT_LAYOUT).generate()),
+                       ("Camera", Writer(CAMERA_SETTINGS, "global",
+                                         layout=CAMERA_LAYOUT).generate())):
 
         # Validate by parsing the dialog script like Houdini does.
         group = hou.ParmTemplateGroup()

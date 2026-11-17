@@ -76,6 +76,13 @@ volumes (default 7). More bounces brighten dense, bright volumes like clouds.
 | Interpolation | `config:cycles:volume_interpolation_method` | Linear | Linear or Cubic interpolation of the fields |
 | Step Rate | `config:cycles:volume_step_rate` | 1 | Scale of the distance between volume shader samples for this material |
 
+**Object settings, Volume panel** of the Render Geometry Settings LOP's Cycles tab (see
+[objects.md](objects.md#volume)):
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Step Size | `primvars:cycles:object:volume_step_size` | 0 | With Biased on: distance between volume samples in object space; 0 computes it from the voxel size, like Blender's volume Step Size |
+
 Lights contribute to volumes unless their **Volume Scatter** ray visibility is off, and objects can
 be hidden from volume scattering with their own **Volume Scatter** toggle.
 

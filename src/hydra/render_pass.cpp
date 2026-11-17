@@ -16,6 +16,7 @@
 #endif
 
 #include "scene/camera.h"
+#include "scene/film.h"
 #include "scene/integrator.h"
 #include "scene/scene.h"
 
@@ -214,6 +215,7 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     scene->camera->set_full_width(displaySize[0]);
     scene->camera->set_full_height(displaySize[1]);
 
+    float exposureScale = 1.0f;
     if (const auto *const camera = static_cast<const HdCyclesCamera *>(
             renderPassState->GetCamera()))
     {
@@ -231,6 +233,7 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         }
       }
       camera->ApplyCameraSettings(_renderParam, scene->camera, windowPolicy, aspectRatio);
+      exposureScale = camera->GetExposureScale();
     }
     else {
       HdCyclesCamera::ApplyCameraSettings(_renderParam,
@@ -240,6 +243,18 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
                                           scene->camera,
                                           aspectRatio);
     }
+
+    scene->film->set_exposure(_renderParam->GetFilmExposure() * exposureScale);
+
+    /* Adaptive subdivision dices in pixels of the render camera, like Blender's default dicing
+     * camera. Only tessellation reads it, so changes do not restart the render. */
+    for (const SocketType &socket : scene->camera->type->inputs) {
+      // Setting an array takes it from the camera; dicing needs none (motion, shutter curve)
+      if (!socket.is_array()) {
+        scene->dicing_camera->set_value(socket, *scene->camera, socket);
+      }
+    }
+    scene->dicing_camera->set_offscreen_dicing_scale(_renderParam->GetDicing().offscreenScale);
 
     _renderParam->SetProjectionMatrix(renderPassState->GetProjectionMatrix());
 

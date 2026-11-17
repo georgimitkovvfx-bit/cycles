@@ -174,7 +174,8 @@ void HdCyclesMesh::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyBit
   /* Rebuild subdivision and displacement from the authored geometry when primvars change.
    * Decided here, under the scene lock, because displacement depends on shader state. */
   if ((dirtyBits & HdChangeTracker::DirtyPrimvar) &&
-      (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE || _geom->has_true_displacement()))
+      (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE || _geom->has_true_displacement() ||
+       IsAdaptiveSubdivision(sceneDelegate) != _adaptiveSubdivision))
   {
     dirtyBits |= HdChangeTracker::DirtyTopology | HdChangeTracker::DirtyPoints |
                  HdChangeTracker::DirtyNormals;
@@ -439,6 +440,14 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
   }
 }
 
+bool HdCyclesMesh::IsAdaptiveSubdivision(HdSceneDelegate *sceneDelegate) const
+{
+  const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
+  return VtValue::Cast<bool>(GetObjectSetting(HdPrimvarsSchema::GetFromParent(prim.dataSource),
+                                              "use_adaptive_subdivision"))
+      .GetWithDefault(false);
+}
+
 void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
 {
   // Clear geometry before populating it again with updated topology
@@ -479,6 +488,18 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
   VtIntArray holeIndices;
   if (auto ds = topoSchema.GetHoleIndices()) {
     holeIndices = ds->GetTypedValue(0.0f);
+  }
+
+  /* Blender's Adaptive Subdivision: Cycles dices the mesh to the dicing rate in pixels, up to
+   * the Max Subdivisions render setting, also without a refine level. Without it, the mesh is
+   * subdivided up to its refine level. */
+  const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+  const bool adaptive = IsAdaptiveSubdivision(sceneDelegate);
+  _adaptiveSubdivision = adaptive;
+  const float dicingScale = std::max(
+      0.0f, VtValue::Cast<float>(GetObjectSetting(primvars, "dicing_rate")).GetWithDefault(1.0f));
+  if (adaptive) {
+    refineLevel = std::max(refineLevel, 1);
   }
 
   /* Use refinement only for supported subdivision meshes, so triangle indices
@@ -717,8 +738,19 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
       }
     }
 
-    _geom->set_subd_dicing_rate(1.0f);
-    _geom->set_subd_max_level(_topology.GetRefineLevel());
+    /* Diced in pixels of the dicing camera (the render camera, HdCyclesRenderPass). */
+    const HdCyclesSession::DicingSettings &dicing = _session->GetDicing();
+    _geom->set_subd_adaptive_space(Mesh::SUBDIVISION_ADAPTIVE_SPACE_PIXEL);
+    if (adaptive) {
+      // Like Blender, at least 0.1 pixels
+      _geom->set_subd_dicing_rate(std::max(
+          0.1f, (_session->IsViewport() ? dicing.previewRate : dicing.rate) * dicingScale));
+      _geom->set_subd_max_level(dicing.maxLevel);
+    }
+    else {
+      _geom->set_subd_dicing_rate(1.0f);
+      _geom->set_subd_max_level(_topology.GetRefineLevel());
+    }
     if (!_instances.empty()) {
       _geom->set_subd_objecttoworld(_instances[0]->get_tfm());
     }

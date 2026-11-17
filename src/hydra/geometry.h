@@ -59,6 +59,14 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
                     const PXR_NS::VtVec3fArray &points,
                     size_t numPoints);
 
+  /* Times of the motion steps of this object: none when its motion blur is off, its own number
+   * of steps when set. */
+  std::vector<float> GetObjectMotionTimes() const;
+
+  /* Constant "cycles:object:<setting>" primvar, empty if not authored. */
+  static PXR_NS::VtValue GetObjectSetting(const PXR_NS::HdPrimvarsSchema &primvars,
+                                          const std::string &setting);
+
   CyclesBase *_geom = nullptr;
   std::vector<CCL_NS::Object *> _instances;
   // Ray visibility of the instances from the prim, and whether its render tag is drawn
@@ -70,10 +78,15 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void Initialize(PXR_NS::HdRenderParam *renderParam);
 
   void InitializeInstance(const int index);
+  void SetPrimIdAttribute(CCL_NS::Object *instance) const;
   void UpdateObjectSettings(const PXR_NS::HdContainerDataSourceHandle &primDs);
   void SetInstancePrimvars(CCL_NS::Scene *scene,
                            const PXR_NS::HdContainerDataSourceHandle &primDs,
                            const std::vector<HdCyclesInstancer::Primvar> &primvars);
+
+  // Per-object motion blur and motion steps (0: the Motion Steps render setting)
+  bool _useMotionBlur = true;
+  int _motionSteps = 0;
 
   PXR_NS::GfMatrix4d _geomTransform;
   // Transforms at the motion steps when moving over the shutter, else empty

@@ -239,6 +239,19 @@ The **Fast GI Approximation** toggle in the panel header turns the panel on; the
 | Shape | `cycles:curve_shape` | Rounded Ribbons | Form of curves. Rounded Ribbons render curves as flat ribbons with rounded normals, for fast rendering. 3D Curves render curves as circular 3D geometry, for accurate results when viewing closely. Choices: Rounded Ribbons (`ribbon`), 3D Curves (`thick`). Also in the viewport display options. **Restarts the render.** |
 | Curve Subdivisions | `cycles:curve_subdivisions` | 3 | Number of subdivisions used in curve intersection, as a power of 2 (Blender uses 2). **Restarts the render.** |
 
+### Subdivision
+
+These settings apply to objects with **Adaptive Subdivision** (Render Geometry Settings LOP, see
+[objects.md](objects.md#subdivision-1)). Changing them dices the meshes again without restarting the
+render.
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Dicing Rate Render | `cycles:dicing_rate` | 1 | Size of a micropolygon in pixels for final renders, for objects with Adaptive Subdivision. |
+| Viewport | `cycles:preview_dicing_rate` | 8 | Size of a micropolygon in pixels in the viewport, for objects with Adaptive Subdivision. Also in the viewport display options. |
+| Offscreen Scale | `cycles:offscreen_dicing_scale` | 4 | Multiplier for the dicing rate of geometry outside of the camera view. The dicing rate of objects is gradually increased the further they are outside the camera view. Lower values provide higher quality reflections and shadows for off screen objects, while higher values use less memory. |
+| Max Subdivisions | `cycles:max_subdivisions` | 12 | Stop subdividing when this level is reached even if the dice rate would produce finer micropolygons. |
+
 ### Simplify
 
 | Setting | USD attribute | Default | Description |

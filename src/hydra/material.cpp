@@ -820,18 +820,21 @@ static void ApplyMaterialSettings(Shader *shader, const HdMaterialNetworkSchema 
   }
 }
 
-static void AddInstanceIdAOV(ShaderGraph *graph)
+void HdCyclesMaterial::AddIdAOVs(ShaderGraph *graph)
 {
-  /* Instance AOV is provided for every network, to make picking work. */
-  const ustring instanceId(HdAovTokens->instanceId.GetString());
+  /* Instance and prim ID AOVs are provided for every network, to make picking work. They are
+   * object attributes (HdCyclesGeometry::InitializeInstance). */
+  for (const TfToken &aov : {HdAovTokens->instanceId, HdAovTokens->primId}) {
+    const ustring name(aov.GetString());
 
-  OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
-  aovNode->set_name(instanceId);
+    OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
+    aovNode->set_name(name);
 
-  AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
-  instanceIdNode->set_attribute(instanceId);
+    AttributeNode *attributeNode = graph->create_node<AttributeNode>();
+    attributeNode->set_attribute(name);
 
-  graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
+    graph->connect(attributeNode->output("Fac"), aovNode->input("Value"));
+  }
 }
 
 void HdCyclesMaterial::AddPrimvarAOVs(ShaderGraph *graph,
@@ -1013,7 +1016,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     if (worldRotation) {
       OrientWorldTextures(graph.get(), *worldRotation);
     }
-    AddInstanceIdAOV(graph.get());
+    AddIdAOVs(graph.get());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
     const bool existed = _shader != nullptr;

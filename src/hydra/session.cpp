@@ -35,13 +35,14 @@ const std::unordered_map<TfToken, PassType, TfToken::HashFunctor> kAovToPass = {
     {HdAovTokens->color, PASS_COMBINED},
     {HdAovTokens->depth, PASS_DEPTH},
     {HdAovTokens->normal, PASS_NORMAL},
-    {HdAovTokens->primId, PASS_OBJECT_ID},
+    // Written by every shader from object attributes (HdCyclesMaterial::AddIdAOVs)
+    {HdAovTokens->primId, PASS_AOV_VALUE},
     {HdAovTokens->instanceId, PASS_AOV_VALUE},
     // Source names of Karma's render vars (Karma Render Settings LOP)
     {TfToken("ray:hitP"), PASS_POSITION},
     {TfToken("ray:hitPz"), PASS_DEPTH},
     {TfToken("ray:hitN"), PASS_NORMAL},
-    {TfToken("ray:primid"), PASS_OBJECT_ID},
+    {TfToken("ray:primid"), PASS_AOV_VALUE},
     {TfToken("st"), PASS_UV},
     {TfToken("AO"), PASS_AO},
 };
@@ -879,9 +880,14 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
       if (!primvar.empty()) {
         primvarAovs.emplace_back(aovBinding.aovName.GetString(), primvar);
       }
-      else if (sourceName != aovBinding.aovName) {
-        pass->set_name(ustring(sourceName.GetString()));
-        _passNames[aovBinding.aovName] = sourceName.GetString();
+      else {
+        // Karma's prim ID is the primId AOV every shader writes
+        const TfToken &passName = sourceName == TfToken("ray:primid") ? HdAovTokens->primId :
+                                                                         sourceName;
+        if (passName != aovBinding.aovName) {
+          pass->set_name(ustring(passName.GetString()));
+          _passNames[aovBinding.aovName] = passName.GetString();
+        }
       }
     }
     if (lightgroup.empty()) {
@@ -908,7 +914,8 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 }
 
 std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
-                                                   const float shutterClose) const
+                                                   const float shutterClose,
+                                                   const int steps) const
 {
   if (!session->scene->integrator->get_motion_blur()) {
     /* Motion pass: the previous and next frame, like Blender (Scene::motion_shutter_time() is 2
@@ -930,7 +937,7 @@ std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
   }
 
   // Three steps for Blender's default of one motion step for objects
-  const int numSteps = (1 << _motionSteps) + 1;
+  const int numSteps = (1 << (steps > 0 ? std::min(steps, 7) : _motionSteps)) + 1;
   if (_motionBlurDisabled || !(shutterClose > shutterOpen)) {
     return {};
   }
@@ -1006,17 +1013,7 @@ void HdCyclesSession::UpdateDefaultSurface()
   graph->connect(objectNode->output("Color"), diffuseNode->input("Color"));
   graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
 
-  // Create the instanceId AOV output
-  const ustring instanceId(HdAovTokens->instanceId.GetString());
-
-  OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
-  aovNode->set_name(instanceId);
-
-  AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
-  instanceIdNode->set_attribute(instanceId);
-
-  graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
-
+  HdCyclesMaterial::AddIdAOVs(graph.get());
   HdCyclesMaterial::AddPrimvarAOVs(graph.get(), _primvarAovs);
   scene->default_surface->set_graph(std::move(graph));
   scene->default_surface->tag_update(scene);

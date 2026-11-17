@@ -35,8 +35,11 @@ class HdCyclesMesh final : public HdCyclesGeometry<PXR_NS::HdMesh, CCL_NS::Mesh>
   void PopulatePrimvars(PXR_NS::HdSceneDelegate *sceneDelegate);
 
   void PopulateTopology(PXR_NS::HdSceneDelegate *sceneDelegate);
+  // Blender's Adaptive Subdivision setting of the object
+  bool IsAdaptiveSubdivision(PXR_NS::HdSceneDelegate *sceneDelegate) const;
 
   PXR_NS::HdMeshUtil _util;
+  bool _adaptiveSubdivision = false;
   PXR_NS::HdMeshTopology _topology;
   PXR_NS::VtIntArray _primitiveParams;
 };

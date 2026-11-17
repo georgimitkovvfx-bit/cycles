@@ -144,7 +144,44 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     return GetMotionTimes(_shutterOpen, _shutterClose);
   }
-  std::vector<float> GetMotionTimes(float shutterOpen, float shutterClose) const;
+  // With motion blur, objects can have their own motion steps (0 is the Motion Steps setting)
+  std::vector<float> GetMotionTimes(const int steps) const
+  {
+    return GetMotionTimes(_shutterOpen, _shutterClose, steps);
+  }
+  std::vector<float> GetMotionTimes(float shutterOpen, float shutterClose, int steps = 0) const;
+
+  // Blender's Subdivision render settings: dicing rate in pixels (viewport and final renders),
+  // max subdivision level of adaptive subdivision and offscreen dicing scale
+  struct DicingSettings {
+    float rate = 1.0f;
+    float previewRate = 8.0f;
+    int maxLevel = 12;
+    float offscreenScale = 4.0f;
+    bool operator==(const DicingSettings &other) const = default;
+  };
+  const DicingSettings &GetDicing() const
+  {
+    return _dicing;
+  }
+  void SetDicing(const DicingSettings &dicing)
+  {
+    if (!(dicing == _dicing)) {
+      _dicing = dicing;
+      // Subdivision meshes dice again when their primvars are read again
+      RequestResync(false, true);
+    }
+  }
+
+  // Film exposure from the render settings, multiplied by the exposure of the camera rendered
+  float GetFilmExposure() const
+  {
+    return _filmExposure;
+  }
+  void SetFilmExposure(const float exposure)
+  {
+    _filmExposure = exposure;
+  }
 
   // Rendering for the Houdini viewport: it reads the depth AOV as window depth (0..1) and needs
   // integer IDs, final renders keep distance and float IDs
@@ -333,6 +370,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool _shutterFromSettings = false;
   bool _motionBlurDisabled = false;
   int _motionSteps = 1;
+  DicingSettings _dicing;
+  float _filmExposure = 1.0f;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;
   mutable std::recursive_mutex _aovBindingsMutex;
