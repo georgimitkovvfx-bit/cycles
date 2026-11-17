@@ -22,7 +22,7 @@ materials, lights, world, AOVs, troubleshooting, developer notes).
 | | |
 |---|---|
 | Houdini | 22.0.429 (USD 26.05), Windows 11 |
-| GPU | NVIDIA RTX 4090, OptiX 8.0 SDK, CUDA 12.8, DLSS SDK 310.9.1 (driver 610.88: DLSS itself not run yet) |
+| GPU | NVIDIA RTX 4090, OptiX 8.0 SDK, CUDA 12.8, DLSS SDK 310.9.1 (DLSS viewport denoiser confirmed working with driver 621) |
 | Other plugins | Loads alongside Arnold (HtoA): Embree is linked statically without SYCL |
 
 Linux and macOS builds have not been tested on Houdini 22.
@@ -137,7 +137,8 @@ Next, roughly in this order:
    curve bases.
 2. Gaussian splats (`particleField`), panoramic cameras, portal lights.
 3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
-4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, DLSS (with a 620+ driver).
+4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness. Camera Cycles settings need a
+   render restart in the viewport (fix pending).
 
 ## Building
 

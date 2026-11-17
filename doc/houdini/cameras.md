@@ -55,6 +55,8 @@ overlay (frustum, guides) still draws the perspective projection.
 
 ## Limits
 
+- Changing a Cycles camera setting while the viewport renders does not update the render yet:
+  restart the render (viewport display options, or toggle the renderer) to see it.
 - Stereo cameras, Blender's shutter curve and a separate dicing camera are not exposed.
 - Lens distortion and split diopter (USD 26 camera schemas) are ignored.
 - In the free viewport camera (not looking through a camera prim) the Cycles settings and the
