@@ -147,9 +147,10 @@ MENU_ITEMS = {
 
 
 def S(name, label, help, range=None, viewport=False, toolbar_icon=None, hidewhen=None,
-      disablewhen=None):
-    """A single setting in the layout."""
+      disablewhen=None, tags=()):
+    """A single setting in the layout. tags are extra (name, value) parm tags."""
     return {
+        "tags": tags,
         "name": name,
         "label": label,
         "help": help,
@@ -610,7 +611,16 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:visible_transmission": {"type": "boolean", "default": True},
     "inputs:cycles:light:visible_volume_scatter": {"type": "boolean", "default": True},
     "inputs:cycles:light:lightgroup": {"type": "string", "default": ""},
+    "inputs:cycles:light:world_material": {"type": "string", "default": ""},
 }
+
+# Prim path field with Houdini's prim picker button.
+PRIM_PATH_TAGS = (
+    ("script_action", "import loputils; loputils.selectPrimsInParm(kwargs, False)"),
+    ("script_action_help", "Select a primitive in the Scene Viewer or Scene Graph Tree pane."),
+    ("script_action_icon", "BUTTONS_reselect"),
+    ("sidefx::usdpathtype", "prim"),
+)
 
 # Layout of the per-light settings, following Blender's light properties and object panels.
 LIGHT_LAYOUT = [
@@ -644,6 +654,14 @@ LIGHT_LAYOUT = [
         S("inputs:cycles:light:lightgroup", "Light Group",
           "Light group the light belongs to (render it with a light group pass on the Cycles "
           "Render Settings LOP)."),
+    ], open=True),
+    P("World", [
+        S("inputs:cycles:light:world_material", "World Material",
+          "Dome lights only: material used as the world, like a Blender world. Its surface "
+          "(a Background shader, e.g. with a Sky Texture) replaces the dome light's color and "
+          "texture, its volume fills the scene. Sky and environment textures follow the light's "
+          "rotation, with their pole on the light's +Y like dome light textures.",
+          tags=PRIM_PATH_TAGS),
     ], open=True),
 ]
 
@@ -814,6 +832,8 @@ class Writer:
                 lines.append(indent + "        %s %s" % (quote(token), quote(label)))
             lines.append(indent + "    }")
         lines.append(indent + "    help    %s" % quote(setting["help"]))
+        for tag, value in setting.get("tags", ()):
+            lines.append(indent + "    parmtag { %s %s }" % (quote(tag), quote(value)))
         if self.mode != "lop":
             lines.append(indent + '    parmtag { "spare_category" %s }' % quote(section))
             lines.append(indent + '    parmtag { "uiscope" %s }' % quote(scope))
