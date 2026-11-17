@@ -150,6 +150,17 @@ install(CODE "
     message(WARNING \"cyclessky2hda.py failed with exit code \${_sky_result}\")
   endif()
 
+  message(STATUS \"Generating Cycles World LOP\")
+  execute_process(
+    COMMAND \"${HYTHON_EXECUTABLE}\"
+            \"${CMAKE_CURRENT_SOURCE_DIR}/src/cyclesworld2hda.py\"
+            --hda-install-dir \"\${CMAKE_INSTALL_PREFIX}/houdini/otls\"
+    RESULT_VARIABLE _world_result
+  )
+  if(NOT _world_result EQUAL 0)
+    message(WARNING \"cyclesworld2hda.py failed with exit code \${_world_result}\")
+  endif()
+
   # Houdini backs up an HDA file on every edit of its definition; the generators make hundreds.
   file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/houdini/otls/backup\")
 ")
