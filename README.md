@@ -14,6 +14,9 @@ Cycles repository). The work for Houdini 22 lives on the `hdCycles-H22` branch.
 > Cycles core follows Blender's Cycles 5.3 (blender/cycles `main`, October 2026, plus the later Cycles fixes of
 > Blender `main`), including the DLSS viewport denoiser.
 
+**Documentation:** [doc/houdini/index.md](doc/houdini/index.md) (install, quick start, render settings,
+materials, lights, world, AOVs, troubleshooting, developer notes).
+
 ## Tested with
 
 | | |
@@ -36,6 +39,7 @@ Linux and macOS builds have not been tested on Houdini 22.
 | Shader node UI | Blender 5.3 order, labels, menus, collapsible panels, hide rules and default values. Color Ramp and Float/RGB/Vector Curves are Houdini ramp parameters, angles are in degrees like Blender, and the Raycast node reads up to 4 attributes at the hit point |
 | MaterialX / Karma materials | Karma and MaterialX Material Builder materials are translated to Cycles nodes: Standard Surface, OpenPBR, UsdPreviewSurface and glTF PBR as the Principled BSDF, plus about 100 MaterialX nodes (images, math, noise, color, geometry, closures); node graph nodes from the MaterialX libraries are expanded. Matches Karma within a few percent in the tests |
 | USD lights | Sphere, rect, disk, distant and dome lights match Karma within 1% (normalized and not) |
+| World shaders | A dome light's **World Material** (Cycles tab) makes any Cycles material the world, like a Blender world: Background shader surface (Sky Texture, HDRIs, procedurals) and world volume. **Cycles Sun & Sky LOP**: physical sky with sun disc, sun placed by elevation/azimuth or location, date and time, optional fog box. See [doc/houdini/world.md](doc/houdini/world.md) |
 | Light linking | Light and shadow linking from the lights' `lightLink` / `shadowLink` collections (Light Linker LOP), like Karma |
 | Render settings | **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP, and viewport display options, all laid out like Blender's render properties. A **Blender Defaults** button on the LOP sets Blender's final-render defaults (keeping GPU denoising). Curve shape: Rounded Ribbons or 3D Curves |
 | Interactive edits | Moving/editing lights, objects, materials and settings updates the render. Motion blur, the shutter and primvar AOVs change without restarting the render. Texture files changed on disk reload on the next material edit or with **Reload Textures** in the viewport's renderer menu; UDIM (`<UDIM>`) textures |
@@ -358,6 +362,7 @@ src/hydra/houdini/
   src/rendersettings2ds.py          Cycles tabs (render settings, geometry) + viewport options (.ds)
   src/cyclesrendersettings2hda.py   Cycles Render Settings LOP
   src/script2hda.py, script_node.py Cycles Script node (OSL)
+  src/cyclessky2hda.py              Cycles Sun & Sky LOP (world material with a Sky Texture)
   husdplugins/shadertranslators/cycles.py  bakes ramps, writes angles in radians (Houdini shader translator)
 ```
 
