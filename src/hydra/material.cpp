@@ -797,7 +797,8 @@ static ShaderOutput *FindOutput(ShaderNode *node, const std::string &name)
  * settings get the Cycles defaults, which are Blender's. */
 static void ApplyMaterialSettings(Shader *shader, const HdMaterialNetworkSchema &network)
 {
-  static const char *const settings[] = {"displacement_method",
+  static const char *const settings[] = {"pass_id",
+                                         "displacement_method",
                                          "emission_sampling_method",
                                          "use_transparent_shadow",
                                          "use_bump_map_correction",

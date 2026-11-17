@@ -43,6 +43,7 @@ are Blender's.
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
+| Pass Index | `config:cycles:pass_id` | 0 | Index number for the Material Index render pass (render var with source name `material_id`) |
 | Surface > Displacement | `config:cycles:displacement_method` | Bump Only | How the displacement output is used: Bump Only (`bump`), Displacement Only (`true`, true displacement of the surface) or Displacement and Bump (`both`, true displacement with bump mapping for the finer details) |
 | Surface > Emission Sampling | `config:cycles:emission_sampling_method` | Auto | Sampling strategy for emissive surfaces: None, Auto, Front, Back, Front and Back |
 | Surface > Transparent Shadows | `config:cycles:use_transparent_shadow` | On | Use transparent shadows for this material if it contains a Transparent BSDF. Turning it off renders faster but shadows are not accurate |

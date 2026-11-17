@@ -64,6 +64,10 @@ volume.addParmTemplate(hou.FloatParmTemplate(
     tags={'cycles_material_setting': 'volume_step_rate'}))
 
 settings = hou.FolderParmTemplate('cycles_settings', 'Settings', folder_type=hou.folderType.Tabs)
+settings.addParmTemplate(hou.IntParmTemplate(
+    'cycles_pass_id', 'Pass Index', 1, default_value=(0,), min=0, max=100, min_is_strict=True,
+    help='Index number for the Material Index render pass.',
+    tags={'cycles_material_setting': 'pass_id'}))
 settings.addParmTemplate(surface)
 settings.addParmTemplate(volume)
 group = node.parmTemplateGroup()

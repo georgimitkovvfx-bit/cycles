@@ -127,6 +127,8 @@ def author_material_settings(prim, shader_node):
             prim.CreateAttribute(name, Sdf.ValueTypeNames.Token).Set(parm.evalAsString())
         elif template.type() == hou.parmTemplateType.Toggle:
             prim.CreateAttribute(name, Sdf.ValueTypeNames.Bool).Set(bool(parm.eval()))
+        elif template.type() == hou.parmTemplateType.Int:
+            prim.CreateAttribute(name, Sdf.ValueTypeNames.Int).Set(int(parm.eval()))
         else:
             prim.CreateAttribute(name, Sdf.ValueTypeNames.Float).Set(float(parm.eval()))
 
