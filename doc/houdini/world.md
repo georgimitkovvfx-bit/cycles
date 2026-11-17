@@ -10,7 +10,8 @@ This gives you everything a Blender world can do: Cycles' **Sky Texture** (physi
 disc), procedural backgrounds, mixed HDRIs, gradients by direction, light-path tricks (a different
 background for the camera than for lighting), and world volumes.
 
-For a ready-made sun and sky, use the **Cycles Sun & Sky** LOP (below).
+For a Blender-like world with nodes you edit, use the **Cycles World** LOP; for a ready-made
+physical sun and sky, the **Cycles Sun & Sky** LOP (both below).
 
 ## Using a material as the world
 
@@ -26,9 +27,11 @@ For a ready-made sun and sky, use the **Cycles Sun & Sky** LOP (below).
    material is found; set the strength on the Background shader instead. If the path is empty or
    no material exists at that path, the dome light renders as usual.
 
-The dome light still decides everything that is about the light: ray visibility (Camera,
-Diffuse, Glossy, ... on its Cycles tab), Multiple Importance, Max Bounces, its light group (which
-is also the world's light group), light linking, and whether it is visible at all.
+The dome light still decides everything that is about the light: ray visibility (Diffuse,
+Glossy, Transmission, Volume Scatter on its Cycles tab), Multiple Importance, Max Bounces, its
+light group (which is also the world's light group), light linking, and whether it is visible at
+all. The camera always sees the world; turn on film transparency (Render Settings > Film) to hide
+it.
 
 Changes update the viewport render live: editing the world material's nodes, rotating the dome,
 setting or clearing the World Material.
@@ -58,6 +61,45 @@ Gradient Texture or a Separate XYZ on the ray direction has **Y** as up.
 The Sky Texture's **Sun Rotation** turns the sun around +Y: 0 degrees puts it toward **+X**,
 90 degrees toward **+Z** (seen from above, clockwise from +X). **Sun Elevation** is the angle
 above the horizon. The Cycles Sun & Sky LOP converts compass directions for you.
+
+## Cycles World LOP
+
+Tab menu: **Cycles > Lighting > Cycles World**. Like Blender's World nodes: the node creates a
+dome light and a world material whose shader nodes you edit, while the node itself stays locked.
+It starts with an HDRI; other setups are one preset away.
+
+- **Edit World Nodes** opens the world nodes (a USD Cycles Material Builder inside the node) in
+  the network editor. Add, remove and rewire Cycles nodes as in any material builder; connect the
+  final Background (or a Mix Shader of Backgrounds) to the output. Your edits are saved with the
+  scene.
+- **Apply Preset** replaces the world nodes with the chosen **Preset**. If you edited the nodes,
+  it asks first.
+
+| Preset | World nodes |
+|---|---|
+| HDRI (default) | Environment Texture > Hue/Saturation/Value > Brightness/Contrast > Background. Adjust the HDRI's color, saturation, brightness and contrast on the two middle nodes (they start neutral) |
+| Sky | Sky Texture (Multiple Scattering, sun disc, sun 15 degrees up toward the south-east) > Background |
+| Color | A constant Background color (Blender's default world grey) |
+| Gradient | Texture Coordinate Generated (the ray direction) > Separate XYZ (Y is up) > Map Range > Color Ramp (ground, horizon, sky) > Background |
+| HDRI + Camera Background | The HDRI lights the scene, the camera sees a separate Background color: Light Path **Is Camera Ray** drives a Mix Shader of the two Backgrounds. Plug a texture into the camera Background's Color for a backplate |
+
+| Parameter | Default | Description |
+|---|---|---|
+| Light Path | `/lights/$OS` | The dome light. Its Cycles World Material points at the material below |
+| Material Path | `/materials/$OS` | The world material built from the world nodes |
+| Preset, Apply Preset | HDRI | The setup Apply Preset builds (table above) |
+| Edit World Nodes | | Shows the world nodes in the network editor |
+| HDRI File | `$HFS/houdini/pic/lookdev/envmap.exr` | Latlong image of the HDRI presets. The Environment Texture's Filename refers to it |
+| Strength | 1 | World strength. The presets' Background Strength refers to it |
+| Rotation | 0, 0, 0 | Rotation of the dome light in degrees. Environment and Sky Textures follow it (Orientation above) |
+
+HDRI File and Strength drive the world nodes through channel references (`chs("../../../hdrifile")`,
+`ch("../../../strength")`). Type a value into a node's parameter instead and the node parameter
+no longer affects it; Apply Preset restores the references.
+
+The Sky preset's sun is set on the Sky Texture node in degrees (Sun Rotation 0 = +X, 90 = +Z).
+For a sun placed by compass, location, date and time, and a fog box, use the Cycles Sun & Sky
+LOP, which stays the quickest way to a physical sky.
 
 ## Cycles Sun & Sky LOP
 
@@ -115,7 +157,8 @@ around the scene) with the volume material bound to it. The Sun & Sky LOP's Fog 
 - Only Cycles shader networks work as world materials (USD Cycles Material Builder, or
   hand-authored `cycles_*` shaders with `outputs:cycles:surface`). MaterialX and Karma materials
   have no background closure.
-- One world: with several dome lights, the first one found is the world (as without world
-  materials).
+- Several dome lights are added into one world, like Karma adds them (their surfaces and
+  volumes are summed). The first visible dome light in the stage samples it and gives its light
+  settings (ray visibility, Multiple Importance, light group) to the whole world.
 - Karma does not read the World Material setting; for Karma the dome light renders with its own
   texture and color.
