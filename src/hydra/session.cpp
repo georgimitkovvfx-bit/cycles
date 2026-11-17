@@ -287,7 +287,10 @@ void HdCyclesSession::UpdateScene()
   // Update background depending on presence of a background light. The session thread may have
   // cleared the light manager's tags since a light was added or removed.
   if (std::exchange(lightsChanged, false) || scene->light_manager->need_update()) {
-    Light *background_light = nullptr;
+    /* Cycles has one world: several dome lights are added into it, like Karma adds them. The
+     * first dome light in scene order samples it and gives its light settings (ray visibility,
+     * Multiple Importance, light group) to the whole world. */
+    std::vector<Object *> domeObjects;
     bool have_lights = false;
     for (Object *object : scene->objects) {
       if (!object->get_geometry()->is_light()) {
@@ -296,16 +299,48 @@ void HdCyclesSession::UpdateScene()
 
       have_lights = true;
 
-      Light *light = static_cast<Light *>(object->get_geometry());
-      if (light->is_background_light()) {
-        background_light = light;
-        break;
+      if (static_cast<Light *>(object->get_geometry())->is_background_light()) {
+        domeObjects.push_back(object);
       }
+    }
+    /* Hidden dome lights have zero strength: they add nothing and do not sample the world,
+     * unless all of them are hidden (a black world, as before). */
+    const auto isVisible = [](const Object *object) {
+      return static_cast<Light *>(object->get_geometry())->get_strength() != zero_float3();
+    };
+    const bool anyVisible = std::any_of(domeObjects.begin(), domeObjects.end(), isVisible);
+    std::vector<Light *> domes;
+    const Object *firstDome = nullptr;
+    for (const Object *object : domeObjects) {
+      if (!anyVisible || isVisible(object)) {
+        firstDome = firstDome ? firstDome : object;
+        domes.push_back(static_cast<Light *>(object->get_geometry()));
+      }
+    }
+    Light *background_light = domes.empty() ? nullptr : domes.front();
+
+    for (const Object *object : domeObjects) {
+      Light *light = static_cast<Light *>(object->get_geometry());
+      const auto mis = _domeUseMis.find(light);
+      const bool useMis = light == background_light &&
+                          (mis == _domeUseMis.end() || mis->second);
+      if (light->get_use_mis() != useMis) {
+        light->set_use_mis(useMis);
+        light->tag_update(scene);
+      }
+    }
+    if (domes.size() < 2 && !_combinedWorldKey.empty()) {
+      /* Release the images of the combined world. */
+      _combinedWorldKey.clear();
+      _combinedWorld->set_graph(make_unique<ShaderGraph>());
+      _combinedWorld->tag_update(scene);
     }
 
     if (!background_light) {
       scene->background->set_shader(scene->default_background);
       scene->background->set_transparent(_transparentBackground.value_or(true));
+      scene->background->set_visibility(PATH_RAY_VISIBILITY_ALL);
+      scene->background->set_lightgroup(ustring());
 
       /* Set background color depending to non-zero value if there are no
        * lights in the scene, to match behavior of other renderers. */
@@ -322,25 +357,21 @@ void HdCyclesSession::UpdateScene()
     else {
       // The light manager enables the background light (MIS) by the background shader: decide
       // again, the session thread may have updated the lights before the shader was set here.
-      Shader *shader = background_light->get_shader();
-      const auto world = _worldMaterials.find(background_light);
-      if (world != _worldMaterials.end()) {
-        shader = world->second.lightShader;
-        if (!world->second.material.empty()) {
-          for (Shader *material : scene->shaders) {
-            if (material != shader && material->name == world->second.material) {
-              shader = material;
-              break;
-            }
-          }
-        }
-        SetLightShader(background_light, shader);
+      Shader *shader = domes.size() > 1 ? UpdateCombinedWorld(domes) :
+                                          GetWorldShader(background_light);
+      for (const Object *object : domeObjects) {
+        Light *light = static_cast<Light *>(object->get_geometry());
+        SetLightShader(light, light == background_light ? shader : GetWorldShader(light));
       }
       if (scene->background->get_shader() != shader) {
         scene->light_manager->tag_update(scene, LightManager::SHADER_MODIFIED);
       }
       scene->background->set_shader(shader);
       scene->background->set_transparent(_transparentBackground.value_or(false));
+      /* Cycles takes the world's ray visibility from the background, not the light object. The
+       * camera always sees the world, film transparency hides it. */
+      scene->background->set_visibility(firstDome->get_visibility() | PATH_RAY_VISIBILITY_CAMERA);
+      scene->background->set_lightgroup(firstDome->get_lightgroup());
     }
 
     scene->background->tag_update(scene);
@@ -378,6 +409,8 @@ void HdCyclesSession::RemoveWorldMaterial(Light *light)
   if (!it->second.material.empty()) {
     RequestResync(true, false);
   }
+  RemoveWorldSource(it->second.lightShader);
+  _domeUseMis.erase(light);
   _worldMaterials.erase(it);
   lightsChanged = true;
 }
@@ -385,6 +418,7 @@ void HdCyclesSession::RemoveWorldMaterial(Light *light)
 void HdCyclesSession::ReleaseWorldShader(Shader *shader)
 {
   Scene *const scene = session->scene.get();
+  RemoveWorldSource(shader);
   if (scene->background->get_shader() == shader) {
     scene->background->set_shader(scene->default_background);
     scene->background->tag_update(scene);
@@ -418,6 +452,155 @@ const Transform *HdCyclesSession::GetWorldRotation(const std::string &material) 
     }
   }
   return nullptr;
+}
+
+namespace {
+
+/* Clones the nodes of src, except its output node, into dst. Returns the outputs in dst that
+ * fed src's Surface and Volume. */
+std::pair<ShaderOutput *, ShaderOutput *> CopyGraphNodes(ShaderGraph &src, ShaderGraph *dst)
+{
+  ShaderNode *const srcOutput = src.output();
+  std::unordered_map<const ShaderNode *, ShaderNode *> nodes;
+  for (ShaderNode *node : src.nodes) {
+    if (node != srcOutput) {
+      nodes[node] = node->clone(dst);
+    }
+  }
+  /* shortcut: sockets that nodes add at runtime (OSL scripts, Raycast attribute outputs) are not
+   * cloned and lose their links; build such worlds from the Hydra network if it matters. */
+  for (ShaderNode *node : src.nodes) {
+    if (node == srcOutput) {
+      continue;
+    }
+    for (ShaderInput *input : node->inputs) {
+      if (input->link) {
+        ShaderOutput *from = nodes[input->link->parent]->output(input->link->name());
+        ShaderInput *to = nodes[node]->input(input->name());
+        if (from && to) {
+          dst->connect(from, to);
+        }
+      }
+    }
+  }
+  const auto mapped = [&](const char *name) -> ShaderOutput * {
+    ShaderInput *input = srcOutput->input(name);
+    return input && input->link ? nodes[input->link->parent]->output(input->link->name()) :
+                                  nullptr;
+  };
+  return {mapped("Surface"), mapped("Volume")};
+}
+
+void AddClosure(ShaderGraph *graph, ShaderOutput *&sum, ShaderOutput *closure)
+{
+  if (!closure) {
+    return;
+  }
+  if (!sum) {
+    sum = closure;
+    return;
+  }
+  AddClosureNode *add = graph->create_node<AddClosureNode>();
+  graph->connect(sum, add->input("Closure1"));
+  graph->connect(closure, add->input("Closure2"));
+  sum = add->output("Closure");
+}
+
+}  // namespace
+
+void HdCyclesSession::SetWorldSource(Shader *shader, ShaderGraph &graph)
+{
+  auto copy = std::make_shared<ShaderGraph>();
+  const auto [surface, volume] = CopyGraphNodes(graph, copy.get());
+  if (surface) {
+    copy->connect(surface, copy->output()->input("Surface"));
+  }
+  if (volume) {
+    copy->connect(volume, copy->output()->input("Volume"));
+  }
+  _worldSources[shader] = {std::move(copy), ++_worldSourceVersion};
+  if (!_combinedWorldKey.empty()) {
+    lightsChanged = true;
+  }
+}
+
+void HdCyclesSession::RemoveWorldSource(Shader *shader)
+{
+  if (_worldSources.erase(shader)) {
+    lightsChanged = true;
+  }
+}
+
+void HdCyclesSession::SetDomeUseMis(Light *light, const bool useMis)
+{
+  const auto it = _domeUseMis.find(light);
+  if (it == _domeUseMis.end() || it->second != useMis) {
+    _domeUseMis[light] = useMis;
+    lightsChanged = true;
+  }
+}
+
+Shader *HdCyclesSession::GetWorldShader(Light *light) const
+{
+  const auto world = _worldMaterials.find(light);
+  if (world == _worldMaterials.end()) {
+    return light->get_shader();
+  }
+  if (!world->second.material.empty()) {
+    for (Shader *material : session->scene->shaders) {
+      if (material != world->second.lightShader && material->name == world->second.material) {
+        return material;
+      }
+    }
+  }
+  return world->second.lightShader;
+}
+
+Shader *HdCyclesSession::UpdateCombinedWorld(const std::vector<Light *> &domes)
+{
+  Scene *const scene = session->scene.get();
+
+  std::vector<uint64_t> key;
+  std::vector<ShaderGraph *> sources;
+  for (Light *light : domes) {
+    const Shader *const shader = GetWorldShader(light);
+    const auto source = _worldSources.find(shader);
+    key.push_back(uint64_t(uintptr_t(shader)));
+    key.push_back(source != _worldSources.end() ? source->second.version : 0);
+    if (source != _worldSources.end()) {
+      sources.push_back(source->second.graph.get());
+    }
+    else {
+      TF_WARN("Dome light %s: no shader graph to add to the world", light->name.c_str());
+    }
+  }
+  if (_combinedWorld && key == _combinedWorldKey) {
+    return _combinedWorld;
+  }
+  _combinedWorldKey = std::move(key);
+
+  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  ShaderOutput *surface = nullptr;
+  ShaderOutput *volume = nullptr;
+  for (ShaderGraph *source : sources) {
+    const auto [domeSurface, domeVolume] = CopyGraphNodes(*source, graph.get());
+    AddClosure(graph.get(), surface, domeSurface);
+    AddClosure(graph.get(), volume, domeVolume);
+  }
+  if (surface) {
+    graph->connect(surface, graph->output()->input("Surface"));
+  }
+  if (volume) {
+    graph->connect(volume, graph->output()->input("Volume"));
+  }
+
+  if (!_combinedWorld) {
+    _combinedWorld = scene->create_node<Shader>();
+    _combinedWorld->name = "hdCycles combined world";
+  }
+  _combinedWorld->set_graph(std::move(graph));
+  _combinedWorld->tag_update(scene);
+  return _combinedWorld;
 }
 
 void HdCyclesSession::SetLightLinks(const std::string &light,

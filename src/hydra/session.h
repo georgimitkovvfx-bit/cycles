@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -227,6 +228,13 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   void ReleaseWorldShader(CCL_NS::Shader *shader);
   // Rotation of the dome light that uses the material as world, nullptr when no light does
   const CCL_NS::Transform *GetWorldRotation(const std::string &material) const;
+  // Copy of a world shader's graph (a dome light's own shader or a world material) before
+  // Cycles finalizes it, to add several dome lights into one world. Called with the scene locked.
+  void SetWorldSource(CCL_NS::Shader *shader, CCL_NS::ShaderGraph &graph);
+  void RemoveWorldSource(CCL_NS::Shader *shader);
+  // The dome light's Multiple Importance setting. Only the first dome light samples the world,
+  // UpdateScene() applies it.
+  void SetDomeUseMis(CCL_NS::Light *light, bool useMis);
 
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
@@ -289,6 +297,19 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   };
   std::map<CCL_NS::Light *, WorldMaterial> _worldMaterials;
   void SetLightShader(CCL_NS::Light *light, CCL_NS::Shader *shader);
+  CCL_NS::Shader *GetWorldShader(CCL_NS::Light *light) const;
+  CCL_NS::Shader *UpdateCombinedWorld(const std::vector<CCL_NS::Light *> &domes);
+
+  struct WorldSource {
+    std::shared_ptr<CCL_NS::ShaderGraph> graph;
+    uint64_t version;
+  };
+  std::map<const CCL_NS::Shader *, WorldSource> _worldSources;
+  uint64_t _worldSourceVersion = 0;
+  std::map<const CCL_NS::Light *, bool> _domeUseMis;
+  // Background shader adding the shaders of several dome lights, and what it was built from
+  CCL_NS::Shader *_combinedWorld = nullptr;
+  std::vector<uint64_t> _combinedWorldKey;
 
   size_t _numDefaultShaders = 0;
   bool _resyncEnabled = false;

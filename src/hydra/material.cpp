@@ -1029,6 +1029,9 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     const AttributeRequestSet attributes = _shader->attributes;
     /* Before the graph: set_graph() hashes the displacement for the displacement method. */
     ApplyMaterialSettings(_shader, network);
+    if (worldRotation) {
+      static_cast<HdCyclesSession *>(renderParam)->SetWorldSource(_shader, *graph);
+    }
     _shader->set_graph(std::move(graph));
     _shader->tag_update(lock.scene);
 

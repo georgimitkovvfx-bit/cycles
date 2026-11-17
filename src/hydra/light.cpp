@@ -139,19 +139,19 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       }
     }
     _object->set_visibility(visibility);
-    _light->set_use_mis(GetTypedValue<bool>(lightDs, _tokens->useMis, true));
+    const bool useMis = GetTypedValue<bool>(lightDs, _tokens->useMis, true);
+    if (_lightType == HdPrimTypeTokens->domeLight) {
+      static_cast<HdCyclesSession *>(renderParam)->SetDomeUseMis(_light, useMis);
+    }
+    else {
+      _light->set_use_mis(useMis);
+    }
     _light->set_use_caustics(GetTypedValue<bool>(lightDs, _tokens->useCaustics, false));
     _light->set_max_bounces(GetTypedValue<int>(lightDs, _tokens->maxBounces, 1024));
 
     const ustring lightgroup(GetTypedValue<std::string>(lightDs, _tokens->lightgroup, ""));
     _object->set_lightgroup(lightgroup);
-    if (_lightType == HdPrimTypeTokens->domeLight) {
-      Background *background = lock.scene->background;
-      if (background->get_lightgroup() != lightgroup) {
-        background->set_lightgroup(lightgroup);
-        background->tag_update(lock.scene);
-      }
-    }
+    /* UpdateScene() gives the world the light group of the first dome light. */
 
     if (auto ds = GetTypedDataSource<bool>(lightDs, HdLightTokens->shadowEnable)) {
       _light->set_cast_shadow(ds->GetTypedValue(0.0f));
@@ -229,13 +229,13 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     _light->set_strength(strength);
     _light->set_is_enabled(visible);
 
-    PopulateShaderGraph(lightDs);
+    PopulateShaderGraph(lightDs, renderParam);
   }
   // Need to update shader graph when transform changes in case transform was baked into it
   else if (_object->tfm_is_modified() && (_lightType == HdPrimTypeTokens->domeLight ||
                                           _shader->has_surface_spatial_varying))
   {
-    PopulateShaderGraph(lightDs);
+    PopulateShaderGraph(lightDs, renderParam);
   }
 
   if (_lightType == HdPrimTypeTokens->domeLight &&
@@ -265,7 +265,8 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   *dirtyBits = DirtyBits::Clean;
 }
 
-void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &lightContainer)
+void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &lightContainer,
+                                        HdRenderParam *renderParam)
 {
   unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
   ShaderNode *outputNode = nullptr;
@@ -418,6 +419,9 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
   }
 
   Shader *const shader = _shader;
+  if (_lightType == HdPrimTypeTokens->domeLight) {
+    static_cast<HdCyclesSession *>(renderParam)->SetWorldSource(shader, *graph);
+  }
   shader->set_graph(std::move(graph));
   shader->tag_update((Scene *)_light->get_owner());
 
@@ -434,6 +438,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(_object->name.string());
   static_cast<HdCyclesSession *>(renderParam)->RemoveWorldMaterial(_light);
+  static_cast<HdCyclesSession *>(renderParam)->RemoveWorldSource(_shader);
   static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
 
   if (!keep_nodes) {
@@ -493,7 +498,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
   _light->set_used_shaders(used_shaders);
 
   // Create default shader graph
-  PopulateShaderGraph(HdContainerDataSourceHandle());
+  PopulateShaderGraph(HdContainerDataSourceHandle(), renderParam);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
