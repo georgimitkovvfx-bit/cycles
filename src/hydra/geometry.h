@@ -42,6 +42,9 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void Finalize(PXR_NS::HdRenderParam *renderParam) override;
 
  protected:
+  /* Shader of the geometry without a material. */
+  virtual CCL_NS::Shader *GetDefaultShader(CCL_NS::Scene *scene) const;
+
   void _InitRepr(const PXR_NS::TfToken &reprToken, PXR_NS::HdDirtyBits *dirtyBits) override;
 
   PXR_NS::HdDirtyBits _PropagateDirtyBits(PXR_NS::HdDirtyBits bits) const override;

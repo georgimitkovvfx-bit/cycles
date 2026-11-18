@@ -14,7 +14,9 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 class HdCyclesPoints final : public HdCyclesGeometry<PXR_NS::HdPoints, CCL_NS::PointCloud> {
  public:
-  HdCyclesPoints(const PXR_NS::SdfPath &rprimId);
+  /* gaussianSplats: a Hydra particleField (USD ParticleField3DGaussianSplat), rendered as
+   * Cycles Gaussian splats. */
+  HdCyclesPoints(const PXR_NS::SdfPath &rprimId, bool gaussianSplats = false);
   ~HdCyclesPoints() override;
 
   PXR_NS::HdDirtyBits GetInitialDirtyBitsMask() const override;
@@ -30,6 +32,12 @@ class HdCyclesPoints final : public HdCyclesGeometry<PXR_NS::HdPoints, CCL_NS::P
   void PopulateWidths(PXR_NS::HdSceneDelegate *sceneDelegate);
 
   void PopulatePrimvars(PXR_NS::HdSceneDelegate *sceneDelegate);
+  void PopulateGaussianSplats(PXR_NS::HdSceneDelegate *sceneDelegate);
+
+  /* Splats without a material show their radiance (Cycles' default splat shader). */
+  CCL_NS::Shader *GetDefaultShader(CCL_NS::Scene *scene) const override;
+
+  bool _gaussianSplats = false;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

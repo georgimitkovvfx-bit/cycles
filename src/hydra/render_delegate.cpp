@@ -65,6 +65,7 @@ const TfTokenVector kSupportedRPrimTypes = {
     HdPrimTypeTokens->basisCurves,
     HdPrimTypeTokens->mesh,
     HdPrimTypeTokens->points,
+    HdPrimTypeTokens->particleField,
 #ifdef WITH_OPENVDB
     HdPrimTypeTokens->volume,
 #endif
@@ -427,6 +428,9 @@ HdRprim *HdCyclesDelegate::CreateRprim(const TfToken &typeId, const SdfPath &rpr
   }
   if (typeId == HdPrimTypeTokens->points) {
     return new HdCyclesPoints(rprimId);
+  }
+  if (typeId == HdPrimTypeTokens->particleField) {
+    return new HdCyclesPoints(rprimId, true);
   }
 #ifdef WITH_OPENVDB
   if (typeId == HdPrimTypeTokens->volume) {

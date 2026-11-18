@@ -147,9 +147,7 @@ These are the open limits of the current version that affect users.
 
 - Matrix, string and int64 primvars are not exported. Per-object settings are not read per
   instance.
-- Curve bases other than Catmull-Rom (B-spline, Bezier) render as Catmull-Rom curves. Subdivision
-  has no dicing settings.
-- Gaussian splats (`particleField`), panoramic cameras and portal lights are not supported.
+- Gaussian splats have no motion blur; spherical harmonics above degree 3 are ignored.
 
 **Motion blur**
 

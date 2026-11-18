@@ -99,12 +99,8 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     if (material && material->GetCyclesShader()) {
       usedShaders[0] = material->GetCyclesShader();
     }
-    else if (_geom->is_volume()) {
-      /* Like Karma and Storm, show volumes without a material by their density. */
-      usedShaders[0] = lock.scene->default_volume;
-    }
     else {
-      usedShaders[0] = lock.scene->default_surface;
+      usedShaders[0] = GetDefaultShader(lock.scene);
     }
 
     for (Node *shader : usedShaders) {
@@ -433,6 +429,13 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstanceColor(const VtValue &value)
       instance->set_color(make_float3(color[0], color[1], color[2]));
     }
   }
+}
+
+template<typename Base, typename CyclesBase>
+Shader *HdCyclesGeometry<Base, CyclesBase>::GetDefaultShader(Scene *scene) const
+{
+  /* Like Karma and Storm, show volumes without a material by their density. */
+  return _geom->is_volume() ? scene->default_volume : scene->default_surface;
 }
 
 template<typename Base, typename CyclesBase>

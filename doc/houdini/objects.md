@@ -10,6 +10,7 @@ shaders can read, instancing, implicit shapes, curves, points and subdivision.
 | Mesh | Triangle mesh, with optional subdivision; face sets (geometry subsets) with their own materials |
 | BasisCurves | Curves (hair), rendered as ribbons or 3D curves |
 | Points | Spheres, one per point, sized by `widths` |
+| ParticleField3DGaussianSplat | Gaussian splats (see [Gaussian splats](#gaussian-splats)) |
 | Volume | Volume (see [volumes.md](volumes.md)) |
 | Sphere, Cube, Cone, Cylinder, Capsule, Plane | Implicit shapes, converted to meshes |
 | PointInstancer, native instances | Cycles instances |
@@ -177,14 +178,27 @@ Curves render in one of two shapes, chosen for the whole scene with Render Setti
 Changing the shape restarts the render. The Blender Defaults button of the Cycles Render Settings
 LOP sets 3D Curves.
 
-Curve width comes from `widths`. Cycles interpolates curve points with Catmull-Rom splines; B-spline
-and Bezier bases are not converted and render as Catmull-Rom curves through the same control
-points. Use the **Curves Info** node (`hair_info`) and the hair BSDFs (**Principled Hair BSDF**,
+Curve width comes from `widths` (constant, uniform, varying or vertex). Every USD curve type
+renders with its own shape: linear curves as Cycles' linear 3D curves (with the 3D Curves shape),
+cubic Bezier, B-spline and Catmull-Rom curves converted to Cycles' Catmull-Rom keys (Bezier curves
+sampled 3 times per segment, B-splines twice), periodic curves closed and pinned curves through
+their end points. Primvars follow the conversion. Use the **Curves Info** node (`hair_info`) and the hair BSDFs (**Principled Hair BSDF**,
 **Hair BSDF**) for hair shading.
 
 ## Points
 
 Points render as spheres with the radius `widths / 2`. All primvar interpolations work on points.
+
+## Gaussian splats
+
+`ParticleField3DGaussianSplat` prims (Houdini's SOP Import writes them for splats from the Bake
+Gaussian Splats SOP or a PLY file) render as Cycles Gaussian splats: `positions`, `orientations`,
+`scales` and `opacities` (float or half) and the spherical harmonics coefficients
+(`radiance:sphericalHarmonicsCoefficients`, degree 0 to 3; higher degrees are cut at 3). Without
+coefficients a splat is mid grey (USD's DC signal of 0.5). Cycles stores the degree 1 to 3
+coefficients in 8 bits, clamped to [-1, 1]. Splats without a material use Cycles' default splat
+shader (the splat's view-dependent radiance as emission); a bound material replaces it. Splats have
+no motion blur.
 
 ## Subdivision
 

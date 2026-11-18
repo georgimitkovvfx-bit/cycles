@@ -133,9 +133,8 @@ too; it found that dome light textures were rotated (fixed).
 
 Next, roughly in this order:
 
-1. Path guiding (biased guided renders to resolve); subdivision settings (dicing rate for true displacement);
-   curve bases.
-2. Gaussian splats (`particleField`), panoramic cameras, portal lights.
+1. Path guiding (biased guided renders to resolve).
+2. USD portal light prims.
 3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, live camera Cycles settings
    and displacement with Adaptive Subdivision on polygon meshes.
