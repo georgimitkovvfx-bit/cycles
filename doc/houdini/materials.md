@@ -39,7 +39,8 @@ Cycles shader translator that comes with the plugin, which converts ramps and an
 Builders made with the shelf tool have a **Settings** tab like Blender's Material Properties >
 Settings panel. The settings are authored as `config:cycles:<setting>` attributes on the material
 prim, and only when they differ from their default. Unset settings use the Cycles defaults, which
-are Blender's.
+are Blender's. Materials that are not Cycles networks (MaterialX, Karma, UsdPreviewSurface) use
+Displacement and Bump for their displacement output, so it displaces the surface like in Karma.
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
@@ -56,8 +57,9 @@ The Settings tab is only on builders made with the shelf tool of this version. B
 with older versions have no Settings tab; create a new builder and move the nodes over if you need
 these settings.
 
-True displacement subdivides nothing by itself: Cycles displaces the vertices the mesh has, so give
-the mesh enough resolution (or subdivision, see [objects.md](objects.md#subdivision)).
+True displacement subdivides nothing by itself: Cycles displaces the vertices the mesh has. Turn
+on **Adaptive Subdivision** for the object (Render Geometry Settings LOP, Cycles tab) so Cycles
+dices the mesh finely enough, also for polygon meshes (see [objects.md](objects.md#subdivision)).
 
 ## The shader nodes
 

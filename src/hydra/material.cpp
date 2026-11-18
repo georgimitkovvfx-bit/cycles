@@ -794,8 +794,12 @@ static ShaderOutput *FindOutput(ShaderNode *node, const std::string &name)
 
 /* Settings like Blender's Material Properties > Settings, from "config:cycles:<socket>"
  * attributes of the material prim (Houdini's Cycles Material Builder authors them). Unset
- * settings get the Cycles defaults, which are Blender's. */
-static void ApplyMaterialSettings(Shader *shader, const HdMaterialNetworkSchema &network)
+ * settings get the Cycles defaults, which are Blender's, except that the displacement of
+ * non-Cycles networks (MaterialX, UsdPreviewSurface) displaces the surface as in Karma (with
+ * bump mapping for details finer than the dicing). */
+static void ApplyMaterialSettings(Shader *shader,
+                                  const HdMaterialNetworkSchema &network,
+                                  const bool cyclesNetwork)
 {
   static const char *const settings[] = {"pass_id",
                                          "displacement_method",
@@ -813,6 +817,9 @@ static void ApplyMaterialSettings(Shader *shader, const HdMaterialNetworkSchema 
                                                 nullptr;
     if (value) {
       SetNodeValue(shader, *socket, value->GetValue(0.0f));
+    }
+    else if (!cyclesNetwork && socket->name == "displacement_method") {
+      shader->set_displacement_method(DISPLACE_BOTH);
     }
     else {
       shader->set_default_value(*socket);
@@ -1032,7 +1039,8 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     const AttributeRequestSet attributes = _shader->attributes;
     /* Before the graph: set_graph() hashes the displacement for the displacement method. */
-    ApplyMaterialSettings(_shader, network);
+    ApplyMaterialSettings(
+        _shader, network, bool(matSchema.GetMaterialNetwork(CyclesMaterialTokens->cycles)));
     if (worldRotation) {
       static_cast<HdCyclesSession *>(renderParam)->SetWorldSource(_shader, *graph);
     }

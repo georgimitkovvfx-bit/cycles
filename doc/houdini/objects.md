@@ -101,7 +101,7 @@ The **Adaptive Subdivision** toggle in the panel header turns the panel on. See
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
-| Adaptive Subdivision | `primvars:cycles:object:use_adaptive_subdivision` | Off | Subdivide subdivision surfaces to the dicing rate of the render settings in pixels of the render camera, up to Max Subdivisions, also without a refinement level. Off, they are subdivided up to their refinement level |
+| Adaptive Subdivision | `primvars:cycles:object:use_adaptive_subdivision` | Off | Subdivide subdivision surfaces to the dicing rate of the render settings in pixels of the render camera, up to Max Subdivisions, also without a refinement level. Polygon meshes (`subdivisionScheme` `none`) are diced flat (bilinear). Off, they are subdivided up to their refinement level |
 | Dicing Scale | `primvars:cycles:object:dicing_rate` | 1 | Multiplier for the dicing rate of the render settings |
 
 ### Volume
@@ -200,7 +200,10 @@ render through).
   mesh is always subdivided, up to **Max Subdivisions** levels, with micropolygons of the
   **Dicing Rate** of the render settings (Render or Viewport) times the object's **Dicing Scale**.
   Geometry outside the camera view is diced more coarsely by **Offscreen Scale**. This is Blender's
-  adaptive subdivision: detail where the camera sees it, for displacement-heavy assets.
+  adaptive subdivision: detail where the camera sees it, for displacement-heavy assets. Polygon
+  meshes (`subdivisionScheme` `none`, the SOP Import default unless **Import Polygons as
+  Subdivision** is on) are diced too, with flat (bilinear) subdivision that keeps their shape,
+  like Blender's Simple subdivision.
 
 The dicing settings are in the render settings' **Subdivision** panel (see
 [render-settings.md](render-settings.md#subdivision)). Changing them dices the meshes again without

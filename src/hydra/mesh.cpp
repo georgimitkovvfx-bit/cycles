@@ -500,6 +500,11 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
       0.0f, VtValue::Cast<float>(GetObjectSetting(primvars, "dicing_rate")).GetWithDefault(1.0f));
   if (adaptive) {
     refineLevel = std::max(refineLevel, 1);
+    /* Houdini's SOP Import authors polygon meshes as "none": dice them flat (Blender's Simple
+     * subdivision), so displacement has vertices to move, like Karma dicing polygons. */
+    if (scheme == PxOsdOpenSubdivTokens->none) {
+      scheme = PxOsdOpenSubdivTokens->bilinear;
+    }
   }
 
   /* Use refinement only for supported subdivision meshes, so triangle indices
