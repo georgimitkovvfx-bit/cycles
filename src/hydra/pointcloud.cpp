@@ -7,6 +7,7 @@
 #include "hydra/geometry.inl"
 #include "hydra/util.h"
 #include "scene/pointcloud.h"
+#include "util/hash.h"
 #include "util/types_spherical_harmonics.h"
 
 #include <pxr/base/gf/quatf.h>
@@ -124,6 +125,23 @@ void HdCyclesPoints::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
 
   if (dirtyBits & HdChangeTracker::DirtyPrimvar) {
     PopulatePrimvars(sceneDelegate);
+  }
+
+  if (dirtyBits & (HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyPrimvar)) {
+    PopulatePointRandom();
+  }
+}
+
+/* Point Info Random, like Blender: a hash of the point index. */
+void HdCyclesPoints::PopulatePointRandom()
+{
+  if (!_geom->need_attribute((Scene *)_geom->get_owner(), ATTR_STD_POINT_RANDOM)) {
+    _geom->attributes.remove(ATTR_STD_POINT_RANDOM);
+    return;
+  }
+  float *random = _geom->attributes.add(ATTR_STD_POINT_RANDOM)->data_for_write<float>();
+  for (size_t i = 0; i < _geom->num_points(); ++i) {
+    random[i] = hash_uint2_to_float(uint(i), 0);
   }
 }
 

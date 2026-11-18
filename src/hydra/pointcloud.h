@@ -32,6 +32,7 @@ class HdCyclesPoints final : public HdCyclesGeometry<PXR_NS::HdPoints, CCL_NS::P
   void PopulateWidths(PXR_NS::HdSceneDelegate *sceneDelegate);
 
   void PopulatePrimvars(PXR_NS::HdSceneDelegate *sceneDelegate);
+  void PopulatePointRandom();
   void PopulateGaussianSplats(PXR_NS::HdSceneDelegate *sceneDelegate);
 
   /* Splats without a material show their radiance (Cycles' default splat shader). */
