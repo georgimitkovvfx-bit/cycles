@@ -590,6 +590,7 @@ TYPES = {
     "float": ("float", "float", "float"),
     "menu": ("token", "string", "string"),
     "string": ("string", "string", "string"),
+    "file": ("string", "file", "string"),
 }
 
 
@@ -769,6 +770,7 @@ CAMERA_SETTINGS = {
                                            "enum_values": {"none": "None",
                                                            "top": "Top-Bottom"}},
     "primvars:cycles:camera:rolling_shutter_duration": {"type": "float", "default": 0.1},
+    "primvars:cycles:camera:custom_script": {"type": "file", "default": ""},
 }
 
 
@@ -783,6 +785,11 @@ CAMERA_LAYOUT = [
           "Render a panoramic image with this projection instead of the camera's perspective "
           "or orthographic projection. Fisheye lens types use the camera's aperture as the "
           "sensor size."),
+        S("primvars:cycles:camera:custom_script", "Custom Lens Script",
+          "OSL camera shader (.osl or .oso file) that generates the camera rays, like Blender's "
+          "Custom camera type. It replaces the projection and the panorama type. Its parameters "
+          "come from primvars:cycles:camera:script:<parameter> primvars on the camera. CPU and "
+          "OptiX only."),
         S("primvars:cycles:camera:fisheye_fov", "Field of View",
           "Field of view of the fisheye lens, in degrees.",
           range=(10, 360, True, True),

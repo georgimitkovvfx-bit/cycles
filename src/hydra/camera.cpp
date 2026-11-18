@@ -7,12 +7,16 @@
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "scene/camera.h"
+#include "scene/scene.h"
+#include "session/session.h"
 
 #include <pxr/base/gf/frustum.h>
+#include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/cameraSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/xformSchema.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/usdGeom/tokens.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -80,6 +84,76 @@ std::string GetCameraStringSetting(const HdContainerDataSourceHandle &primDs,
   }
   return value.IsHolding<std::string>() ? value.UncheckedGet<std::string>() : fallback;
 }
+
+/* Parameters of a custom lens script from primvar values. */
+class ScriptParamQuery final : public OSLCameraParamQuery {
+ public:
+  explicit ScriptParamQuery(const std::map<std::string, VtValue> &params) : _params(params) {}
+
+  bool get_float(ustring name, vector<float> &data) override
+  {
+    const VtValue value = Find(name);
+    if (value.IsHolding<double>()) {
+      data = {float(value.UncheckedGet<double>())};
+      return true;
+    }
+    const VtValue floats = PrimvarAsFloats(value);
+    if (floats.IsEmpty()) {
+      return false;
+    }
+    const float *begin = static_cast<const float *>(HdGetValueData(floats));
+    const HdTupleType tuple = HdGetValueTupleType(floats);
+    data.assign(begin, begin + tuple.count * HdGetComponentCount(tuple.type));
+    return true;
+  }
+
+  bool get_int(ustring name, vector<int> &data) override
+  {
+    const VtValue value = Find(name);
+    if (value.IsHolding<int>()) {
+      data = {value.UncheckedGet<int>()};
+    }
+    else if (value.IsHolding<bool>()) {
+      data = {int(value.UncheckedGet<bool>())};
+    }
+    else if (value.IsHolding<VtIntArray>()) {
+      data.assign(value.UncheckedGet<VtIntArray>().begin(),
+                  value.UncheckedGet<VtIntArray>().end());
+    }
+    else {
+      return false;
+    }
+    return true;
+  }
+
+  bool get_string(ustring name, std::string &data) override
+  {
+    const VtValue value = Find(name);
+    if (value.IsHolding<std::string>()) {
+      data = value.UncheckedGet<std::string>();
+    }
+    else if (value.IsHolding<TfToken>()) {
+      data = value.UncheckedGet<TfToken>().GetString();
+    }
+    else if (value.IsHolding<SdfAssetPath>()) {
+      const SdfAssetPath &path = value.UncheckedGet<SdfAssetPath>();
+      data = path.GetResolvedPath().empty() ? path.GetAssetPath() : path.GetResolvedPath();
+    }
+    else {
+      return false;
+    }
+    return true;
+  }
+
+ private:
+  VtValue Find(const ustring &name) const
+  {
+    const auto it = _params.find(name.string());
+    return it == _params.end() ? VtValue() : it->second;
+  }
+
+  const std::map<std::string, VtValue> &_params;
+};
 
 }  // namespace
 
@@ -263,6 +337,24 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
         primDs, "central_cylindrical_range_v_min", defaults.centralCylindricalRangeVMin);
     settings.centralCylindricalRangeVMax = GetCameraSetting(
         primDs, "central_cylindrical_range_v_max", defaults.centralCylindricalRangeVMax);
+    settings.customScript = GetCameraStringSetting(primDs, "custom_script", "");
+    if (const VtValue script = GetCameraSetting(primDs, "custom_script");
+        script.IsHolding<SdfAssetPath>())
+    {
+      const SdfAssetPath &path = script.UncheckedGet<SdfAssetPath>();
+      settings.customScript = path.GetResolvedPath().empty() ? path.GetAssetPath() :
+                                                               path.GetResolvedPath();
+    }
+    settings.scriptParams.clear();
+    const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
+    static const std::string scriptPrefix = "cycles:camera:script:";
+    for (const TfToken &name : primvars.GetPrimvarNames()) {
+      if (TfStringStartsWith(name.GetString(), scriptPrefix)) {
+        if (auto ds = primvars.GetPrimvar(name).GetPrimvarValue()) {
+          settings.scriptParams[name.GetString().substr(scriptPrefix.size())] = ds->GetValue(0.0f);
+        }
+      }
+    }
   }
 
   *dirtyBits = DirtyBits::Clean;
@@ -278,7 +370,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
                                          CameraUtilConformWindowPolicy windowPolicy,
                                          float aspectRatio) const
 {
-  const bool panorama = ApplyCyclesSettings(_settings, cam);
+  const bool panorama = ApplyCyclesSettings(
+      _settings, cam, static_cast<HdCyclesSession *>(renderParam)->session->scene.get());
   ApplyCameraSettings(renderParam, _data, windowPolicy, cam, aspectRatio, panorama);
 
   array<Transform> motion(_transformSamples.count);
@@ -381,7 +474,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   GfCamera data;
   data.SetFromViewAndProjectionMatrix(worldToViewMatrix, projectionMatrix);
 
-  ApplyCyclesSettings(CyclesSettings(), cam);
+  ApplyCyclesSettings(
+      CyclesSettings(), cam, static_cast<HdCyclesSession *>(renderParam)->session->scene.get());
   ApplyCameraSettings(renderParam, data, CameraUtilFit, cam, aspectRatio);
 
   // No camera prim: no motion blur, not the transforms and shutter of the camera rendered before
@@ -391,7 +485,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   cam->set_motion_position(MOTION_POSITION_CENTER);
 }
 
-bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera *cam)
+bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera *cam, Scene *scene)
 {
   // Bokeh shape of the depth of field
   cam->set_blades(uint(settings.blades));
@@ -402,6 +496,22 @@ bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera 
                                     Camera::ROLLING_SHUTTER_TOP :
                                     Camera::ROLLING_SHUTTER_NONE);
   cam->set_rolling_shutter_duration(std::clamp(settings.rollingShutterDuration, 0.0f, 1.0f));
+
+  /* A custom lens (OSL camera shader, CPU and OptiX) replaces the projection, like Blender's
+   * Custom camera type. Only the render camera, the dicing camera keeps the projection. */
+  if (scene && cam == scene->camera) {
+    if (!settings.customScript.empty()) {
+      ScriptParamQuery params(settings.scriptParams);
+      cam->set_osl_camera(scene, params, settings.customScript);
+      if (!cam->script_name.empty()) {
+        cam->set_camera_type(CAMERA_CUSTOM);
+        return true;
+      }
+    }
+    else if (!cam->script_name.empty()) {
+      cam->clear_osl_camera(scene);
+    }
+  }
 
   /* Panoramic cameras replace the USD projection. Their view plane is the whole image, the
    * sensor (aperture) is used by the fisheye lens types. */

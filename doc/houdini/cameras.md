@@ -35,6 +35,13 @@ render.
 | K0 .. K4 | `cycles:camera:fisheye_polynomial_k0` .. `k4` | Blender's | Fisheye Lens Polynomial: coefficients of the lens polynomial (from a lens calibration) |
 | Min, Max Longitude | `cycles:camera:central_cylindrical_range_u_min`, `_u_max` | -180, 180 | Central Cylindrical: horizontal range |
 | Min, Max Height | `cycles:camera:central_cylindrical_range_v_min`, `_v_max` | -1, 1 | Central Cylindrical: vertical range |
+| Custom Lens Script | `cycles:camera:custom_script` | (empty) | OSL camera shader (`.osl` or `.oso` file) that generates the camera rays, like Blender's Custom camera type. It replaces the projection and the panorama type. CPU and OptiX only |
+
+**Custom lenses:** the script's parameters come from `primvars:cycles:camera:script:<parameter>`
+primvars on the camera (add them with an Edit Properties or Attribute Wrangle LOP, for example a
+float `primvars:cycles:camera:script:distortion`); unset parameters use the script's defaults.
+Parameters of type float, int (or bool), float vectors and colors, and string work. Editing them
+updates a running render. See Blender's manual for writing OSL camera shaders.
 
 Panoramic cameras look down the camera's -Z axis like any USD camera; an equirectangular camera
 sees all around it (render it at a 2:1 resolution). The fisheye types use the camera's aperture as

@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include <map>
+#include <string>
+
 #include "hydra/config.h"
 
 #include <pxr/base/gf/camera.h>
@@ -81,9 +84,15 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
     float centralCylindricalRangeUMax = 180.0f;
     float centralCylindricalRangeVMin = -1.0f;
     float centralCylindricalRangeVMax = 1.0f;
+    /* Custom (OSL) lens: script file, and its parameters from the
+     * "primvars:cycles:camera:script:<parameter>" primvars. */
+    std::string customScript;
+    std::map<std::string, PXR_NS::VtValue> scriptParams;
   };
-  /* Returns whether the camera is panoramic. */
-  static bool ApplyCyclesSettings(const CyclesSettings &settings, CCL_NS::Camera *cam);
+  /* Returns whether the camera is panoramic (or custom). The scene is for custom lenses. */
+  static bool ApplyCyclesSettings(const CyclesSettings &settings,
+                                  CCL_NS::Camera *cam,
+                                  CCL_NS::Scene *scene);
 
   CyclesSettings _settings;
   float _exposureScale = 1.0f;
