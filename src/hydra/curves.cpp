@@ -7,6 +7,7 @@
 #include "hydra/geometry.inl"
 #include "hydra/util.h"
 #include "scene/hair.h"
+#include "util/hash.h"
 #include "util/types_float3.h"
 
 #include <pxr/imaging/hd/basisCurvesSchema.h>
@@ -140,7 +141,65 @@ void HdCyclesCurves::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
     PopulatePrimvars(sceneDelegate);
   }
 
+  if (dirtyBits & (HdChangeTracker::DirtyTopology | HdChangeTracker::DirtyPoints |
+                   HdChangeTracker::DirtyPrimvar))
+  {
+    PopulateCurveAttributes();
+  }
+
   rebuild = (_geom->position_is_modified()) || (_geom->radius_is_modified());
+}
+
+/* Curves Info Intercept, Length and Random, like Blender: the key's length along the curve
+ * divided by the curve length, the length of the polyline through the keys, a hash of the curve
+ * index. */
+void HdCyclesCurves::PopulateCurveAttributes()
+{
+  Scene *const scene = (Scene *)_geom->get_owner();
+  const AttributeStandard standards[] = {
+      ATTR_STD_CURVE_INTERCEPT, ATTR_STD_CURVE_LENGTH, ATTR_STD_CURVE_RANDOM};
+  float *data[3] = {};
+  for (int i = 0; i < 3; ++i) {
+    if (_geom->need_attribute(scene, standards[i])) {
+      data[i] = _geom->attributes.add(standards[i])->data_for_write<float>();
+    }
+    else {
+      _geom->attributes.remove(standards[i]);
+    }
+  }
+  float *intercept = data[0];
+  float *length = data[1];
+  float *random = data[2];
+
+  const Attribute *attr_P = _geom->attributes.find(ATTR_STD_POSITION);
+  const packed_float3 *keys = attr_P ? attr_P->data<packed_float3>() : nullptr;
+  for (size_t curve = 0; curve < _geom->num_curves(); ++curve) {
+    if (random) {
+      random[curve] = hash_uint2_to_float(uint(curve), 0);
+    }
+    if (!(intercept || length) || !keys) {
+      continue;
+    }
+    const Hair::Curve c = _geom->get_curve(curve);
+    float total = 0.0f;
+    for (int k = 0; k < c.num_keys; ++k) {
+      const int key = c.first_key + k;
+      if (k > 0) {
+        total += len(make_float3(keys[key]) - make_float3(keys[key - 1]));
+      }
+      if (intercept) {
+        intercept[key] = total;
+      }
+    }
+    if (intercept && total > 0.0f) {
+      for (int k = 1; k < c.num_keys; ++k) {
+        intercept[c.first_key + k] /= total;
+      }
+    }
+    if (length) {
+      length[curve] = total;
+    }
+  }
 }
 
 void HdCyclesCurves::PopulatePoints(HdSceneDelegate *sceneDelegate)

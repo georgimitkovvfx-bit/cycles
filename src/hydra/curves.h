@@ -53,6 +53,7 @@ class HdCyclesCurves final : public HdCyclesGeometry<PXR_NS::HdBasisCurves, CCL_
   void PopulateWidths(PXR_NS::HdSceneDelegate *sceneDelegate);
 
   void PopulatePrimvars(PXR_NS::HdSceneDelegate *sceneDelegate);
+  void PopulateCurveAttributes();
 
   void PopulateTopology(PXR_NS::HdSceneDelegate *sceneDelegate);
 
