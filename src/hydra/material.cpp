@@ -1545,6 +1545,9 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
 
   if (!keep_nodes) {
     static_cast<HdCyclesSession *>(renderParam)->DeleteNode(_shader);
+    /* Cycles keeps deleted shaders: without its name, world material lookups (by path) do not
+     * find it, also not instead of a new material at the same path. */
+    _shader->name = ustring();
   }
   _shader = nullptr;
 }
