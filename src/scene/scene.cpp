@@ -457,6 +457,10 @@ bool Scene::need_global_attribute(AttributeStandard std) const
   if (std == ATTR_STD_UV) {
     return Pass::contains(passes, PASS_UV);
   }
+  /* Tangent space normal bakes of the Hydra delegate, with tangents like Blender's. */
+  if (std == ATTR_STD_UV_TANGENT || std == ATTR_STD_UV_TANGENT_SIGN) {
+    return bake_manager->get_baking() && Pass::contains(passes, PASS_UV);
+  }
   if (std == ATTR_STD_VOLUME_VELOCITY || std == ATTR_STD_VOLUME_VELOCITY_X ||
       std == ATTR_STD_VOLUME_VELOCITY_Y || std == ATTR_STD_VOLUME_VELOCITY_Z)
   {
