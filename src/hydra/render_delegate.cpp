@@ -870,6 +870,10 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->bakeObject) {
     _renderParam->SetBakeObject(GetStringSetting(value, ""));
   }
+  else if (key == HdCyclesRenderSettingsTokens->bakeNormalSpace) {
+    const std::string space = GetStringSetting(value, "tangent");
+    _renderParam->bakeNormalSpace = space == "world" ? 0 : space == "object" ? 1 : 2;
+  }
   else if (key == HdCyclesRenderSettingsTokens->bakeMargin) {
     _renderParam->bakeMargin = std::max(0, VtValue::Cast<int>(value).GetWithDefault(16));
   }

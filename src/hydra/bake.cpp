@@ -115,6 +115,77 @@ void ExtendBakeMargin(float *pixels,
   }
 }
 
+void ConvertBakeNormals(Scene *scene,
+                        const std::string &name,
+                        const OutputDriver::Tile &tile,
+                        float *pixels,
+                        const int channels,
+                        const BakeNormalSpace space)
+{
+  const Object *const object = FindBakeObject(scene, name);
+  if (space == BakeNormalSpace::World || !object || channels < 3) {
+    return;
+  }
+  const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
+  const Attribute *const attrP = mesh->attributes.find(ATTR_STD_POSITION);
+  const Attribute *const attrN = mesh->attributes.find(ATTR_STD_VERTEX_NORMAL);
+  const Attribute *const attrUV = mesh->attributes.find(ATTR_STD_UV);
+  const size_t num = size_t(tile.size.x) * tile.size.y;
+  std::vector<float> primitive(num * 3);
+  if (!attrP || !attrUV || !tile.get_pass_pixels(kBakePrimitivePass, 3, primitive.data())) {
+    return;
+  }
+  const packed_float3 *const P = attrP->data<packed_float3>();
+  const packed_normal *const N = attrN ? attrN->data<packed_normal>() : nullptr;
+  const float2 *const uvs = attrUV->data<float2>();
+  const array<int> &triangles = mesh->get_triangles();
+  const bool cornerUV = attrUV->element == ATTR_ELEMENT_CORNER;
+  /* Mesh space: world space when Cycles applied the object transform to the mesh. */
+  const Transform &tfm = object->get_tfm();
+
+  for (size_t i = 0; i < num; ++i) {
+    uint prim;
+    std::memcpy(&prim, &primitive[i * 3 + 2], sizeof(prim));
+    if (prim == ~0u || prim >= mesh->num_triangles()) {
+      continue;
+    }
+    const float w0 = primitive[i * 3 + 0], w1 = primitive[i * 3 + 1], w2 = 1.0f - w0 - w1;
+    const int v[3] = {triangles[prim * 3 + 0], triangles[prim * 3 + 1], triangles[prim * 3 + 2]};
+    const float3 p0 = make_float3(P[v[0]]), p1 = make_float3(P[v[1]]), p2 = make_float3(P[v[2]]);
+    float3 n = make_float3(
+        pixels[i * channels + 0], pixels[i * channels + 1], pixels[i * channels + 2]);
+    /* World to mesh (and object) space: transposed object transform, for normals. */
+    if (!mesh->transform_applied || space == BakeNormalSpace::Object) {
+      n = transform_direction_transposed(&tfm, n);
+    }
+    n = safe_normalize(n);
+    float3 result = n;
+    if (space == BakeNormalSpace::Tangent) {
+      const float3 faceN = safe_normalize(cross(p1 - p0, p2 - p0));
+      const float3 ns = N ? safe_normalize(w0 * N[v[0]].decode() + w1 * N[v[1]].decode() +
+                                           w2 * N[v[2]].decode()) :
+                            faceN;
+      const float2 t0 = cornerUV ? uvs[prim * 3 + 0] : uvs[v[0]];
+      const float2 t1 = cornerUV ? uvs[prim * 3 + 1] : uvs[v[1]];
+      const float2 t2 = cornerUV ? uvs[prim * 3 + 2] : uvs[v[2]];
+      const float2 d1 = t1 - t0, d2 = t2 - t0;
+      const float det = d1.x * d2.y - d1.y * d2.x;
+      if (det == 0.0f) {
+        continue;
+      }
+      const float3 dp1 = p1 - p0, dp2 = p2 - p0;
+      const float3 tangent = (dp1 * d2.y - dp2 * d1.y) / det;
+      const float3 bitangent = (dp2 * d1.x - dp1 * d2.x) / det;
+      const float3 t = safe_normalize(tangent - ns * dot(ns, tangent));
+      const float3 b = cross(ns, t) * (dot(cross(ns, t), bitangent) < 0.0f ? -1.0f : 1.0f);
+      result = make_float3(dot(n, t), dot(n, b), dot(n, ns)) * 0.5f + make_float3(0.5f);
+    }
+    pixels[i * channels + 0] = result.x;
+    pixels[i * channels + 1] = result.y;
+    pixels[i * channels + 2] = result.z;
+  }
+}
+
 void SetBakeTarget(Scene *scene, const std::string &name)
 {
   Object *const target = FindBakeObject(scene, name);

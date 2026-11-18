@@ -188,6 +188,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::atomic<bool> bakeChanged = false;
   /* Bake margin in pixels (Blender's Extend margin). */
   std::atomic<int> bakeMargin = 16;
+  /* Space of baked normals (BakeNormalSpace: 0 world, 1 object, 2 tangent). */
+  std::atomic<int> bakeNormalSpace = 2;
 
   void SetDicing(const DicingSettings &dicing)
   {

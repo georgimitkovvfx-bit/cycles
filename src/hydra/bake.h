@@ -37,6 +37,17 @@ void ExtendBakeMargin(float *pixels,
                       std::vector<unsigned char> coverage,
                       int margin);
 
+/* Baked normals (Cycles' normal pass is world space) in object space or tangent space (a normal
+ * map: tangent, bitangent and normal mapped from -1..1 to 0..1, the tangent along the UV map's U
+ * direction, the bitangent along V). Pixels outside the UV islands are left as they are. */
+enum class BakeNormalSpace { World, Object, Tangent };
+void ConvertBakeNormals(CCL_NS::Scene *scene,
+                        const std::string &object,
+                        const CCL_NS::OutputDriver::Tile &tile,
+                        float *pixels,
+                        int channels,
+                        BakeNormalSpace space);
+
 /* Makes the first mesh object of the prim the bake target (none for an empty name). */
 void SetBakeTarget(CCL_NS::Scene *scene, const std::string &object);
 

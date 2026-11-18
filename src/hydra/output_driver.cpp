@@ -8,6 +8,8 @@
 #include "hydra/render_buffer.h"
 #include "hydra/session.h"
 
+#include "scene/pass.h"
+#include "scene/scene.h"
 #include "session/session.h"
 #include "util/time.h"
 
@@ -119,6 +121,26 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
                                                    _renderParam->GetBakeObject().empty()) ?
                                                       std::vector<unsigned char>() :
                                                       BakeCoverage(tile);
+  /* Baked normals in the Normal Space setting, before the margin. */
+  const std::string bakeObject = _renderParam->GetBakeObject();
+  const auto bakeNormals = [&](const TfToken &aovName, float *data, const size_t channels) {
+    if (bakeObject.empty()) {
+      return;
+    }
+    Scene *const scene = _renderParam->session->scene.get();
+    const string passName = _renderParam->GetPassName(aovName);
+    for (const Pass *pass : scene->passes) {
+      if (pass->get_type() == PASS_NORMAL && pass->get_name() == passName) {
+        ConvertBakeNormals(scene,
+                           bakeObject,
+                           tile,
+                           data,
+                           int(channels),
+                           BakeNormalSpace(int(_renderParam->bakeNormalSpace)));
+        return;
+      }
+    }
+  };
   const auto bakeMargin = [&](float *data, const size_t channels) {
     if (!bakeCoverage.empty()) {
       ExtendBakeMargin(
@@ -149,6 +171,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         TF_VERIFY(
             tile.get_pass_pixels(_renderParam->GetPassName(aovBinding.aovName), channels, data));
         convert_units(aovBinding.aovName, data, tile.size.x * tile.size.y, channels);
+        bakeNormals(aovBinding.aovName, data, channels);
         bakeMargin(data, channels);
         renderBuffer->Unmap();
       }
@@ -161,6 +184,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
           // Integer buffers hold IDs (Hydra's primId/instanceId/elementId, Karma's primid)
           const bool isId = format == HdFormatInt32;
           if (!isId) {
+            bakeNormals(aovBinding.aovName, pixels.data(), channels);
             bakeMargin(pixels.data(), channels);
           }
           renderBuffer->Map();

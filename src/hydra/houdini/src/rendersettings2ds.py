@@ -90,6 +90,9 @@ SESSION_SETTINGS = {
     "cycles:dicing_camera": {"type": "string", "default": ""},
     "cycles:bake_object": {"type": "string", "default": ""},
     "cycles:bake_margin": {"type": "int", "default": 16},
+    "cycles:bake_normal_space": {"type": "menu", "default": "tangent",
+                                 "enum_values": {"tangent": "Tangent", "object": "Object",
+                                                 "world": "World"}},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -590,6 +593,10 @@ LAYOUT = [
           "UV space, with the render vars (beauty, diffuse color, normal, ...) as the baked "
           "maps. The resolution is the render resolution. Empty renders the camera view.",
           tags=PRIM_PATH_TAGS),
+        S("cycles:bake_normal_space", "Normal Space",
+          "Space of baked Normal render vars: Tangent for normal maps (tangent along the UV "
+          "map's U, bitangent along V, mapped to 0..1 like Blender's), Object, or World "
+          "(Cycles' normal pass)."),
         S("cycles:bake_margin", "Margin",
           "Extends the baked result as a post process filter, in pixels (Blender's Extend "
           "margin), so seams of the UV islands do not show.",
