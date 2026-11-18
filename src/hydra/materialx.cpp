@@ -1091,6 +1091,40 @@ class Translator {
       const Val alpha = Math("multiply_add", Component(bg, 3), invAlpha, fgAlpha);
       return Mix(kind, input("mix"), bg, WithAlpha(rgb, alpha));
     }
+    /* MaterialX's merge nodes on premultiplied color4, f and b the fg and bg alphas. */
+    if (category == "in" || category == "out" || category == "mask" || category == "matte" ||
+        category == "disjointover")
+    {
+      const Val fg = input("fg"), bg = input("bg");
+      const Val f = Component(fg, 3), b = Component(bg, 3);
+      Val result;
+      if (category == "in" || category == "out") {
+        /* fg * b, fg * (1 - b) */
+        const Val k = category == "in" ? b : Math("subtract", Const(1.0f), b);
+        result = WithAlpha(Scale(fg, k), Math("multiply", f, k));
+      }
+      else if (category == "mask") {
+        /* bg * f */
+        result = WithAlpha(Scale(bg, f), Math("multiply", b, f));
+      }
+      else if (category == "matte") {
+        /* fg * f + bg * (1 - f), alpha f + b (1 - f) */
+        const Val invF = Math("subtract", Const(1.0f), f);
+        result = WithAlpha(VMath("add", Scale(fg, f), Scale(bg, invF)),
+                           Math("multiply_add", b, invF, f));
+      }
+      else {
+        /* fg + bg where f + b <= 1, else fg + bg (1 - f) / b; alpha min(f + b, 1) */
+        const Val sum = Math("add", f, b);
+        const Val over = Math("greater_than", sum, Const(1.0f));
+        const Val k = Math("divide", Math("subtract", Const(1.0f), f), b);
+        const Val bgScale = Math(
+            "multiply_add", over, Math("subtract", k, Const(1.0f)), Const(1.0f));
+        result = WithAlpha(VMath("add", fg, Scale(bg, bgScale)),
+                           Math("minimum", sum, Const(1.0f)));
+      }
+      return Mix(kind, input("mix"), bg, result);
+    }
     if (category == "premult" || category == "unpremult") {
       const Val in = input("in");
       const Val alpha = Component(in, 3);

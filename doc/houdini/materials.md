@@ -198,7 +198,8 @@ it into a Cycles shader graph.
 - About 100 nodes of the MaterialX standard and PBR libraries: images (`image`, with UDIM file
   names), math (add, multiply, mix, clamp, power, dot, cross product, normalize, transforms,
   comparisons, ...), noise (`noise2d/3d`, `fractal2d/3d`, `cellnoise2d/3d`, `worleynoise2d/3d`),
-  color (luminance, HSV conversion, premultiply, blackbody), geometry (`texcoord`,
+  color (luminance, HSV conversion, premultiply, blackbody), compositing (blend modes, `over`,
+  `in`, `out`, `mask`, `matte`, `disjointover`), geometry (`texcoord`,
   `geompropvalue`, `geomcolor`, position, normal, tangent, bitangent, `time`), normal maps and
   height to normal, and closures (`dielectric_bsdf`, `conductor_bsdf`, `generalized_schlick_bsdf`,
   `subsurface_bsdf`, `sheen_bsdf`, `burley_diffuse_bsdf`, `translucent_bsdf`, `uniform_edf`,
@@ -214,9 +215,8 @@ it into a Cycles shader graph.
   than Karma's.
 - The OpenPBR coat is approximated.
 - BSDF layering (`layer`) is approximated by adding the layers.
-- Matrix nodes, hex tiling (`hextiledimage`, rendered as a plain image), some compositing nodes
-  (`mask`, `matte`, `in`, `out`, `disjointover`) and MaterialX volumes (`volumematerial`) are not
-  supported. Unsupported nodes output zero and print a warning.
+- Matrix nodes, hex tiling (`hextiledimage`, rendered as a plain image) and MaterialX volumes
+  (`volumematerial`) are not supported. Unsupported nodes output zero and print a warning.
 - Editing any parameter of a MaterialX material rebuilds the whole Cycles shader.
 
 To see what the delegate receives, set the environment variable `HD_CYCLES_MTLX_DEBUG=1`; each
