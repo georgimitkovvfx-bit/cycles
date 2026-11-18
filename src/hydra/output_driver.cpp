@@ -69,7 +69,22 @@ void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
 
 bool HdCyclesOutputDriver::read_render_tile(const Tile &tile)
 {
-  return FillBakeTile(_renderParam->session->scene.get(), _renderParam->GetBakeObject(), tile);
+  /* Cycles renders without the scene lock, which Hydra holds while it resets the session (and
+   * so waits for this render to stop): copy the bake target when the lock is free, otherwise
+   * use the last copy of it. */
+  Scene *const scene = _renderParam->session->scene.get();
+  const std::string bakeObject = _renderParam->GetBakeObject();
+  std::unique_lock<thread_mutex> sceneLock(scene->mutex, std::try_to_lock);
+  if (sceneLock.owns_lock()) {
+    BakeMesh mesh = SnapshotBakeMesh(scene, bakeObject);
+    sceneLock.unlock();
+    const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
+    _bakeMesh = std::move(mesh);
+    _bakeMeshName = bakeObject;
+  }
+  const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
+  static const BakeMesh noMesh;
+  return FillBakeTile(_bakeMeshName == bakeObject ? _bakeMesh : noMesh, tile);
 }
 
 bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)
@@ -131,12 +146,14 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
     const string passName = _renderParam->GetPassName(aovName);
     for (const Pass *pass : scene->passes) {
       if (pass->get_type() == PASS_NORMAL && pass->get_name() == passName) {
-        ConvertBakeNormals(scene,
-                           bakeObject,
-                           tile,
-                           data,
-                           int(channels),
-                           BakeNormalSpace(int(_renderParam->bakeNormalSpace)));
+        const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
+        if (_bakeMeshName == bakeObject) {
+          ConvertBakeNormals(_bakeMesh,
+                             tile,
+                             data,
+                             int(channels),
+                             BakeNormalSpace(int(_renderParam->bakeNormalSpace)));
+        }
         return;
       }
     }

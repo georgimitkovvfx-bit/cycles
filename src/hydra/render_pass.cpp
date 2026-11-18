@@ -117,12 +117,13 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
     // Update requested AOV bindings
     const HdRenderPassAovBindingVector &aovBindings = renderPassState->GetAovBindings();
+    const bool bakeChanged = _renderParam->bakeChanged.exchange(false);
     if (_renderParam->GetAovBindings() != aovBindings ||
         // Need to resync passes when denoising is enabled or disabled to update the pass mode
         (settingsVersion != _lastSettingsVersion &&
          scene->integrator->use_denoise_is_modified()) ||
         // and for the bake input passes
-        _renderParam->bakeChanged.exchange(false))
+        bakeChanged)
     {
       if (_renderParam->SyncAovBindings(aovBindings)) {
         // Every shader writes the primvar AOVs: rebuild the shaders, then export the primvars

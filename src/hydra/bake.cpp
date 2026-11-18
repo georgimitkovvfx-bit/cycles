@@ -5,6 +5,7 @@
 #include "hydra/bake.h"
 #include "scene/attribute.h"
 #include "scene/bake.h"
+#include "scene/geometry.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -42,6 +43,63 @@ float AsFloat(const uint bits)
 }
 
 }  // namespace
+
+BakeMesh SnapshotBakeMesh(Scene *scene, const std::string &name)
+{
+  BakeMesh bake;
+  Object *const object = FindBakeObject(scene, name);
+  if (!object) {
+    return bake;
+  }
+  const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
+  const Attribute *const attrP = mesh->attributes.find(ATTR_STD_POSITION);
+  const Attribute *const attrUV = mesh->attributes.find(ATTR_STD_UV);
+  const size_t num = mesh->num_triangles();
+  if (!attrP || !attrUV || num == 0 ||
+      (attrUV->element != ATTR_ELEMENT_CORNER && attrUV->element != ATTR_ELEMENT_VERTEX))
+  {
+    return bake;
+  }
+  const Attribute *const attrN = mesh->attributes.find(ATTR_STD_VERTEX_NORMAL);
+  /* MikkTSpace tangents, which Cycles computes while baking (Scene::need_global_attribute). */
+  const Attribute *const attrT = mesh->attributes.find(ATTR_STD_UV_TANGENT);
+  const Attribute *const attrS = mesh->attributes.find(ATTR_STD_UV_TANGENT_SIGN);
+  const bool tangents = attrT && attrS && attrT->element == ATTR_ELEMENT_CORNER &&
+                        attrS->element == ATTR_ELEMENT_CORNER;
+
+  const array<int> &triangles = mesh->get_triangles();
+  const packed_float3 *const P = attrP->data<packed_float3>();
+  const packed_normal *const N = attrN ? attrN->data<packed_normal>() : nullptr;
+  const float2 *const uvs = attrUV->data<float2>();
+  const bool cornerUV = attrUV->element == ATTR_ELEMENT_CORNER;
+
+  bake.object = object;
+  bake.numTriangles = num;
+  bake.tfm = object->get_tfm();
+  bake.transformApplied = mesh->transform_applied;
+  bake.uv.resize(num * 3);
+  bake.P.resize(num * 3);
+  if (N) {
+    bake.N.resize(num * 3);
+  }
+  if (tangents) {
+    bake.tangent.resize(num * 3);
+    bake.sign.resize(num * 3);
+  }
+  for (size_t c = 0; c < num * 3; ++c) {
+    const int v = triangles[c];
+    bake.uv[c] = cornerUV ? uvs[c] : uvs[v];
+    bake.P[c] = make_float3(P[v]);
+    if (N) {
+      bake.N[c] = N[v].decode();
+    }
+    if (tangents) {
+      bake.tangent[c] = make_float3(attrT->data<packed_float3>()[c]);
+      bake.sign[c] = attrS->data<float>()[c];
+    }
+  }
+  return bake;
+}
 
 std::vector<unsigned char> BakeCoverage(const OutputDriver::Tile &tile)
 {
@@ -107,88 +165,74 @@ void ExtendBakeMargin(float *pixels,
     if (ring.empty()) {
       break;
     }
-    /* Filled this step: neighbors of the next ring (2 while the step runs, so a ring only reads
-     * the pixels of the steps before it). */
+    /* Marked after the step, so each ring only reads the pixels of the steps before it. */
     for (const size_t pixel : ring) {
       coverage[pixel] = 1;
     }
   }
 }
 
-void ConvertBakeNormals(Scene *scene,
-                        const std::string &name,
+void ConvertBakeNormals(const BakeMesh &mesh,
                         const OutputDriver::Tile &tile,
                         float *pixels,
                         const int channels,
                         const BakeNormalSpace space)
 {
-  const Object *const object = FindBakeObject(scene, name);
-  if (space == BakeNormalSpace::World || !object || channels < 3) {
+  if (space == BakeNormalSpace::World || !mesh.valid() || channels < 3) {
     return;
   }
-  const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
-  const Attribute *const attrP = mesh->attributes.find(ATTR_STD_POSITION);
-  const Attribute *const attrN = mesh->attributes.find(ATTR_STD_VERTEX_NORMAL);
-  const Attribute *const attrUV = mesh->attributes.find(ATTR_STD_UV);
   const size_t num = size_t(tile.size.x) * tile.size.y;
   std::vector<float> primitive(num * 3);
-  if (!attrP || !attrUV || !tile.get_pass_pixels(kBakePrimitivePass, 3, primitive.data())) {
+  if (!tile.get_pass_pixels(kBakePrimitivePass, 3, primitive.data())) {
     return;
   }
-  const packed_float3 *const P = attrP->data<packed_float3>();
-  const packed_normal *const N = attrN ? attrN->data<packed_normal>() : nullptr;
-  /* MikkTSpace tangents, which Cycles computes while baking (Scene::need_global_attribute). */
-  const Attribute *const attrT = mesh->attributes.find(ATTR_STD_UV_TANGENT);
-  const Attribute *const attrS = mesh->attributes.find(ATTR_STD_UV_TANGENT_SIGN);
-  const bool cornerTangents = attrT && attrS && attrT->element == ATTR_ELEMENT_CORNER &&
-                              attrS->element == ATTR_ELEMENT_CORNER;
-  const float2 *const uvs = attrUV->data<float2>();
-  const array<int> &triangles = mesh->get_triangles();
-  const bool cornerUV = attrUV->element == ATTR_ELEMENT_CORNER;
-  /* Mesh space: world space when Cycles applied the object transform to the mesh. */
-  const Transform &tfm = object->get_tfm();
 
   for (size_t i = 0; i < num; ++i) {
     uint prim;
     std::memcpy(&prim, &primitive[i * 3 + 2], sizeof(prim));
-    if (prim == ~0u || prim >= mesh->num_triangles()) {
+    if (prim == ~0u || prim >= mesh.numTriangles) {
       continue;
     }
-    const float w0 = primitive[i * 3 + 0], w1 = primitive[i * 3 + 1], w2 = 1.0f - w0 - w1;
-    const int v[3] = {triangles[prim * 3 + 0], triangles[prim * 3 + 1], triangles[prim * 3 + 2]};
-    const float3 p0 = make_float3(P[v[0]]), p1 = make_float3(P[v[1]]), p2 = make_float3(P[v[2]]);
+    const float w[3] = {primitive[i * 3 + 0],
+                        primitive[i * 3 + 1],
+                        1.0f - primitive[i * 3 + 0] - primitive[i * 3 + 1]};
+    const size_t c = size_t(prim) * 3;
     float3 n = make_float3(
         pixels[i * channels + 0], pixels[i * channels + 1], pixels[i * channels + 2]);
-    /* World to mesh (and object) space: transposed object transform, for normals. */
-    if (!mesh->transform_applied || space == BakeNormalSpace::Object) {
-      n = transform_direction_transposed(&tfm, n);
+    /* World to mesh (and object) space: transposed object transform, for normals. The mesh is
+     * in world space when Cycles applied the object transform to it. */
+    if (!mesh.transformApplied || space == BakeNormalSpace::Object) {
+      n = transform_direction_transposed(&mesh.tfm, n);
     }
     n = safe_normalize(n);
     float3 result = n;
     if (space == BakeNormalSpace::Tangent) {
-      const float3 faceN = safe_normalize(cross(p1 - p0, p2 - p0));
-      const float3 ns = N ? safe_normalize(w0 * N[v[0]].decode() + w1 * N[v[1]].decode() +
-                                           w2 * N[v[2]].decode()) :
-                            faceN;
-      const float2 t0 = cornerUV ? uvs[prim * 3 + 0] : uvs[v[0]];
-      const float2 t1 = cornerUV ? uvs[prim * 3 + 1] : uvs[v[1]];
-      const float2 t2 = cornerUV ? uvs[prim * 3 + 2] : uvs[v[2]];
-      const float2 d1 = t1 - t0, d2 = t2 - t0;
-      const float det = d1.x * d2.y - d1.y * d2.x;
-      if (det == 0.0f) {
-        continue;
-      }
-      const float3 dp1 = p1 - p0, dp2 = p2 - p0;
-      float3 tangent = (dp1 * d2.y - dp2 * d1.y) / det;
-      float sign = dot(cross(ns, tangent), (dp2 * d1.x - dp1 * d2.x) / det) < 0.0f ? -1.0f : 1.0f;
-      if (cornerTangents) {
-        const packed_float3 *const T = attrT->data<packed_float3>();
-        const float *const S = attrS->data<float>();
-        tangent = w0 * make_float3(T[prim * 3 + 0]) + w1 * make_float3(T[prim * 3 + 1]) +
-                  w2 * make_float3(T[prim * 3 + 2]);
-        sign = (w0 * S[prim * 3 + 0] + w1 * S[prim * 3 + 1] + w2 * S[prim * 3 + 2]) < 0.0f ?
+      const float3 &p0 = mesh.P[c], &p1 = mesh.P[c + 1], &p2 = mesh.P[c + 2];
+      const float3 ns = mesh.N.empty() ? safe_normalize(cross(p1 - p0, p2 - p0)) :
+                                         safe_normalize(w[0] * mesh.N[c] + w[1] * mesh.N[c + 1] +
+                                                        w[2] * mesh.N[c + 2]);
+      float3 tangent;
+      float sign = 1.0f;
+      if (!mesh.tangent.empty()) {
+        tangent = w[0] * mesh.tangent[c] + w[1] * mesh.tangent[c + 1] + w[2] * mesh.tangent[c + 2];
+        sign = (w[0] * mesh.sign[c] + w[1] * mesh.sign[c + 1] + w[2] * mesh.sign[c + 2]) < 0.0f ?
                    -1.0f :
                    1.0f;
+      }
+      else {
+        /* Per triangle tangent from the UVs. */
+        const float2 d1 = mesh.uv[c + 1] - mesh.uv[c], d2 = mesh.uv[c + 2] - mesh.uv[c];
+        const float det = d1.x * d2.y - d1.y * d2.x;
+        const float3 dp1 = p1 - p0, dp2 = p2 - p0;
+        if (det != 0.0f) {
+          tangent = (dp1 * d2.y - dp2 * d1.y) / det;
+          sign = dot(cross(ns, tangent), (dp2 * d1.x - dp1 * d2.x) / det) < 0.0f ? -1.0f : 1.0f;
+        }
+        else {
+          /* Degenerate UVs: any tangent, so the pixel is still in tangent space. */
+          float3 bitangent;
+          make_orthonormals(ns, &tangent, &bitangent);
+        }
       }
       const float3 t = safe_normalize(tangent - ns * dot(ns, tangent));
       const float3 b = cross(ns, t) * sign;
@@ -213,49 +257,34 @@ void SetBakeTarget(Scene *scene, const std::string &name)
   }
   scene->bake_manager->set_use_camera(false);
   scene->bake_manager->set_baking(scene, target != nullptr);
-  /* The kernel's target object index (only on changes, an update resets the render). */
-  if (changed) {
+  /* The kernel's target object index and triangle offset: again when they may have moved, with
+   * object or geometry updates, which reset the render anyway (a bake update alone does too). */
+  if (target &&
+      (changed || scene->object_manager->need_update() || scene->geometry_manager->need_update()))
+  {
     scene->bake_manager->tag_update();
   }
 }
 
-bool FillBakeTile(Scene *scene, const std::string &name, const OutputDriver::Tile &tile)
+bool FillBakeTile(const BakeMesh &mesh, const OutputDriver::Tile &tile)
 {
-  const Object *const object = FindBakeObject(scene, name);
-  if (!object) {
-    return false;
-  }
-  const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
-  const Attribute *const uvAttr = mesh->attributes.find(ATTR_STD_UV);
-  if (!uvAttr || mesh->num_triangles() == 0) {
-    return false;
-  }
-  const float2 *const uvs = uvAttr->data<float2>();
-  const array<int> &triangles = mesh->get_triangles();
-  /* UV of corner k of triangle t: per corner (face-varying) or per vertex. */
-  const auto uv = [&](const size_t t, const int k) -> float2 {
-    return uvAttr->element == ATTR_ELEMENT_CORNER ? uvs[t * 3 + k] : uvs[triangles[t * 3 + k]];
-  };
-  if (uvAttr->element != ATTR_ELEMENT_CORNER && uvAttr->element != ATTR_ELEMENT_VERTEX) {
-    return false;
-  }
-
   const int width = tile.size.x;
   const int height = tile.size.y;
   const float fullWidth = float(tile.full_size.x);
   const float fullHeight = float(tile.full_size.y);
-  /* Empty pixels have primitive -1 (as bits). */
+  /* Empty pixels have primitive -1 (as bits). Cycles' passes start zeroed, which is triangle 0,
+   * so a target without triangles or UVs writes empty passes. */
   std::vector<float> primitive(size_t(width) * height * 3, 0.0f);
   std::vector<float> differential(size_t(width) * height * 4, 0.0f);
   for (size_t i = 0; i < size_t(width) * height; ++i) {
     primitive[i * 3 + 2] = AsFloat(~0u);
   }
 
-  for (size_t t = 0; t < mesh->num_triangles(); ++t) {
+  for (size_t t = 0; t < mesh.numTriangles; ++t) {
     /* Triangle corners in pixels of the tile, with the UV map's (0, 0) at the bottom left. */
     float2 p[3];
     for (int k = 0; k < 3; ++k) {
-      const float2 st = uv(t, k);
+      const float2 st = mesh.uv[t * 3 + k];
       p[k] = make_float2(st.x * fullWidth - float(tile.offset.x),
                          st.y * fullHeight - float(tile.offset.y));
     }

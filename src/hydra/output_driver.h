@@ -5,10 +5,14 @@
 
 #pragma once
 
+#include "hydra/bake.h"
 #include "hydra/config.h"
 #include "session/output_driver.h"
 
 #include <pxr/base/tf/token.h>
+
+#include <mutex>
+#include <string>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -29,6 +33,10 @@ class HdCyclesOutputDriver final : public CCL_NS::OutputDriver {
                      size_t channels) const;
 
   HdCyclesSession *const _renderParam;
+  // Copy of the bake target, read while Cycles renders (bake.h)
+  std::mutex _bakeMeshMutex;
+  BakeMesh _bakeMesh;
+  std::string _bakeMeshName;
   // Time of the last progressive viewport update of the AOVs that are not displayed
   double _aovsUpdateTime = 0.0;
 };

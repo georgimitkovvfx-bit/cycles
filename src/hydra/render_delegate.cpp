@@ -872,10 +872,18 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeNormalSpace) {
     const std::string space = GetStringSetting(value, "tangent");
-    _renderParam->bakeNormalSpace = space == "world" ? 0 : space == "object" ? 1 : 2;
+    const int bakeNormalSpace = space == "world" ? 0 : space == "object" ? 1 : 2;
+    /* Output only: restart the render, so a finished one gets it too. */
+    if (_renderParam->bakeNormalSpace.exchange(bakeNormalSpace) != bakeNormalSpace) {
+      ++_settingsVersion;
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeMargin) {
-    _renderParam->bakeMargin = std::max(0, VtValue::Cast<int>(value).GetWithDefault(16));
+    const int bakeMargin = std::max(0, VtValue::Cast<int>(value).GetWithDefault(16));
+    /* Output only: restart the render, so a finished one gets it too. */
+    if (_renderParam->bakeMargin.exchange(bakeMargin) != bakeMargin) {
+      ++_settingsVersion;
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
            key == HdCyclesRenderSettingsTokens->shutterClose)
