@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Node menu entries of the Cycles package, merged into Houdini's node menu (HOUDINI_PATH). -->
+<menuDocument>
+  <menu>
+    <!-- Material settings for material builders made before the USD Cycles Material Builder
+         had them (cycles_material_settings.py). -->
+    <scriptItem id="cycles_add_material_settings">
+      <label>Add Cycles Material Settings</label>
+      <context>
+        <expression><![CDATA[
+import cycles_material_settings
+node = kwargs.get("node")
+return node is not None and cycles_material_settings.can_add_settings(node)
+]]></expression>
+      </context>
+      <scriptCode><![CDATA[
+import cycles_material_settings
+for node in hou.selectedNodes() or [kwargs["node"]]:
+    if cycles_material_settings.can_add_settings(node):
+        cycles_material_settings.add_settings(node)
+]]></scriptCode>
+    </scriptItem>
+  </menu>
+</menuDocument>

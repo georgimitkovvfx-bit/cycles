@@ -53,9 +53,8 @@ Displacement and Bump for their displacement output, so it displaces the surface
 | Volume > Interpolation | `config:cycles:volume_interpolation_method` | Linear | Interpolation of smoke and fire volumes: Linear or Cubic |
 | Volume > Step Rate | `config:cycles:volume_step_rate` | 1 | Scale of the distance between volume shader samples. Lower values give more accurate and detailed results, but take longer |
 
-The Settings tab is only on builders made with the shelf tool of this version. Builders created
-with older versions have no Settings tab; create a new builder and move the nodes over if you need
-these settings.
+Builders created with older versions have no Settings tab: right-click the builder (or several
+selected builders) and choose **Add Cycles Material Settings**.
 
 True displacement subdivides nothing by itself: Cycles displaces the vertices the mesh has. Turn
 on **Adaptive Subdivision** for the object (Render Geometry Settings LOP, Cycles tab) so Cycles

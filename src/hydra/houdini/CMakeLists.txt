@@ -19,6 +19,10 @@ delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "UsdRenderers.json" "${CMAKE_INSTA
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/icons/ DESTINATION houdini/icons)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/toolbar/ DESTINATION houdini/toolbar)
+# Python modules of the shelf tools and node menu entries (Houdini adds pythonX.Ylibs to sys.path).
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python3.13libs/ DESTINATION houdini/python3.13libs
+        PATTERN "__pycache__" EXCLUDE)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/OPmenu.xml DESTINATION houdini)
 # Shader translator for the Cycles shader nodes, found through the package's HOUDINI_PATH.
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/husdplugins/ DESTINATION houdini/husdplugins)
 
