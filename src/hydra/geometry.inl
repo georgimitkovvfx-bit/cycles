@@ -476,7 +476,8 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(
     const HdPrimvarsSchema &primvars,
     const VtVec3fArray &points,
     const size_t numPoints,
-    const std::function<VtVec3fArray(const VtVec3fArray &)> &remap)
+    const std::function<VtVec3fArray(const VtVec3fArray &)> &remap,
+    const TfToken &pointsPrimvar)
 {
   static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
 
@@ -484,8 +485,7 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(
    * resolves velocities into those). Rendered at the center step. */
   const std::vector<float> motionTimes = GetObjectMotionTimes();
   std::vector<VtVec3fArray> motionPoints;
-  const HdSampledDataSourceHandle pointsDs =
-      primvars.GetPrimvar(HdTokens->points).GetPrimvarValue();
+  const HdSampledDataSourceHandle pointsDs = primvars.GetPrimvar(pointsPrimvar).GetPrimvarValue();
   std::vector<float> sampleTimes;
   if (!motionTimes.empty() && pointsDs &&
       pointsDs->GetContributingSampleTimesForInterval(

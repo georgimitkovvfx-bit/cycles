@@ -147,7 +147,8 @@ These are the open limits of the current version that affect users.
 
 - Matrix, string and int64 primvars are not exported. Per-object settings are not read per
   instance.
-- Gaussian splats have no motion blur; spherical harmonics above degree 3 are ignored.
+- Gaussian splats: only their positions are motion blurred; spherical harmonics above degree 3 are
+  ignored.
 
 **Motion blur**
 

@@ -263,9 +263,9 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
   _geom->clear(true);
   _geom->set_render_as(PointCloud::RENDER_AS_GSPLATS);
   _geom->resize(int(n));
-  /* shortcut: no motion blur for splats (SetPositions samples the "points" primvar), add it if
-   * animated splats come up. */
-  SetPositions(_geom->attributes.add(ATTR_STD_POSITION), primvars, positions, n);
+  /* Motion blur from the time samples of the positions; the other splat data stay at the frame. */
+  SetPositions(
+      _geom->attributes.add(ATTR_STD_POSITION), primvars, positions, n, {}, _tokens->positions);
   std::fill_n(_geom->get_radius_for_write(), n, 0.0f); /* Cycles bounds the splats. */
 
   const VtFloatArray opacities = ReadSplatFloat(primvars, _tokens->opacities);

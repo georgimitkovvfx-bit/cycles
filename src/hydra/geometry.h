@@ -10,6 +10,7 @@
 
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/rprim.h>
+#include <pxr/imaging/hd/tokens.h>
 
 #include <functional>
 #include <vector>
@@ -64,7 +65,8 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
       const PXR_NS::HdPrimvarsSchema &primvars,
       const PXR_NS::VtVec3fArray &points,
       size_t numPoints,
-      const std::function<PXR_NS::VtVec3fArray(const PXR_NS::VtVec3fArray &)> &remap = {});
+      const std::function<PXR_NS::VtVec3fArray(const PXR_NS::VtVec3fArray &)> &remap = {},
+      const PXR_NS::TfToken &pointsPrimvar = PXR_NS::HdTokens->points);
 
   /* Times of the motion steps of this object: none when its motion blur is off, its own number
    * of steps when set. */

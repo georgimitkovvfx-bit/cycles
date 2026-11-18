@@ -206,8 +206,8 @@ Gaussian Splats SOP or a PLY file) render as Cycles Gaussian splats: `positions`
 (`radiance:sphericalHarmonicsCoefficients`, degree 0 to 3; higher degrees are cut at 3). Without
 coefficients a splat is mid grey (USD's DC signal of 0.5). Cycles stores the degree 1 to 3
 coefficients in 8 bits, clamped to [-1, 1]. Splats without a material use Cycles' default splat
-shader (the splat's view-dependent radiance as emission); a bound material replaces it. Splats have
-no motion blur.
+shader (the splat's view-dependent radiance as emission); a bound material replaces it. Animated splat
+positions (time samples) are motion blurred.
 
 ## Subdivision
 
