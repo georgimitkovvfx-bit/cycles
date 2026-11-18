@@ -24,7 +24,9 @@ template<typename T> VtValue ApplyKeyMap(const HdCyclesCurveKeyMap &map, const V
   for (size_t key = 0; key < map.size(); ++key) {
     T sum(0.0f);
     for (int i = map.start[key]; i < map.start[key + 1]; ++i) {
-      sum += values[map.terms[i].first] * map.terms[i].second;
+      if (size_t(map.terms[i].first) < values.size()) {
+        sum += values[map.terms[i].first] * map.terms[i].second;
+      }
     }
     keys[key] = sum;
   }
@@ -340,9 +342,10 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
     _geom->curve_shape = CURVE_THICK_LINEAR;
   }
 
-  /* Cycles' Catmull-Rom keys: Catmull-Rom control points as they are, other bases sampled 2
+  /* Cycles' Catmull-Rom keys: Catmull-Rom control points at the segment ends (pinned ones as
+   * they are, since Cycles' keys also pass through the end points), other bases sampled 2
    * (B-spline) or 3 (Bezier) times per segment. Periodic curves end with their first key again.
-   * Pinned B-spline and Catmull-Rom curves get phantom end points (2 P0 - P1). */
+   * Pinned B-splines get phantom end points (2 P0 - P1). */
   const TfToken basis = (curveBasis == HdTokens->bspline || curveBasis == HdTokens->catmullRom) ?
                             curveBasis :
                             HdTokens->bezier;
@@ -352,7 +355,10 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
   for (const int count : vertCounts) {
     _numControlPoints += size_t(std::max(count, 0));
   }
-  std::vector<int> keyCounts(vertCounts.begin(), vertCounts.end());
+  std::vector<int> keyCounts;
+  for (const int count : vertCounts) {
+    keyCounts.push_back(std::max(count, 0));
+  }
 
   if (identity) {
     _vertexMap = HdCyclesCurveKeyMap();
@@ -420,11 +426,15 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
       };
 
       if (numSegments < 1 || n < (cubic ? (basis == HdTokens->bezier ? 4 : 2) : 2)) {
-        /* Not a valid curve: its control points as keys. */
+        /* Not a valid curve: its control points as keys (one zero key without any). */
         for (int i = 0; i < std::max(n, 1); ++i) {
-          vertex.AddTerm(int(cvOffset) + std::min(i, std::max(n - 1, 0)), 1.0f);
+          if (n > 0) {
+            vertex.AddTerm(int(cvOffset) + std::min(i, n - 1), 1.0f);
+          }
           vertex.EndKey();
-          varying.AddTerm(int(varyingOffset) + std::min(i, std::max(numVarying - 1, 0)), 1.0f);
+          if (numVarying > 0) {
+            varying.AddTerm(int(varyingOffset) + std::min(i, numVarying - 1), 1.0f);
+          }
           varying.EndKey();
         }
         keyCounts[curve] = std::max(n, 1);
