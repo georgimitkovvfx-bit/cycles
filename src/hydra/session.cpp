@@ -1029,9 +1029,15 @@ void HdCyclesSession::UpdateDefaultSurface()
   // Wire up object color in default surface material
   ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
 
+  /* A displayColor (or Cd) primvar of any interpolation, like Karma and Storm; the object color
+   * (constant or per-instance displayColor, else 0.8 gray) without one. */
+  AttributeNode *colorNode = graph->create_node<AttributeNode>();
+  colorNode->set_attribute(ustring(HdTokens->displayColor.GetString()));
+
   DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
 
-  graph->connect(objectNode->output("Color"), diffuseNode->input("Color"));
+  graph->connect(objectNode->output("Color"), colorNode->input("Missing"));
+  graph->connect(colorNode->output("Color"), diffuseNode->input("Color"));
   graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
 
   HdCyclesMaterial::AddIdAOVs(graph.get());
