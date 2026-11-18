@@ -12,6 +12,7 @@
 #endif
 
 #include "util/log.h"
+#include "util/progress.h"
 #include "util/string.h"
 #include "util/types_image.h"
 
@@ -443,6 +444,46 @@ bool OSLRenderServices::get_texture_info(OSLUStringHash filename,
                                          void *data,
                                          OSLUStringHash * /*errormessage*/)
 {
+  /* Constant folding during shader optimization has no texture handle and folds a failure to 0,
+   * before images are loaded: answer from the file metadata. */
+  ImageManager *image_manager = (texture_handle == nullptr && sg) ?
+                                    image_manager_find(sg->context) :
+                                    nullptr;
+  if (image_manager) {
+    texture_handle = get_texture_handle(filename, sg->context, nullptr);
+    OSLTextureHandle handle(OSLTextureHandleType::IMAGE);
+    if (!textures.retrieve({filename, image_manager}, handle) || is_udim(texture_handle)) {
+      return false;
+    }
+    Progress progress;
+    const ImageMetaData metadata = handle.handle.metadata(progress);
+    const bool exists = metadata.width > 0 && metadata.height > 0;
+    if (dataname == DeviceStrings::u_exists && datatype == TypeInt) {
+      *static_cast<int *>(data) = exists;
+      return true;
+    }
+    if (!exists) {
+      return false;
+    }
+    if (dataname == DeviceStrings::u_channels && datatype == TypeInt) {
+      *static_cast<int *>(data) = metadata.channels;
+      return true;
+    }
+    if (dataname == DeviceStrings::u_resolution && datatype.basetype == TypeDesc::INT &&
+        (datatype.arraylen == 2 || datatype.arraylen == 3 || datatype.aggregate == 2 ||
+         datatype.aggregate == 3))
+    {
+      int *res = static_cast<int *>(data);
+      res[0] = int(metadata.width);
+      res[1] = int(metadata.height);
+      if (datatype.arraylen == 3 || datatype.aggregate == 3) {
+        res[2] = 1;
+      }
+      return true;
+    }
+    return false;
+  }
+
   if (texture_handle == nullptr) {
     if (texture_filenames_seen_.insert(filename).second) {
       LOG_WARNING << "Open Shading Language gettextureinfo call can not resolve "
