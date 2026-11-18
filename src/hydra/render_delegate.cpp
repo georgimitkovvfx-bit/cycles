@@ -867,6 +867,9 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     }
     _renderParam->SetDicing(dicing);
   }
+  else if (key == HdCyclesRenderSettingsTokens->bakeObject) {
+    _renderParam->SetBakeObject(GetStringSetting(value, ""));
+  }
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||
            key == HdCyclesRenderSettingsTokens->shutterClose)
   {

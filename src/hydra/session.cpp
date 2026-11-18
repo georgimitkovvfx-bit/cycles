@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/session.h"
+#include "hydra/bake.h"
 #include "hydra/material.h"
 #include "hydra/render_buffer.h"
 #include "scene/object.h"
@@ -893,6 +894,25 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     }
     if (lightgroup.empty()) {
       passOfType[type] = pass;
+    }
+  }
+
+  /* Texture baking reads the bake input passes the output driver writes, and the UV map of the
+   * target, which the geometry exports for a UV pass. */
+  if (!GetBakeObject().empty()) {
+    const std::pair<PassType, const char *> bakePasses[] = {
+        {PASS_BAKE_PRIMITIVE, kBakePrimitivePass},
+        {PASS_BAKE_DIFFERENTIAL, kBakeDifferentialPass},
+        {PASS_UV, "BakeUV"},
+    };
+    for (const auto &[type, name] : bakePasses) {
+      if (type == PASS_UV && passOfType.count(PASS_UV)) {
+        continue;
+      }
+      Pass *pass = scene->create_node<Pass>();
+      pass->set_type(type);
+      pass->set_mode(PassMode::NOISY);
+      pass->set_name(ustring(name));
     }
   }
 

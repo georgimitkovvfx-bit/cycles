@@ -1,0 +1,29 @@
+/* SPDX-FileCopyrightText: 2026 Blender Foundation
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+#pragma once
+
+#include "hydra/config.h"
+#include "session/output_driver.h"
+
+#include <string>
+
+HDCYCLES_NAMESPACE_OPEN_SCOPE
+
+/* Names of the bake input passes (HdCyclesSession::SyncAovBindings). */
+extern const char *const kBakePrimitivePass;
+extern const char *const kBakeDifferentialPass;
+
+/* Texture baking like Blender's: the image is the UV space of the bake target mesh (the first
+ * object of that prim), each pixel a point on the triangle that covers it in its default UV map.
+ * Writes Cycles' bake primitive and differential passes of a tile; false when the target has no
+ * triangles or UVs. */
+bool FillBakeTile(CCL_NS::Scene *scene,
+                  const std::string &object,
+                  const CCL_NS::OutputDriver::Tile &tile);
+
+/* Makes the first mesh object of the prim the bake target (none for an empty name). */
+void SetBakeTarget(CCL_NS::Scene *scene, const std::string &object);
+
+HDCYCLES_NAMESPACE_CLOSE_SCOPE

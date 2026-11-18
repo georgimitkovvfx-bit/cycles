@@ -19,6 +19,7 @@ class HdCyclesOutputDriver final : public CCL_NS::OutputDriver {
  private:
   void write_render_tile(const Tile &tile) override;
   bool update_render_tile(const Tile &tile) override;
+  bool read_render_tile(const Tile &tile) override;
 
   void update_render_buffers(const Tile &tile, bool final);
   // The viewport depth as window depth

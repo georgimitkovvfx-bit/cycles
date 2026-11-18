@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/output_driver.h"
+#include "hydra/bake.h"
 #include "hydra/render_buffer.h"
 #include "hydra/session.h"
 
@@ -62,6 +63,11 @@ void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
   if (aovName == HdAovTokens->depth && channels == 1 && _renderParam->IsViewport()) {
     convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix());
   }
+}
+
+bool HdCyclesOutputDriver::read_render_tile(const Tile &tile)
+{
+  return FillBakeTile(_renderParam->session->scene.get(), _renderParam->GetBakeObject(), tile);
 }
 
 bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)

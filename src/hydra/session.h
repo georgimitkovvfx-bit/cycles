@@ -166,6 +166,27 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     return _dicing;
   }
+  /* Texture baking (bake.h): the prim path of the bake target, empty when not baking. Changing
+   * it rebuilds the passes (HdCyclesRenderPass) and resyncs the geometry for its UV map. */
+  std::string GetBakeObject() const
+  {
+    const std::lock_guard<std::mutex> lock(_bakeMutex);
+    return _bakeObject;
+  }
+  void SetBakeObject(const std::string &object)
+  {
+    {
+      const std::lock_guard<std::mutex> lock(_bakeMutex);
+      if (object == _bakeObject) {
+        return;
+      }
+      _bakeObject = object;
+    }
+    bakeChanged = true;
+    RequestResync(false, true);
+  }
+  std::atomic<bool> bakeChanged = false;
+
   void SetDicing(const DicingSettings &dicing)
   {
     if (!(dicing == _dicing)) {
@@ -373,6 +394,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool _motionBlurDisabled = false;
   int _motionSteps = 1;
   DicingSettings _dicing;
+  mutable std::mutex _bakeMutex;
+  std::string _bakeObject;
   float _filmExposure = 1.0f;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;

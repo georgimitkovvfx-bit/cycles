@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/render_pass.h"
+#include "hydra/bake.h"
 #include "hydra/camera.h"
 #include "hydra/geometry.h"
 #include "hydra/output_driver.h"
@@ -15,6 +16,7 @@
 #  include "hydra/display_driver.h"
 #endif
 
+#include "scene/bake.h"
 #include "scene/camera.h"
 #include "scene/film.h"
 #include "scene/integrator.h"
@@ -117,7 +119,10 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     const HdRenderPassAovBindingVector &aovBindings = renderPassState->GetAovBindings();
     if (_renderParam->GetAovBindings() != aovBindings ||
         // Need to resync passes when denoising is enabled or disabled to update the pass mode
-        (settingsVersion != _lastSettingsVersion && scene->integrator->use_denoise_is_modified()))
+        (settingsVersion != _lastSettingsVersion &&
+         scene->integrator->use_denoise_is_modified()) ||
+        // and for the bake input passes
+        _renderParam->bakeChanged.exchange(false))
     {
       if (_renderParam->SyncAovBindings(aovBindings)) {
         // Every shader writes the primvar AOVs: rebuild the shaders, then export the primvars
@@ -125,6 +130,12 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         _renderParam->RequestResync(true, true);
         _renderParam->UpdateDefaultSurface();
       }
+    }
+
+    /* Texture baking: the bake target among the objects of this sync. */
+    const std::string bakeObject = _renderParam->GetBakeObject();
+    if (!bakeObject.empty() || scene->bake_manager->get_baking()) {
+      SetBakeTarget(scene, bakeObject);
     }
 
     bool displayChanged = false;

@@ -367,6 +367,21 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
   works in meters internally (the delegate scales the stage by `metersPerUnit`), so on a centimeter
   stage these distances are in meters.
 
+### Bake
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the default UV map, at the render resolution. Empty renders the camera view. |
+
+Every render var is baked: the beauty gives a full bake (Blender's Combined), Diffuse Color or
+Glossy Color give albedo maps, Normal gives world space normals, Emit, AO, Position, shader AOVs
+and light groups work too. Pixels outside the UV islands have zero alpha. Render it with husk or
+the USD Render ROP as usual (the camera is still needed by the render settings but not used).
+
+Limits: no margin (extend the islands with a Copernicus or COP dilate afterwards), the default UV
+map only, the first instance of an instanced prim, no Selected to Active (cage) baking, and normal
+maps are world space (not tangent space).
+
 ## Settings without a UI
 
 The delegate reads a few more settings that have no parameter in the generated UI:

@@ -88,6 +88,7 @@ SESSION_SETTINGS = {
     "cycles:offscreen_dicing_scale": {"type": "float", "default": 4.0},
     "cycles:max_subdivisions": {"type": "int", "default": 12},
     "cycles:dicing_camera": {"type": "string", "default": ""},
+    "cycles:bake_object": {"type": "string", "default": ""},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -580,6 +581,14 @@ LAYOUT = [
               "Directory of the cache files, absolute or relative to each image. Empty uses a "
               "blender_tx folder next to each image. Changing it restarts the render."),
         ], open=True, toggle="cycles:use_texture_cache"),
+    ]),
+    P("Bake", [
+        S("cycles:bake_object", "Bake Object",
+          "Mesh to bake, like Blender's Bake: the render is the mesh's default UV map instead "
+          "of the camera view, each pixel shading the point of the surface that covers it in "
+          "UV space, with the render vars (beauty, diffuse color, normal, ...) as the baked "
+          "maps. The resolution is the render resolution. Empty renders the camera view.",
+          tags=PRIM_PATH_TAGS),
     ]),
 ]
 
