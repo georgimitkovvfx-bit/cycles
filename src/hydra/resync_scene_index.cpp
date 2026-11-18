@@ -9,6 +9,8 @@
 
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/cameraSchema.h>
+#include <pxr/imaging/hd/lightSchema.h>
+#include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
@@ -152,6 +154,17 @@ void HdCyclesResyncSceneIndex::_PrimsDirtied(
   std::optional<HdSceneIndexObserver::DirtiedPrimEntries> mapped;
   for (size_t i = 0; i < entries.size(); ++i) {
     const HdDataSourceLocatorSet &locators = entries[i].dirtyLocators;
+    /* Nor material bindings of lights: dirty a dome light's parameters for a material bound to
+     * it as the world (HdCyclesLight::Sync). */
+    if (locators.Intersects(HdMaterialBindingsSchema::GetDefaultLocator()) &&
+        _GetInputSceneIndex()->GetPrim(entries[i].primPath).primType ==
+            HdPrimTypeTokens->domeLight)
+    {
+      if (!mapped) {
+        mapped = entries;
+      }
+      (*mapped)[i].dirtyLocators.insert(HdLightSchema::GetDefaultLocator());
+    }
     if (!locators.Intersects(HdPrimvarsSchema::GetDefaultLocator())) {
       continue;
     }

@@ -33,11 +33,14 @@ light group (which is also the world's light group), light linking, and whether 
 all. The camera always sees the world; turn on film transparency (Render Settings > Film) to hide
 it.
 
-Changes update the viewport render live: editing the world material's nodes, rotating the dome,
-setting or clearing the World Material.
+Instead of the World Material setting, you can also bind the material to the dome light with an
+Assign Material LOP. The World Material setting wins when both are set. Only a Cycles material
+bound to the dome light becomes the world: other materials (MaterialX, Karma, USD Preview
+Surface), for example from an Assign Material on the whole stage, are ignored.
 
-A material bound with an Assign Material LOP is not used as the world; only the World Material
-setting is.
+Changes update the viewport render live: editing the world material's nodes, rotating the dome,
+setting or clearing the World Material, binding or unbinding a material, deleting the material
+(the dome light then renders as usual).
 
 ## Orientation
 

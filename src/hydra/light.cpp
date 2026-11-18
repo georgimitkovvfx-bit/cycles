@@ -23,6 +23,9 @@
 #include "util/transform.h"
 
 #include <pxr/imaging/hd/lightSchema.h>
+#include <pxr/imaging/hd/materialBindingSchema.h>
+#include <pxr/imaging/hd/materialBindingsSchema.h>
+#include <pxr/imaging/hd/materialSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/visibilitySchema.h>
 #include <pxr/imaging/hd/xformSchema.h>
@@ -48,8 +51,32 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((isPortal, "inputs:cycles:light:is_portal"))
     ((softFalloff, "inputs:cycles:light:use_soft_falloff"))
     ((mapResolution, "inputs:cycles:light:map_resolution"))
+    (cycles)
 );
 // clang-format on
+
+/* A material bound to the light (Assign Material) with a Cycles network, empty for none. Others
+ * are skipped, so a material assigned to the whole stage does not become the world. */
+static std::string BoundWorldMaterial(HdSceneDelegate *sceneDelegate,
+                                      const HdContainerDataSourceHandle &primDs)
+{
+  const HdMaterialBindingsSchema bindings = HdMaterialBindingsSchema::GetFromParent(primDs);
+  HdMaterialBindingSchema binding = bindings.GetMaterialBinding(HdTokens->full);
+  if (!binding) {
+    binding = bindings.GetMaterialBinding();
+  }
+  const HdPathDataSourceHandle pathDs = binding.GetPath();
+  if (!pathDs) {
+    return "";
+  }
+  const SdfPath path = pathDs->GetTypedValue(0.0f);
+  const HdSceneIndexPrim material = path.IsPrimPath() ? GetPrim(sceneDelegate, path) :
+                                                        HdSceneIndexPrim();
+  if (!HdMaterialSchema::GetFromParent(material.dataSource).GetMaterialNetwork(_tokens->cycles)) {
+    return "";
+  }
+  return path.GetString();
+}
 
 HdCyclesLight::HdCyclesLight(const SdfPath &sprimId, const TfToken &lightType)
     : HdLight(sprimId), _lightType(lightType)
@@ -284,8 +311,12 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       (*dirtyBits & (DirtyBits::DirtyTransform | DirtyBits::DirtyParams)))
   {
     /* A material as the world, like in Blender: its surface is the background, its volume fills
-     * the scene. Sky and environment textures follow the light's rotation. */
-    const std::string material = GetTypedValue<std::string>(lightDs, _tokens->worldMaterial, "");
+     * the scene. Sky and environment textures follow the light's rotation. The World Material
+     * setting wins over a material bound to the light. */
+    std::string material = GetTypedValue<std::string>(lightDs, _tokens->worldMaterial, "");
+    if (material.empty()) {
+      material = BoundWorldMaterial(sceneDelegate, primDs);
+    }
     Transform rotation = _object->get_tfm();
     for (int i = 0; i < 3; i++) {
       transform_set_column(&rotation, i, normalize(transform_get_column(&rotation, i)));
