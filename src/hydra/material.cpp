@@ -885,7 +885,10 @@ void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
     }
     ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
     const string filename = image->get_filename().string();
-    const size_t udim = filename.find("<UDIM>");
+    /* Mari's <UDIM> (1001, 1002, ...) or Mudbox's <UVTILE> (u1_v1, u2_v1, ...) tiles. */
+    const bool uvtile = filename.find("<UVTILE>") != string::npos;
+    const string token = uvtile ? "<UVTILE>" : "<UDIM>";
+    const size_t udim = filename.find(token);
     if (udim == string::npos) {
       continue;
     }
@@ -901,13 +904,32 @@ void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
     const size_t slash = filename.find_last_of("/\\", udim);
     const size_t start = (slash == string::npos) ? 0 : slash + 1;
     const string prefix = fold(filename.substr(start, udim - start));
-    const string suffix = fold(filename.substr(udim + strlen("<UDIM>")));
+    const string suffix = fold(filename.substr(udim + token.size()));
     std::vector<string> files;
     OIIO::Filesystem::get_directory_entries(path_dirname(filename), files);
 
     array<int> tiles;
     for (const string &file : files) {
       const string name = fold(path_filename(file));
+      if (uvtile) {
+        /* u<U>_v<V>: tile 1001 + (U - 1) + 10 (V - 1), U in 1..10. */
+        if (name.size() <= prefix.size() + suffix.size() || !string_startswith(name, prefix) ||
+            !string_endswith(name, suffix))
+        {
+          continue;
+        }
+        const string middle = name.substr(prefix.size(),
+                                          name.size() - prefix.size() - suffix.size());
+        int u = 0;
+        int v = 0;
+        char end = 0;
+        if (std::sscanf(middle.c_str(), "u%d_v%d%c", &u, &v, &end) == 2 && u >= 1 && u <= 10 &&
+            v >= 1)
+        {
+          tiles.push_back_slow(1001 + (u - 1) + 10 * (v - 1));
+        }
+        continue;
+      }
       if (name.size() != prefix.size() + 4 + suffix.size() || !string_startswith(name, prefix) ||
           !string_endswith(name, suffix))
       {

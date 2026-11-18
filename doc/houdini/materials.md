@@ -127,8 +127,8 @@ other file. Delete that folder to free the space.
 - **Color space:** leave it on automatic to let Cycles detect it: 8-bit images are read as sRGB,
   float images as scene linear. Use a raw or non-color space for data textures (roughness, normal
   maps, masks). This also works with ACES OpenColorIO configurations.
-- **UDIMs:** file names with `<UDIM>` read all tiles found next to the file. The `<UVTILE>` token is
-  not supported.
+- **UDIMs:** file names with `<UDIM>` (`1001`, `1002`, ...) or `<UVTILE>` (`u1_v1`, `u2_v1`, ...)
+  read all tiles found next to the file.
 - **Missing files** render with the node's missing color. Copernicus images (`op:` paths) cannot be
   used as textures.
 - **Texture cache and size limit:** see [rendering.md](rendering.md#texture-cache).
