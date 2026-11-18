@@ -342,15 +342,14 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
     _geom->curve_shape = CURVE_THICK_LINEAR;
   }
 
-  /* Cycles' Catmull-Rom keys: Catmull-Rom control points at the segment ends (pinned ones as
-   * they are, since Cycles' keys also pass through the end points), other bases sampled 2
-   * (B-spline) or 3 (Bezier) times per segment. Periodic curves end with their first key again.
-   * Pinned B-splines get phantom end points (2 P0 - P1). */
+  /* Cycles' Catmull-Rom keys: the curve sampled 2 (B-spline, Catmull-Rom) or 3 (Bezier) times
+   * per segment, which also keeps the end tangents of Catmull-Rom curves (Cycles' own end keys
+   * are doubled). Periodic curves end with their first key again. Pinned B-spline and
+   * Catmull-Rom curves get phantom end points (2 P0 - P1). */
   const TfToken basis = (curveBasis == HdTokens->bspline || curveBasis == HdTokens->catmullRom) ?
                             curveBasis :
                             HdTokens->bezier;
-  const bool identity = (!cubic && !periodic) ||
-                        (cubic && basis == HdTokens->catmullRom && pinned);
+  const bool identity = !cubic && !periodic;
   _numControlPoints = 0;
   for (const int count : vertCounts) {
     _numControlPoints += size_t(std::max(count, 0));
@@ -367,10 +366,7 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
   else {
     KeyMapBuilder vertex(_vertexMap);
     KeyMapBuilder varying(_varyingMap);
-    const int samples = !cubic                     ? 1 :
-                        basis == HdTokens->bezier  ? 3 :
-                        basis == HdTokens->bspline ? 2 :
-                                                     1;
+    const int samples = !cubic ? 1 : basis == HdTokens->bezier ? 3 : 2;
     const int vstep = (cubic && basis == HdTokens->bezier) ? 3 : 1;
     size_t cvOffset = 0;
     size_t varyingOffset = 0;
