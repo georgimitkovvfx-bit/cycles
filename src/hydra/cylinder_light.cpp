@@ -178,6 +178,7 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
           visibility &= ~ray;
         }
       }
+      visibility &= LightMultiplierVisibility(lightDs);
       if (GetTypedValue<bool>(lightDs,
                               _tokens->visibleCamera,
                               GetTypedValue<bool>(lightDs, _tokens->visibleInPrimaryRay, false)))

@@ -166,4 +166,8 @@ void ApplyPrimvars(CCL_NS::AttributeSet &attributes,
                    CCL_NS::AttributeStandard std,
                    bool dropExtraValues = false);
 
+/* Ray visibility of a light from USD's diffuse and specular multipliers: Cycles lights have no
+ * multipliers, a multiplier of 0 turns off the diffuse or glossy rays. */
+unsigned int LightMultiplierVisibility(const PXR_NS::HdContainerDataSourceHandle &light);
+
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

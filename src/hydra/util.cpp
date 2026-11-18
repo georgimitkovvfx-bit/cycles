@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/util.h"
+#include "kernel/types.h"
 #include "scene/attribute.h"
 #include "scene/geometry.h"
 #include "scene/object.h"
@@ -13,6 +14,7 @@
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/imaging/hd/light.h>
 #include <pxr/imaging/hd/primvarSchema.h>
 #include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
@@ -366,6 +368,18 @@ void ApplyPrimvars(AttributeSet &attributes,
 
   assert(size == attr->data_sizeof() * attr->size);
   std::memcpy(attr->data_for_write(), data, size);
+}
+
+unsigned int LightMultiplierVisibility(const HdContainerDataSourceHandle &light)
+{
+  unsigned int visibility = PATH_RAY_VISIBILITY_ALL;
+  if (GetTypedValue<float>(light, HdLightTokens->diffuse, 1.0f) == 0.0f) {
+    visibility &= ~PATH_RAY_VISIBILITY_DIFFUSE;
+  }
+  if (GetTypedValue<float>(light, HdLightTokens->specular, 1.0f) == 0.0f) {
+    visibility &= ~PATH_RAY_VISIBILITY_GLOSSY;
+  }
+  return visibility;
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

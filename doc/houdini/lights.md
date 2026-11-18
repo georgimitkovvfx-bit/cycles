@@ -33,7 +33,11 @@ The delegate converts the USD light attributes so that lights match Karma, both 
 - **Shadows** can be turned off with `shadow:enable`.
 - **Visibility:** an invisible light (USD visibility `invisible`) is switched off.
 
-Not read: `diffuse` and `specular` multipliers, shadow color, IES angle scale and normalization,
+- **Diffuse and specular multipliers:** Cycles lights have no multipliers. A `diffuse` or
+  `specular` of 0 turns off the light's diffuse or glossy contribution (like the ray visibility
+  settings below); other values are ignored.
+
+Not read: shadow color, IES angle scale and normalization,
 and Karma-specific light attributes (`karma:light:*`). Use the Cycles ray visibility settings below
 for per-ray-type control.
 

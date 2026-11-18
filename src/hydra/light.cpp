@@ -147,6 +147,7 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
         visibility &= ~ray;
       }
     }
+    visibility &= LightMultiplierVisibility(lightDs);
     _object->set_visibility(visibility);
     const bool useMis = GetTypedValue<bool>(lightDs, _tokens->useMis, true);
     if (_lightType == HdPrimTypeTokens->domeLight) {
