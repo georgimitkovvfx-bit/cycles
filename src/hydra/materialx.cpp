@@ -17,6 +17,7 @@
 #include <MaterialXCore/Document.h>
 #include <MaterialXFormat/XmlIo.h>
 
+#include <algorithm>
 #include <cctype>
 #include <deque>
 #include <map>
@@ -80,6 +81,9 @@ struct Val {
   /* Value of a default geometric property (shading normal, tangent, ...), that Cycles nodes
    * already use when their input is not connected. */
   bool geomDefault = false;
+  /* Output of chiang_hair_roughness: the Cycles hair roughnesses (longitudinal, azimuthal), from
+   * which Cycles computes the variance and logistic scale itself, instead of those. */
+  bool hairRoughness = false;
 
   bool isConstant() const
   {
@@ -114,6 +118,21 @@ Val Of(ShaderOutput *out, const Kind kind)
 float Get(const float4 &c, const int i)
 {
   return i == 0 ? c.x : i == 1 ? c.y : i == 2 ? c.z : c.w;
+}
+
+/* Cycles hair roughness for a chiang_hair_bsdf longitudinal variance or azimuthal logistic scale:
+ * inverts the polynomials of chiang_hair_roughness, which Cycles applies itself. */
+float HairRoughness(float value, const bool azimuthal)
+{
+  value = std::clamp(value, 0.001f, 1.0f);
+  float lo = 0.0f, hi = 1.0f;
+  for (int i = 0; i < 32; i++) {
+    const float b = 0.5f * (lo + hi);
+    const float f = azimuthal ? 0.265f * b + 1.194f * b * b + 5.372f * powf(b, 22.0f) :
+                                sqr(0.726f * b + 0.812f * b * b + 3.7f * powf(b, 20.0f));
+    (f < value ? lo : hi) = b;
+  }
+  return 0.5f * (lo + hi);
 }
 
 std::string NormalizeName(const std::string &name)
@@ -1165,6 +1184,57 @@ class Translator {
       return Transform(input("in"), type, from, to);
     }
 
+    /* Hair. */
+    if (category == "chiang_hair_roughness") {
+      /* shortcut: Cycles' TT and TRT roughness scales are fixed at the defaults 0.5 and 2, so
+       * scale_TT and scale_TRT are ignored; all three outputs are the R roughness. */
+      Val roughness = Combine(input("longitudinal"), input("azimuthal"), Const(0.0f));
+      roughness.hairRoughness = true;
+      return roughness;
+    }
+    if (category == "chiang_hair_absorption_from_color") {
+      /* (log(clamp(color, 0.001, 1)) / polynomial(azimuthal_roughness))^2 */
+      const Val b = input("azimuthal_roughness");
+      Val factor = Const(0.245f);
+      for (const float k : {5.574f, -10.73f, 2.532f, -0.215f, 5.969f}) {
+        factor = Math("multiply_add", factor, b, Const(k));
+      }
+      const Val color = input("color");
+      Val sigma[3];
+      for (int i = 0; i < 3; i++) {
+        const Val c = Math(
+            "minimum", Math("maximum", Component(color, i), Const(0.001f)), Const(1.0f));
+        const Val s = Math("divide", Math("logarithm", c, Const(2.718281828f)), factor);
+        sigma[i] = Math("multiply", s, s);
+      }
+      return Combine(sigma[0], sigma[1], sigma[2]);
+    }
+    if (category == "deon_hair_absorption_from_melanin") {
+      /* max(eumelanin * -log(eumelanin_color) + pheomelanin * -log(pheomelanin_color), 0) */
+      const Val melanin = Math(
+          "multiply",
+          Math("logarithm",
+               Math("maximum",
+                    Math("subtract", Const(1.0f), input("melanin_concentration")),
+                    Const(0.0001f)),
+               Const(2.718281828f)),
+          Const(-1.0f));
+      const Val redness = input("melanin_redness");
+      const Val eumelanin = Math("multiply", melanin, Math("subtract", Const(1.0f), redness));
+      const Val pheomelanin = Math("multiply", melanin, redness);
+      const Val eumelaninColor = input("eumelanin_color");
+      const Val pheomelaninColor = input("pheomelanin_color");
+      Val sigma[3];
+      for (int i = 0; i < 3; i++) {
+        const Val eu = Math("logarithm", Component(eumelaninColor, i), Const(2.718281828f));
+        const Val pheo = Math("logarithm", Component(pheomelaninColor, i), Const(2.718281828f));
+        const Val sum = Math(
+            "add", Math("multiply", eumelanin, eu), Math("multiply", pheomelanin, pheo));
+        sigma[i] = Math("maximum", Math("multiply", sum, Const(-1.0f)), Const(0.0f));
+      }
+      return Combine(sigma[0], sigma[1], sigma[2]);
+    }
+
     /* Physics. */
     if (category == "blackbody") {
       ShaderNode *blackbody = Create("blackbody");
@@ -1359,6 +1429,40 @@ class Translator {
       Link(input("anisotropy"), In(bssrdf, "Anisotropy"));
       LinkGeom(input("normal"), In(bssrdf, "Normal"));
       return Of(Out(bssrdf, "BSSRDF"), Kind::Closure);
+    }
+    if (category == "chiang_hair_bsdf") {
+      ShaderNode *bsdf = Create("principled_hair_bsdf");
+      SetEnum(bsdf, "model", "Chiang");
+      SetEnum(bsdf, "parametrization", "Absorption coefficient");
+      Link(input("absorption_coefficient"), In(bsdf, "Absorption Coefficient"));
+      Link(input("ior"), In(bsdf, "IOR"));
+      /* Cuticle angle 0..1 is -90..90 degrees, Cycles' Offset in radians. */
+      Link(Math("multiply_add", input("cuticle_angle"), Const(M_PI_F), Const(-M_PI_2_F)),
+           In(bsdf, "Offset"));
+      /* shortcut: Cycles derives the TT and TRT roughness from R with the default scales, so
+       * roughness_TT and roughness_TRT are ignored. */
+      const Val roughness = input("roughness_R");
+      if (roughness.hairRoughness) {
+        Link(Component(roughness, 0), In(bsdf, "Roughness"));
+        Link(Component(roughness, 1), In(bsdf, "Radial Roughness"));
+      }
+      else if (roughness.isConstant()) {
+        Link(Const(HairRoughness(roughness.c.x, false)), In(bsdf, "Roughness"));
+        Link(Const(HairRoughness(roughness.c.y, true)), In(bsdf, "Radial Roughness"));
+      }
+      else {
+        Warn("chiang_hair_bsdf roughness_R not from chiang_hair_roughness or constant: ignored");
+      }
+      /* shortcut: Cycles has no lobe tints, their average weights the whole BSDF. */
+      const Val closure = Of(Out(bsdf, "BSDF"), Kind::Closure);
+      Val tint = Const(0.0f);
+      bool white = true;
+      for (const char *name : {"tint_R", "tint_TT", "tint_TRT"}) {
+        const Val t = input(name);
+        white &= t.isConstant() && t.c.x == 1.0f && t.c.y == 1.0f && t.c.z == 1.0f;
+        tint = Math("multiply_add", Average(t), Const(1.0f / 3.0f), tint);
+      }
+      return white ? closure : Weighted(closure, tint);
     }
     if (category == "uniform_edf") {
       ShaderNode *emission = Create("emission");
