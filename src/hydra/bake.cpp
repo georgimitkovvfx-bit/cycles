@@ -35,11 +35,10 @@ Object *FindBakeObject(Scene *scene, const std::string &name)
   return nullptr;
 }
 
+/* The primitive index as the bits of a float, like the kernel reads it (__float_as_uint). */
 float AsFloat(const uint bits)
 {
-  float value;
-  std::memcpy(&value, &bits, sizeof(value));
-  return value;
+  return __uint_as_float(bits);
 }
 
 }  // namespace
@@ -110,9 +109,7 @@ std::vector<unsigned char> BakeCoverage(const OutputDriver::Tile &tile)
   }
   std::vector<unsigned char> coverage(num);
   for (size_t i = 0; i < num; ++i) {
-    uint bits;
-    std::memcpy(&bits, &primitive[i * 3 + 2], sizeof(bits));
-    coverage[i] = bits != ~0u;
+    coverage[i] = __float_as_uint(primitive[i * 3 + 2]) != ~0u;
   }
   return coverage;
 }
@@ -188,8 +185,7 @@ void ConvertBakeNormals(const BakeMesh &mesh,
   }
 
   for (size_t i = 0; i < num; ++i) {
-    uint prim;
-    std::memcpy(&prim, &primitive[i * 3 + 2], sizeof(prim));
+    const uint prim = __float_as_uint(primitive[i * 3 + 2]);
     if (prim == ~0u || prim >= mesh.numTriangles) {
       continue;
     }
