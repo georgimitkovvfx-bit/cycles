@@ -203,7 +203,9 @@ it into a Cycles shader graph.
   `geompropvalue`, `geomcolor`, position, normal, tangent, bitangent, `time`), normal maps and
   height to normal, and closures (`dielectric_bsdf`, `conductor_bsdf`, `generalized_schlick_bsdf`,
   `subsurface_bsdf`, `sheen_bsdf`, `burley_diffuse_bsdf`, `translucent_bsdf`, `uniform_edf`,
-  `surface`, `surface_unlit`, `displacement`), and volumes (`volumematerial`, `volume`,
+  `surface`, `surface_unlit`, `displacement`), hair (`chiang_hair_bsdf` as the Principled Hair BSDF
+  with the Chiang model, `chiang_hair_roughness`, `chiang_hair_absorption_from_color`,
+  `deon_hair_absorption_from_melanin`), and volumes (`volumematerial`, `volume`,
   `anisotropic_vdf` and `absorption_vdf` as Cycles' Volume Coefficients, with `uniform_edf` as
   volume emission).
 - Nodes that MaterialX defines as node graphs of other nodes (`tiledimage`, `place2d`,
@@ -217,6 +219,9 @@ it into a Cycles shader graph.
   than Karma's.
 - The OpenPBR coat is approximated.
 - BSDF layering (`layer`) is approximated by adding the layers.
+- `chiang_hair_bsdf`: the TT and TRT roughness follow the R roughness with the default scales (0.5
+  and 2), and the average of the three lobe tints weights the whole BSDF. Karma XPU does not render
+  this BSDF; Karma CPU does.
 - Matrix nodes and hex tiling (`hextiledimage`, rendered as a plain image) are not supported. Unsupported nodes output zero and print a warning.
 - Editing any parameter of a MaterialX material rebuilds the whole Cycles shader.
 

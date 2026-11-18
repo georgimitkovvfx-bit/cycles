@@ -94,6 +94,8 @@ The velocity field is only loaded while motion blur is on. See [motion-blur.md](
 
 ## Limits
 
-- MaterialX volume materials (`volumematerial`) are not translated; use a Cycles volume shader.
+- MaterialX volume materials (`volumematerial` with `volume`, `anisotropic_vdf`, `absorption_vdf`
+  and `uniform_edf`) are translated to Cycles' Volume Coefficients; see
+  [materials.md](materials.md).
 - Volume motion blur needs a velocity field; animated transforms of the volume prim blur like any
   other object.
