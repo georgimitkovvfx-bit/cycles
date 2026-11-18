@@ -27,6 +27,7 @@
 #  include "util/projection.h"
 #  include "util/task.h"
 
+#  include <filesystem>
 #  include <iomanip>
 #  include <sstream>
 
@@ -599,9 +600,19 @@ const char *OSLManager::shader_load_filepath(string filepath)
   uint64_t modified_time = path_modified_time(filepath);
 
   if (extension == ".osl") {
-    /* .OSL File */
-    const string osopath = filepath.substr(0, len - 4) + ".oso";
-    const uint64_t oso_modified_time = path_modified_time(osopath);
+    /* .OSL File, compiled next to it, or in the temporary directory when that is not writable
+     * (e.g. installed example scripts). */
+    string osopath = filepath.substr(0, len - 4) + ".oso";
+    uint64_t oso_modified_time = path_modified_time(osopath);
+    MD5Hash md5;
+    md5.append(filepath);
+    const string temp_osopath = path_join(
+        path_join(std::filesystem::temp_directory_path().string(), "cycles_osl"),
+        md5.get_hex() + ".oso");
+    if (oso_modified_time < modified_time && path_modified_time(temp_osopath) >= modified_time) {
+      osopath = temp_osopath;
+      oso_modified_time = path_modified_time(osopath);
+    }
 
     /* test if we have loaded the corresponding .OSO already */
     if (oso_modified_time != 0) {
@@ -614,7 +625,11 @@ const char *OSLManager::shader_load_filepath(string filepath)
 
     /* Auto-compile .OSL to .OSO if needed. */
     if (oso_modified_time == 0 || (oso_modified_time < modified_time)) {
-      OSLManager::osl_compile(filepath, osopath);
+      if (!OSLManager::osl_compile(filepath, osopath) && osopath != temp_osopath) {
+        osopath = temp_osopath;
+        path_create_directories(osopath);
+        OSLManager::osl_compile(filepath, osopath);
+      }
       modified_time = path_modified_time(osopath);
     }
     else {
