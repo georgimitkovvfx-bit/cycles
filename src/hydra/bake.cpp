@@ -137,6 +137,11 @@ void ConvertBakeNormals(Scene *scene,
   }
   const packed_float3 *const P = attrP->data<packed_float3>();
   const packed_normal *const N = attrN ? attrN->data<packed_normal>() : nullptr;
+  /* MikkTSpace tangents, which Cycles computes while baking (Scene::need_global_attribute). */
+  const Attribute *const attrT = mesh->attributes.find(ATTR_STD_UV_TANGENT);
+  const Attribute *const attrS = mesh->attributes.find(ATTR_STD_UV_TANGENT_SIGN);
+  const bool cornerTangents = attrT && attrS && attrT->element == ATTR_ELEMENT_CORNER &&
+                              attrS->element == ATTR_ELEMENT_CORNER;
   const float2 *const uvs = attrUV->data<float2>();
   const array<int> &triangles = mesh->get_triangles();
   const bool cornerUV = attrUV->element == ATTR_ELEMENT_CORNER;
@@ -174,10 +179,19 @@ void ConvertBakeNormals(Scene *scene,
         continue;
       }
       const float3 dp1 = p1 - p0, dp2 = p2 - p0;
-      const float3 tangent = (dp1 * d2.y - dp2 * d1.y) / det;
-      const float3 bitangent = (dp2 * d1.x - dp1 * d2.x) / det;
+      float3 tangent = (dp1 * d2.y - dp2 * d1.y) / det;
+      float sign = dot(cross(ns, tangent), (dp2 * d1.x - dp1 * d2.x) / det) < 0.0f ? -1.0f : 1.0f;
+      if (cornerTangents) {
+        const packed_float3 *const T = attrT->data<packed_float3>();
+        const float *const S = attrS->data<float>();
+        tangent = w0 * make_float3(T[prim * 3 + 0]) + w1 * make_float3(T[prim * 3 + 1]) +
+                  w2 * make_float3(T[prim * 3 + 2]);
+        sign = (w0 * S[prim * 3 + 0] + w1 * S[prim * 3 + 1] + w2 * S[prim * 3 + 2]) < 0.0f ?
+                   -1.0f :
+                   1.0f;
+      }
       const float3 t = safe_normalize(tangent - ns * dot(ns, tangent));
-      const float3 b = cross(ns, t) * (dot(cross(ns, t), bitangent) < 0.0f ? -1.0f : 1.0f);
+      const float3 b = cross(ns, t) * sign;
       result = make_float3(dot(n, t), dot(n, b), dot(n, ns)) * 0.5f + make_float3(0.5f);
     }
     pixels[i * channels + 0] = result.x;
