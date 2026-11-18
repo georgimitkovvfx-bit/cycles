@@ -1122,6 +1122,7 @@ void SkyTextureNode::compile(OSLCompiler &compiler)
   compiler.parameter_array("config_y", sunsky.config_y, 9);
   compiler.parameter_array("config_z", sunsky.config_z, 9);
   compiler.parameter_array("nishita_data", sunsky.nishita_data, 11);
+  compiler.parameter("xyz_to_scene_linear", ColorSpaceManager::get_xyz_to_scene_linear_rgb());
   compiler.add(this, "node_sky_texture");
 }
 

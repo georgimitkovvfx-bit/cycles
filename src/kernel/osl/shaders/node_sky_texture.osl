@@ -56,9 +56,7 @@ color sky_radiance_preetham(normal dir,
   float y = radiance[2] * sky_perez_function(config_z, theta, gamma);
   float Y = radiance[0] * sky_perez_function(config_x, theta, gamma);
 
-  /* convert to RGB */
-  color xyz = xyY_to_xyz(x, y, Y);
-  return xyz_to_rgb(xyz[0], xyz[1], xyz[2]);
+  return xyY_to_xyz(x, y, Y);
 }
 
 /* Hosek / Wilkie */
@@ -100,8 +98,8 @@ color sky_radiance_hosek(normal dir,
   float y = sky_radiance_internal(config_y, theta, gamma) * radiance[1];
   float z = sky_radiance_internal(config_z, theta, gamma) * radiance[2];
 
-  /* convert to RGB and adjust strength */
-  return xyz_to_rgb(x, y, z) * (M_2PI / 683);
+  /* adjust strength */
+  return color(x, y, z) * (M_2PI / 683);
 }
 
 /* Nishita improved */
@@ -157,7 +155,7 @@ color sky_radiance_nishita(vector dir, float sky_data[11], string filename, stri
     /* Limb darkening, coefficient is 0.6 */
     float angle_fraction = sun_dir_angle / half_angular;
     float limb_darkening = (1.0 - 0.6 * (1.0 - sqrt(1.0 - angle_fraction * angle_fraction)));
-    rgb_sun = xyz_to_rgb(xyz[0], xyz[1], xyz[2]) * limb_darkening;
+    rgb_sun = xyz * limb_darkening;
   }
   float x = (direction[1] + M_PI + sun_rotation) / M_2PI;
   if (x > 1.0) {
@@ -167,9 +165,8 @@ color sky_radiance_nishita(vector dir, float sky_data[11], string filename, stri
   float dir_elevation_abs = (dir_elevation < 0.0) ? -dir_elevation : dir_elevation;
   float y = sqrt(dir_elevation_abs / M_PI_2) * signx(dir_elevation) * 0.5 + 0.5;
   color xyz = (color)texture(filename, x, y, "wrap", "clamp", "interp", "linear", "alpha", alpha);
-  color rgb_sky = xyz_to_rgb(xyz[0], xyz[1], xyz[2]);
 
-  return rgb_sun * sun_intensity + rgb_sky;
+  return rgb_sun * sun_intensity + xyz;
 }
 
 shader node_sky_texture(
@@ -185,6 +182,11 @@ shader node_sky_texture(
     float config_y[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
     float config_z[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
     float nishita_data[11] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+    /* XYZ to scene linear RGB of the OCIO config like SVM, Rec.709 by default. */
+    matrix xyz_to_scene_linear = matrix(3.240479, -0.969256, 0.055648, 0.0,
+                                        -1.537150, 1.875991, -0.204043, 0.0,
+                                        -0.498535, 0.041556, 1.057311, 0.0,
+                                        0.0, 0.0, 0.0, 1.0),
     output color Color = color(0.0, 0.0, 0.0))
 {
   vector p = Vector;
@@ -198,4 +200,7 @@ shader node_sky_texture(
     Color = sky_radiance_preetham(p, phi, theta, radiance, config_x, config_y, config_z);
   else
     Color = sky_radiance_nishita(p, nishita_data, filename, sky_type);
+
+  /* The sky models give XYZ: convert to scene linear and clamp like SVM. */
+  Color = max((color)transform(xyz_to_scene_linear, (vector)Color), color(0.0));
 }
