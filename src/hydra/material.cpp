@@ -351,6 +351,10 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (metallic)
     (fallback)
     (opacityThreshold)
+    (kma_hair)
+    (shift)
+    (roughnessAnisotropic)
+    (roughnessAzimuthal)
 );
 // clang-format on
 
@@ -670,6 +674,60 @@ class UsdToCyclesPrimvarReader : public UsdToCyclesMapping {
   }
 };
 
+/* Karma Hair (kma_hair, Chiang et al.) as the Chiang Principled Hair BSDF with melanin, with
+ * Karma's defaults. Base Color is a dye like the Principled Hair Tint. Base, Tint (a multiplier on
+ * the lighting), Thickness Scale, Diffuse, Absorption, the TT/TRT roughness scales and the hair ID
+ * and seed have no Cycles input and are ignored. */
+class UsdToCyclesKarmaHair : public UsdToCyclesMapping {
+ public:
+  using UsdToCyclesMapping::UsdToCyclesMapping;
+
+  void initialize(ShaderNode *node) const override
+  {
+    PrincipledHairBsdfNode *hair = static_cast<PrincipledHairBsdfNode *>(node);
+    hair->set_model(NODE_PRINCIPLED_HAIR_CHIANG);
+    hair->set_parametrization(NODE_PRINCIPLED_HAIR_PIGMENT_CONCENTRATION);
+    hair->set_melanin(0.4f);
+    hair->set_melanin_redness(0.1f);
+    hair->set_offset(0.03f * M_PI_2_F);
+  }
+
+  bool isInputUsed(const TfToken &name,
+                   const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    if (name == CyclesMaterialTokens->roughnessAzimuthal) {
+      return GetParameter(params, CyclesMaterialTokens->roughnessAnisotropic, 0) != 0;
+    }
+    return hasParameterMapping(name);
+  }
+
+  std::string parameterName(const TfToken &name,
+                            const ShaderInput *inputConnection,
+                            VtValue *value) const override
+  {
+    /* Shift -1..1 is the cuticle angle -90..90 degrees, Offset is in radians. */
+    if (value && name == CyclesMaterialTokens->shift) {
+      *value = VtValue(VtValue::Cast<float>(*value).GetWithDefault(0.03f) * M_PI_2_F);
+    }
+    return UsdToCyclesMapping::parameterName(name, inputConnection, value);
+  }
+
+  void finalize(ShaderGraph *graph,
+                ShaderNode *node,
+                const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* Without Roughness Anisotropic, Roughness is also the azimuthal roughness. */
+    if (GetParameter(params, CyclesMaterialTokens->roughnessAnisotropic, 0) != 0) {
+      return;
+    }
+    PrincipledHairBsdfNode *hair = static_cast<PrincipledHairBsdfNode *>(node);
+    hair->set_radial_roughness(hair->get_roughness());
+    if (ShaderOutput *link = hair->input("Roughness")->link) {
+      graph->connect(link, hair->input("Radial Roughness"));
+    }
+  }
+};
+
 namespace {
 
 class UsdToCycles {
@@ -696,6 +754,20 @@ class UsdToCycles {
       }};
   const UsdToCyclesPrimvarReader UsdPrimvarReader = {
       "attribute", {{TfToken("varname"), ustring("attribute")}}};
+  const UsdToCyclesKarmaHair KarmaHair = {
+      "principled_hair_bsdf",
+      {
+          {TfToken("baseColor"), ustring("tint")},
+          {TfToken("melanin"), ustring("melanin")},
+          {TfToken("melaninRedness"), ustring("melanin_redness")},
+          {TfToken("melaninRandomize"), ustring("random_color")},
+          {CyclesMaterialTokens->shift, ustring("offset")},
+          {CyclesMaterialTokens->ior, ustring("ior")},
+          {TfToken("roughness"), ustring("roughness")},
+          {CyclesMaterialTokens->roughnessAzimuthal, ustring("radial_roughness")},
+          {TfToken("roughnessRandomize"), ustring("random_roughness")},
+          {TfToken("coat"), ustring("coat")},
+      }};
 
  public:
   const UsdToCyclesMapping *findUsd(const TfToken &usdNodeType)
@@ -705,6 +777,9 @@ class UsdToCycles {
     }
     if (usdNodeType == CyclesMaterialTokens->UsdUVTexture) {
       return &UsdUVTexture;
+    }
+    if (usdNodeType == CyclesMaterialTokens->kma_hair) {
+      return &KarmaHair;
     }
     if (usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float ||
         usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float2 ||
