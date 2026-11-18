@@ -429,7 +429,10 @@ ccl_device bool volume_octree_setup_single(KernelGlobals kg,
   /* Convert to object space. */
   float3 local_P = ray->P, local_D = ray->D;
   if (!(kernel_data_fetch(object_flag, entry.object) & SD_OBJECT_TRANSFORM_APPLIED)) {
-    const Transform itfm = object_fetch_transform(kg, entry.object, OBJECT_INVERSE_TRANSFORM);
+    /* At the ray time, like the shader evaluates the density: with transform motion blur the
+     * octree of the object is elsewhere in world space at other times. */
+    Transform itfm;
+    object_fetch_transform_motion_test(kg, entry.object, ray->time, &itfm);
     local_P = transform_point(&itfm, ray->P);
     local_D = transform_direction(&itfm, ray->D);
   }
