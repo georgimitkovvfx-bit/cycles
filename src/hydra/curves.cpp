@@ -12,7 +12,90 @@
 #include <pxr/imaging/hd/basisCurvesSchema.h>
 #include <pxr/imaging/hd/basisCurvesTopologySchema.h>
 
+#include <array>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+template<typename T> VtValue ApplyKeyMap(const HdCyclesCurveKeyMap &map, const VtArray<T> &values)
+{
+  VtArray<T> keys(map.size());
+  for (size_t key = 0; key < map.size(); ++key) {
+    T sum(0.0f);
+    for (int i = map.start[key]; i < map.start[key + 1]; ++i) {
+      sum += values[map.terms[i].first] * map.terms[i].second;
+    }
+    keys[key] = sum;
+  }
+  return VtValue(std::move(keys));
+}
+
+/* Weights of the 4 control points of a cubic segment at t. */
+std::array<float, 4> CubicWeights(const TfToken &basis, const float t)
+{
+  const float s = 1.0f - t;
+  if (basis == HdTokens->bspline) {
+    return {s * s * s / 6.0f,
+            (3.0f * t * t * t - 6.0f * t * t + 4.0f) / 6.0f,
+            (-3.0f * t * t * t + 3.0f * t * t + 3.0f * t + 1.0f) / 6.0f,
+            t * t * t / 6.0f};
+  }
+  if (basis == HdTokens->catmullRom) {
+    return {0.5f * (-t * t * t + 2.0f * t * t - t),
+            0.5f * (3.0f * t * t * t - 5.0f * t * t + 2.0f),
+            0.5f * (-3.0f * t * t * t + 4.0f * t * t + t),
+            0.5f * (t * t * t - t * t)};
+  }
+  /* Bezier (also the fallback for Hydra's unsupported bases). */
+  return {s * s * s, 3.0f * t * s * s, 3.0f * t * t * s, t * t * t};
+}
+
+class KeyMapBuilder {
+ public:
+  explicit KeyMapBuilder(HdCyclesCurveKeyMap &map) : _map(map)
+  {
+    _map = HdCyclesCurveKeyMap();
+  }
+  void AddTerm(const int index, const float weight)
+  {
+    if (weight != 0.0f) {
+      _map.terms.emplace_back(index, weight);
+    }
+  }
+  void EndKey()
+  {
+    if (_map.start.empty()) {
+      _map.start.push_back(0);
+    }
+    _map.start.push_back(int(_map.terms.size()));
+  }
+
+ private:
+  HdCyclesCurveKeyMap &_map;
+};
+
+}  // namespace
+
+VtValue HdCyclesCurveKeyMap::Apply(const VtValue &value) const
+{
+  if (empty() || value.GetArraySize() != sourceSize) {
+    return value;
+  }
+  if (value.IsHolding<VtFloatArray>()) {
+    return ApplyKeyMap(*this, value.UncheckedGet<VtFloatArray>());
+  }
+  if (value.IsHolding<VtVec2fArray>()) {
+    return ApplyKeyMap(*this, value.UncheckedGet<VtVec2fArray>());
+  }
+  if (value.IsHolding<VtVec3fArray>()) {
+    return ApplyKeyMap(*this, value.UncheckedGet<VtVec3fArray>());
+  }
+  if (value.IsHolding<VtVec4fArray>()) {
+    return ApplyKeyMap(*this, value.UncheckedGet<VtVec4fArray>());
+  }
+  return value;
+}
 
 HdCyclesCurves::HdCyclesCurves(const SdfPath &rprimId) : HdCyclesGeometry(rprimId) {}
 
@@ -71,9 +154,24 @@ void HdCyclesCurves::PopulatePoints(HdSceneDelegate *sceneDelegate)
 
   const auto &points = value.UncheckedGet<VtVec3fArray>();
 
+  /* Radius has no motion steps, Cycles uses the center one for all. */
+  if (!_vertexMap.empty()) {
+    if (points.size() != _numControlPoints) {
+      TF_WARN("Invalid points data for %s", GetId().GetText());
+      return;
+    }
+    SetPositions(_geom->attributes.add(ATTR_STD_POSITION),
+                 primvars,
+                 points,
+                 _geom->num_keys(),
+                 [this](const VtVec3fArray &controlPoints) {
+                   return _vertexMap.Apply(VtValue(controlPoints)).UncheckedGet<VtVec3fArray>();
+                 });
+    return;
+  }
+
   TF_VERIFY(points.size() >= _geom->num_keys());
 
-  /* Radius has no motion steps, Cycles uses the center one for all. */
   SetPositions(_geom->attributes.add(ATTR_STD_POSITION),
                primvars,
                points,
@@ -92,7 +190,13 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
     return;
   }
 
-  const auto &widths = value.UncheckedGet<VtFloatArray>();
+  /* Widths at the keys: vertex widths follow the curve basis, varying ones are linear. */
+  const VtValue keyValue = (interpolation == HdInterpolationVertex) ? _vertexMap.Apply(value) :
+                           (interpolation == HdInterpolationVarying ||
+                            interpolation == HdInterpolationFaceVarying) ?
+                                                                      _varyingMap.Apply(value) :
+                                                                      value;
+  const auto &widths = keyValue.UncheckedGet<VtFloatArray>();
   float *radius = _geom->get_radius_for_write();
 
   if (interpolation == HdInterpolationConstant) {
@@ -104,12 +208,23 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
       radius[i] = constantRadius;
     }
   }
-  else if (interpolation == HdInterpolationVertex) {
-    TF_VERIFY(widths.size() == _geom->num_keys());
-
+  else if (interpolation == HdInterpolationUniform) {
+    if (widths.size() != _geom->num_curves()) {
+      TF_WARN("Invalid widths data for %s", GetId().GetText());
+      return;
+    }
+    for (size_t curve = 0; curve < _geom->num_curves(); ++curve) {
+      const Hair::Curve c = _geom->get_curve(curve);
+      std::fill_n(radius + c.first_key, c.num_keys, widths[curve] * 0.5f);
+    }
+  }
+  else if (widths.size() == _geom->num_keys()) {
     for (size_t i = 0; i < _geom->num_keys(); ++i) {
       radius[i] = widths[i] * 0.5f;
     }
+  }
+  else {
+    TF_WARN("Invalid widths data for %s", GetId().GetText());
   }
 }
 
@@ -139,6 +254,14 @@ void HdCyclesCurves::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
       VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, primvarName));
       if (value.IsEmpty()) {
         continue;
+      }
+      if (interpolation.first == HdInterpolationVertex) {
+        value = _vertexMap.Apply(value);
+      }
+      else if (interpolation.first != HdInterpolationUniform &&
+               interpolation.first != HdInterpolationConstant)
+      {
+        value = _varyingMap.Apply(value);
       }
 
       AttributeStandard std = PrimvarStandard(primvars, primvarName, uvName);
@@ -207,9 +330,132 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
   const HdBasisCurvesTopology topology(
       curveType, curveBasis, curveWrap, curveVertexCounts, curveIndices);
 
-  _geom->resize_curves(topology.GetNumCurves(), topology.CalculateNeededNumberOfControlPoints());
-
   const VtIntArray vertCounts = topology.GetCurveVertexCounts();
+  const bool cubic = curveType == HdTokens->cubic;
+  const bool periodic = curveWrap == HdTokens->periodic;
+  const bool pinned = curveWrap == HdTokens->pinned;
+
+  /* Linear curves are Cycles' linear 3D curves (ribbons are always Catmull-Rom). */
+  if (!cubic && _geom->curve_shape == CURVE_THICK) {
+    _geom->curve_shape = CURVE_THICK_LINEAR;
+  }
+
+  /* Cycles' Catmull-Rom keys: Catmull-Rom control points as they are, other bases sampled 2
+   * (B-spline) or 3 (Bezier) times per segment. Periodic curves end with their first key again.
+   * Pinned B-spline and Catmull-Rom curves get phantom end points (2 P0 - P1). */
+  const TfToken basis = (curveBasis == HdTokens->bspline || curveBasis == HdTokens->catmullRom) ?
+                            curveBasis :
+                            HdTokens->bezier;
+  const bool identity = (!cubic && !periodic) ||
+                        (cubic && basis == HdTokens->catmullRom && pinned);
+  _numControlPoints = 0;
+  for (const int count : vertCounts) {
+    _numControlPoints += size_t(std::max(count, 0));
+  }
+  std::vector<int> keyCounts(vertCounts.begin(), vertCounts.end());
+
+  if (identity) {
+    _vertexMap = HdCyclesCurveKeyMap();
+    _varyingMap = HdCyclesCurveKeyMap();
+  }
+  else {
+    KeyMapBuilder vertex(_vertexMap);
+    KeyMapBuilder varying(_varyingMap);
+    const int samples = !cubic                     ? 1 :
+                        basis == HdTokens->bezier  ? 3 :
+                        basis == HdTokens->bspline ? 2 :
+                                                     1;
+    const int vstep = (cubic && basis == HdTokens->bezier) ? 3 : 1;
+    size_t cvOffset = 0;
+    size_t varyingOffset = 0;
+    for (size_t curve = 0; curve < vertCounts.size(); ++curve) {
+      const int n = std::max(vertCounts[curve], 0);
+      /* Segments and the control point index of each segment's first point. */
+      int numSegments = 0;
+      int firstPoint = 0;
+      if (!cubic) {
+        numSegments = periodic ? n : n - 1;
+      }
+      else if (basis == HdTokens->bezier) {
+        numSegments = periodic ? n / 3 : (n - 1) / 3;
+      }
+      else {
+        numSegments = periodic ? n : pinned ? n - 1 : n - 3;
+        firstPoint = pinned ? -1 : 0;
+      }
+      const int numVarying = !cubic ? n : periodic ? numSegments : numSegments + 1;
+
+      const auto addPoint = [&](const int i, const float weight) {
+        if (periodic) {
+          vertex.AddTerm(int(cvOffset) + (i % n + n) % n, weight);
+        }
+        else if (i < 0) { /* Pinned phantom points. */
+          vertex.AddTerm(int(cvOffset), 2.0f * weight);
+          vertex.AddTerm(int(cvOffset) + 1, -weight);
+        }
+        else if (i >= n) {
+          vertex.AddTerm(int(cvOffset) + n - 1, 2.0f * weight);
+          vertex.AddTerm(int(cvOffset) + n - 2, -weight);
+        }
+        else {
+          vertex.AddTerm(int(cvOffset) + i, weight);
+        }
+      };
+      const auto addKey = [&](const int segment, const float t) {
+        if (!cubic) {
+          addPoint(segment + (t > 0.0f ? 1 : 0), 1.0f);
+        }
+        else {
+          const std::array<float, 4> weights = CubicWeights(basis, t);
+          for (int j = 0; j < 4; ++j) {
+            addPoint(firstPoint + segment * vstep + j, weights[j]);
+          }
+        }
+        vertex.EndKey();
+        const int v0 = segment % std::max(numVarying, 1);
+        const int v1 = (segment + 1) % std::max(numVarying, 1);
+        varying.AddTerm(int(varyingOffset) + v0, 1.0f - t);
+        varying.AddTerm(int(varyingOffset) + v1, t);
+        varying.EndKey();
+      };
+
+      if (numSegments < 1 || n < (cubic ? (basis == HdTokens->bezier ? 4 : 2) : 2)) {
+        /* Not a valid curve: its control points as keys. */
+        for (int i = 0; i < std::max(n, 1); ++i) {
+          vertex.AddTerm(int(cvOffset) + std::min(i, std::max(n - 1, 0)), 1.0f);
+          vertex.EndKey();
+          varying.AddTerm(int(varyingOffset) + std::min(i, std::max(numVarying - 1, 0)), 1.0f);
+          varying.EndKey();
+        }
+        keyCounts[curve] = std::max(n, 1);
+      }
+      else {
+        for (int segment = 0; segment < numSegments; ++segment) {
+          for (int sample = 0; sample < samples; ++sample) {
+            addKey(segment, float(sample) / float(samples));
+          }
+        }
+        /* The end of the last segment; periodic curves end at their start. */
+        if (periodic) {
+          addKey(0, 0.0f);
+        }
+        else {
+          addKey(numSegments - 1, 1.0f);
+        }
+        keyCounts[curve] = numSegments * samples + 1;
+      }
+      cvOffset += n;
+      varyingOffset += std::max(numVarying, 0);
+    }
+    _vertexMap.sourceSize = _numControlPoints;
+    _varyingMap.sourceSize = varyingOffset;
+  }
+
+  size_t numKeys = 0;
+  for (const int count : keyCounts) {
+    numKeys += count;
+  }
+  _geom->resize_curves(topology.GetNumCurves(), numKeys);
 
   int *curve_first_key = _geom->get_curve_first_key().data();
 
@@ -217,7 +463,7 @@ void HdCyclesCurves::PopulateTopology(HdSceneDelegate *sceneDelegate)
     // Always reference shader at index zero, which is the primitive material
     curve_first_key[curve] = key;
 
-    key += vertCounts[curve];
+    key += keyCounts[curve];
   }
 
   std::ranges::fill(_geom->get_curve_shader(), 0);

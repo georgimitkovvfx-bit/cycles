@@ -436,10 +436,12 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstanceColor(const VtValue &value)
 }
 
 template<typename Base, typename CyclesBase>
-void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
-                                                      const HdPrimvarsSchema &primvars,
-                                                      const VtVec3fArray &points,
-                                                      const size_t numPoints)
+void HdCyclesGeometry<Base, CyclesBase>::SetPositions(
+    Attribute *attr_P,
+    const HdPrimvarsSchema &primvars,
+    const VtVec3fArray &points,
+    const size_t numPoints,
+    const std::function<VtVec3fArray(const VtVec3fArray &)> &remap)
 {
   static_assert(sizeof(GfVec3f) == sizeof(packed_float3));
 
@@ -460,7 +462,8 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
         motionPoints.clear(); /* Changing topology. */
         break;
       }
-      motionPoints.push_back(stepValue.UncheckedGet<VtVec3fArray>());
+      motionPoints.push_back(remap ? remap(stepValue.UncheckedGet<VtVec3fArray>()) :
+                                     stepValue.UncheckedGet<VtVec3fArray>());
     }
   }
 
@@ -475,8 +478,10 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(Attribute *attr_P,
     attr_P->add_motion(_geom);
   }
 
-  const VtVec3fArray &center = motionPoints.empty() ? points :
-                                                      motionPoints[motionPoints.size() / 2];
+  const VtVec3fArray remapped = (remap && motionPoints.empty()) ? remap(points) : VtVec3fArray();
+  const VtVec3fArray &center = !motionPoints.empty() ? motionPoints[motionPoints.size() / 2] :
+                               remap                 ? remapped :
+                                                       points;
   std::copy_n(reinterpret_cast<const packed_float3 *>(center.data()),
               numPoints,
               attr_P->data_for_write<packed_float3>());

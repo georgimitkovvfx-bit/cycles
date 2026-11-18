@@ -11,6 +11,7 @@
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/rprim.h>
 
+#include <functional>
 #include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -53,11 +54,14 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void SetInstanceColor(const PXR_NS::VtValue &value);
 
   /* The first numPoints of the points primvar, at the motion steps when they move over the
-   * shutter. `points` is its value at the current frame. */
-  void SetPositions(CCL_NS::Attribute *attr_P,
-                    const PXR_NS::HdPrimvarsSchema &primvars,
-                    const PXR_NS::VtVec3fArray &points,
-                    size_t numPoints);
+   * shutter. `points` is its value at the current frame. `remap`, if set, converts the points
+   * of every step (e.g. curve control points to Cycles curve keys) before that. */
+  void SetPositions(
+      CCL_NS::Attribute *attr_P,
+      const PXR_NS::HdPrimvarsSchema &primvars,
+      const PXR_NS::VtVec3fArray &points,
+      size_t numPoints,
+      const std::function<PXR_NS::VtVec3fArray(const PXR_NS::VtVec3fArray &)> &remap = {});
 
   /* Times of the motion steps of this object: none when its motion blur is off, its own number
    * of steps when set. */
