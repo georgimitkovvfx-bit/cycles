@@ -7,6 +7,9 @@
 #ifdef WITH_HYDRA_MATERIALX
 #  include "hydra/materialx.h"
 #endif
+#ifdef WITH_HOUDINI_IMAGES
+#  include "hydra/houdini_image.h"
+#endif
 #include "hydra/node_util.h"
 #include "hydra/session.h"
 #include "hydra/util.h"
@@ -863,6 +866,19 @@ void HdCyclesMaterial::AddPrimvarAOVs(ShaderGraph *graph,
  * to it on disk. shortcut: only the <UDIM> token, add <UVTILE> when a scene uses it. */
 void HdCyclesMaterial::SetUdimTiles(ShaderGraph *graph)
 {
+#ifdef WITH_HOUDINI_IMAGES
+  /* Houdini's .rat textures, as files OpenImageIO reads (before the UDIM tiles are listed). */
+  for (ShaderNode *node : graph->nodes) {
+    if (node->type == ImageTextureNode::get_node_type()) {
+      ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+      image->set_filename(ustring(HdCycles::ResolveHoudiniImage(image->get_filename().string())));
+    }
+    else if (node->type == EnvironmentTextureNode::get_node_type()) {
+      EnvironmentTextureNode *image = static_cast<EnvironmentTextureNode *>(node);
+      image->set_filename(ustring(HdCycles::ResolveHoudiniImage(image->get_filename().string())));
+    }
+  }
+#endif
   for (ShaderNode *node : graph->nodes) {
     if (node->type != ImageTextureNode::get_node_type()) {
       continue;

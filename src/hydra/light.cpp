@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/light.h"
+#ifdef WITH_HOUDINI_IMAGES
+#  include "hydra/houdini_image.h"
+#endif
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "kernel/types.h"
@@ -724,6 +727,9 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
       if (filename.empty()) {
         filename = assetPath.GetAssetPath();
       }
+#ifdef WITH_HOUDINI_IMAGES
+      filename = HdCycles::ResolveHoudiniImage(filename);
+#endif
 
       if (!filename.empty()) {
         ImageSlotTextureNode *textureNode = nullptr;

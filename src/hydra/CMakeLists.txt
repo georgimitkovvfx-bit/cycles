@@ -87,11 +87,19 @@ if(TARGET hdMtlx)
   list(APPEND SRC_HD_CYCLES_HEADERS materialx.h)
 endif()
 
-# Volumes from SOPs in a Houdini LOP stage, read through Houdini's libraries.
-if(HOUDINI_FOUND AND WITH_OPENVDB)
-  list(APPEND SRC_HD_CYCLES houdini_volume.cpp)
-  list(APPEND SRC_HD_CYCLES_HEADERS houdini_volume.h)
-  add_definitions(-DWITH_HOUDINI_VOLUMES)
+# Volumes from SOPs in a Houdini LOP stage and Houdini image formats (.rat), read through
+# Houdini's libraries.
+if(HOUDINI_FOUND)
+  set(_hdk_sources houdini_image.cpp)
+  list(APPEND SRC_HD_CYCLES houdini_image.cpp)
+  list(APPEND SRC_HD_CYCLES_HEADERS houdini_image.h)
+  add_definitions(-DWITH_HOUDINI_IMAGES)
+  if(WITH_OPENVDB)
+    list(APPEND _hdk_sources houdini_volume.cpp)
+    list(APPEND SRC_HD_CYCLES houdini_volume.cpp)
+    list(APPEND SRC_HD_CYCLES_HEADERS houdini_volume.h)
+    add_definitions(-DWITH_HOUDINI_VOLUMES)
+  endif()
   # Houdini Development Kit definitions, see toolkit/cmake/HoudiniConfig.cmake.
   set(_hdk_definitions
     SIZEOF_VOID_P=8 SESI_LITTLE_ENDIAN UT_ASSERT_LEVEL=0 MAKING_DSO
@@ -106,10 +114,11 @@ if(HOUDINI_FOUND AND WITH_OPENVDB)
   else()
     list(APPEND _hdk_definitions LINUX AMD64 _GNU_SOURCE)
   endif()
-  set_source_files_properties(houdini_volume.cpp PROPERTIES COMPILE_DEFINITIONS "${_hdk_definitions}")
+  set_source_files_properties(${_hdk_sources} PROPERTIES COMPILE_DEFINITIONS "${_hdk_definitions}")
   unset(_hdk_definitions)
-  # Houdini libraries used by the VDB and volume primitives and their headers.
-  foreach(_hdk_lib GT GU GEO UT CE)
+  unset(_hdk_sources)
+  # Houdini libraries used by the VDB and volume primitives, image files and their headers.
+  foreach(_hdk_lib GT GU GEO UT CE IMG)
     find_library(_hdk_library NAMES lib${_hdk_lib} HOUDINI_${_hdk_lib}
       PATHS ${HOUDINI_ROOT}/custom/houdini/dsolib ${HOUDINI_ROOT}/dsolib
       ${HOUDINI_ROOT}/Frameworks/Houdini.framework/Libraries NO_DEFAULT_PATH)

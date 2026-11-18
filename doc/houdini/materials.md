@@ -118,7 +118,11 @@ so an untouched parameter renders the value you see in the parameter editor.
 
 ### Textures
 
-The **Image Texture** and **Environment Texture** nodes read any image format OpenImageIO reads.
+The **Image Texture** and **Environment Texture** nodes read any image format OpenImageIO reads,
+and Houdini's `.rat` files (also UDIM tiles, MaterialX/Karma images and dome/rect light textures):
+those are converted once with Houdini's image library to TIFF files with the same data type in
+`%TEMP%\hdCycles_houdini_images` (again when the `.rat` file changes), which Cycles reads like any
+other file. Delete that folder to free the space.
 
 - **Color space:** leave it on automatic to let Cycles detect it: 8-bit images are read as sRGB,
   float images as scene linear. Use a raw or non-color space for data textures (roughness, normal
