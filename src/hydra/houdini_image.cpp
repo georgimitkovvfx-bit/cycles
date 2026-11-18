@@ -16,6 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <mutex>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -81,24 +82,20 @@ std::mutex &ConvertMutex()
   return mutex;
 }
 
-/* Hash of a file's size and its first and last megabyte, enough to tell images apart. */
-std::string QuickContentHash(const fs::path &file)
+/* Hash of a file's whole content, read in chunks. */
+std::string ContentHash(const fs::path &file)
 {
   std::ifstream in(file, std::ios::binary);
-  std::error_code ec;
-  const auto size = fs::file_size(file, ec);
-  std::string data = std::to_string(size) + "|";
   constexpr std::streamsize chunk = 1 << 20;
   std::string buffer(size_t(chunk), '\0');
-  in.read(buffer.data(), chunk);
-  data.append(buffer.data(), size_t(in.gcount()));
-  if (std::streamoff(size) > 2 * chunk) {
-    in.clear();
-    in.seekg(-chunk, std::ios::end);
+  size_t hash = 0;
+  while (in) {
     in.read(buffer.data(), chunk);
-    data.append(buffer.data(), size_t(in.gcount()));
+    const size_t part = std::hash<std::string_view>()(
+        std::string_view(buffer.data(), size_t(in.gcount())));
+    hash ^= part + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
   }
-  return Hex(std::hash<std::string>()(data));
+  return Hex(hash);
 }
 
 /* Copernicus and COP images ("op:" paths), which have no file to stamp: the image of now, named
@@ -116,8 +113,7 @@ std::string ConvertOpImage(const std::string &path)
     fs::remove(temporary, ec);
     return path;
   }
-  const fs::path destination = CacheDirectory() /
-                               (name + "_" + QuickContentHash(temporary) + ".tif");
+  const fs::path destination = CacheDirectory() / (name + "_" + ContentHash(temporary) + ".tif");
   if (fs::exists(destination, ec)) {
     fs::remove(temporary, ec);
   }
