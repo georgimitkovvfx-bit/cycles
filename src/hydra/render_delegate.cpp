@@ -142,7 +142,8 @@ bool IsSessionSetting(const TfToken &key)
          key == HdCyclesRenderSettingsTokens->pixelSize ||
          key == HdCyclesRenderSettingsTokens->useSpatialSplits ||
          key == HdCyclesRenderSettingsTokens->useCompactBvh ||
-         key == HdCyclesRenderSettingsTokens->curveSubdivisions;
+         key == HdCyclesRenderSettingsTokens->curveSubdivisions ||
+         key == HdCyclesRenderSettingsTokens->renderMode;
 }
 
 SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
@@ -171,6 +172,11 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
   const bool viewport = it != settings.end() &&
                         VtValue::Cast<bool>(it->second).GetWithDefault(false);
   params.use_auto_tile = !viewport;
+  /* husk renders (renderMode "batch") run as a background session, like Blender's F12 render:
+   * no lower resolution start, rarer progressive updates, denoising only at the end. */
+  it = settings.find(HdCyclesRenderSettingsTokens->renderMode);
+  params.background = !viewport && it != settings.end() &&
+                      GetStringSetting(it->second, "") == "batch";
   it = settings.find(HdCyclesRenderSettingsTokens->tileSize);
   if (it != settings.end()) {
     params.tile_size = std::clamp(

@@ -45,6 +45,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     (resolution) \
     (pixelAspectRatio) \
     (aspectRatioConformPolicy) \
+    (renderMode) \
     ((houdiniFps, "houdini:fps")) \
     (disableMotionBlur) \
     ((motionSteps, "cycles:motion_steps"))     ((dicingRate, "cycles:dicing_rate"))     ((previewDicingRate, "cycles:preview_dicing_rate"))     ((maxSubdivisions, "cycles:max_subdivisions"))     ((offscreenDicingScale, "cycles:offscreen_dicing_scale"))     ((dicingCamera, "cycles:dicing_camera"))     ((bakeObject, "cycles:bake_object"))     ((bakeMargin, "cycles:bake_margin"))     ((bakeNormalSpace, "cycles:bake_normal_space")) \

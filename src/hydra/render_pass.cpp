@@ -283,9 +283,9 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     // Reset session if the session, scene, camera or AOV bindings changed. The session thread may
     // have updated the scene since the sync changed it (sceneChanged).
     const bool sceneChanged = _renderParam->sceneChanged.exchange(false);
-    if (scene->need_reset() || sceneChanged || settingsVersion != _lastSettingsVersion ||
-        displayChanged)
-    {
+    const bool reset = scene->need_reset() || sceneChanged ||
+                       settingsVersion != _lastSettingsVersion || displayChanged;
+    if (reset) {
       _lastSettingsVersion = settingsVersion;
 
       // Reset convergence state of all render buffers
@@ -313,12 +313,21 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       buffer_params.height = buffer_params.window_height;
 
       session->reset(session->params, buffer_params);
+      // Background sessions do not restart the clock at a reset (total time per husk frame)
+      if (session->params.background) {
+        session->progress.set_start_time();
+      }
     }
 
     scene->mutex.unlock();
 
-    // Start Cycles render thread if not already running
-    session->start();
+    // Start Cycles render thread if not already running. A background session's thread stops
+    // when the render is done: start it again only until the new render is done (restarting a
+    // finished one resets its progress). Not just at the reset: the thread may have been
+    // finishing the previous render then.
+    if (!session->params.background || reset || !IsConverged()) {
+      session->start();
+    }
 
     renderDelegate->SendResync();
   }
