@@ -13,8 +13,10 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -72,14 +74,69 @@ std::string Hex(const size_t value)
   return text;
 }
 
+std::mutex &ConvertMutex()
+{
+  static std::mutex mutex;
+  return mutex;
+}
+
+/* Hash of a file's size and its first and last megabyte, enough to tell images apart. */
+std::string QuickContentHash(const fs::path &file)
+{
+  std::ifstream in(file, std::ios::binary);
+  std::error_code ec;
+  const auto size = fs::file_size(file, ec);
+  std::string data = std::to_string(size) + "|";
+  constexpr std::streamsize chunk = 1 << 20;
+  std::string buffer(size_t(chunk), '\0');
+  in.read(buffer.data(), chunk);
+  data.append(buffer.data(), size_t(in.gcount()));
+  if (std::streamoff(size) > 2 * chunk) {
+    in.clear();
+    in.seekg(-chunk, std::ios::end);
+    in.read(buffer.data(), chunk);
+    data.append(buffer.data(), size_t(in.gcount()));
+  }
+  return Hex(std::hash<std::string>()(data));
+}
+
+/* Copernicus and COP images ("op:" paths), which have no file to stamp: the image of now, named
+ * by its content, so a changed image gets a new file (and Cycles loads it). */
+std::string ConvertOpImage(const std::string &path)
+{
+  const std::lock_guard<std::mutex> lock(ConvertMutex());
+  const std::string name = "op_" + Hex(std::hash<std::string>()(path));
+  const fs::path temporary = CacheDirectory() /
+                             (name + ".tmp" + std::to_string(HDCYCLES_GETPID()) + "_" +
+                              Hex(std::hash<std::thread::id>()(std::this_thread::get_id())) +
+                              ".tif");
+  std::error_code ec;
+  if (!IMG_File::copyToFile(path.c_str(), temporary.string().c_str())) {
+    fs::remove(temporary, ec);
+    return path;
+  }
+  const fs::path destination = CacheDirectory() /
+                               (name + "_" + QuickContentHash(temporary) + ".tif");
+  if (fs::exists(destination, ec)) {
+    fs::remove(temporary, ec);
+  }
+  else {
+    fs::rename(temporary, destination, ec);
+    if (ec) {
+      fs::remove(temporary, ec);
+      return fs::exists(destination, ec) ? destination.string() : path;
+    }
+  }
+  return destination.string();
+}
+
 bool Convert(const fs::path &source, const fs::path &destination)
 {
   std::error_code ec;
   if (fs::exists(destination, ec)) {
     return true;
   }
-  static std::mutex mutex;
-  const std::lock_guard<std::mutex> lock(mutex);
+  const std::lock_guard<std::mutex> lock(ConvertMutex());
   if (fs::exists(destination, ec)) {
     return true;
   }
@@ -103,7 +160,13 @@ bool Convert(const fs::path &source, const fs::path &destination)
 
 std::string ResolveHoudiniImage(const std::string &filename)
 {
-  if (!IsHoudiniOnlyFormat(filename) || CacheDirectory().empty()) {
+  if (CacheDirectory().empty()) {
+    return filename;
+  }
+  if (filename.rfind("op:", 0) == 0) {
+    return ConvertOpImage(filename);
+  }
+  if (!IsHoudiniOnlyFormat(filename)) {
     return filename;
   }
 

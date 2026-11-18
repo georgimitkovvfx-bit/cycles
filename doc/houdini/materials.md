@@ -129,8 +129,10 @@ other file. Delete that folder to free the space.
   maps, masks). This also works with ACES OpenColorIO configurations.
 - **UDIMs:** file names with `<UDIM>` (`1001`, `1002`, ...) or `<UVTILE>` (`u1_v1`, `u2_v1`, ...)
   read all tiles found next to the file.
-- **Missing files** render with the node's missing color. Copernicus images (`op:` paths) cannot be
-  used as textures.
+- **Missing files** render with the node's missing color.
+- **Copernicus and COP images** (`op:` paths, in the Houdini session): converted with Houdini's
+  image library into the same cache folder as `.rat` files each time the material (or light) is
+  synced. A changed COP network shows after a material edit or **Reload Textures**.
 - **Texture cache and size limit:** see [rendering.md](rendering.md#texture-cache).
 - **Changed files:** a texture file that changes on disk is reloaded the next time the material is
   edited. To reload without editing anything, use **Reload Textures** in the viewport's renderer
