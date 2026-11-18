@@ -416,13 +416,19 @@ bool OSLRenderServices::environment(OSLUStringHash filename,
 
   ShaderGlobals *globals = reinterpret_cast<ShaderGlobals *>(sg);
 
+  /* OSL passes no derivatives (null references) for a direction without them, e.g. a constant. */
+  const auto derivative = [](const OSL::Vec3 &d) {
+    const OSL::Vec3 *ptr = &d;
+    return ptr ? make_float3(ptr->x, ptr->y, ptr->z) : zero_float3();
+  };
+
   return osl_shared_environment(globals->kg,
                                 globals,
                                 texture_handle,
                                 reinterpret_cast<OSLTextureOptions *>(&options),
                                 make_float3(R.x, R.y, R.z),
-                                make_float3(dRdx.x, dRdx.y, dRdx.z),
-                                make_float3(dRdy.x, dRdy.y, dRdy.z),
+                                derivative(dRdx),
+                                derivative(dRdy),
                                 nchannels,
                                 result);
 }
