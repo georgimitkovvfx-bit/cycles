@@ -46,4 +46,48 @@ node.setCurrent(True)
 node.setSelected(True)
 ]]></script>
     </tool>
+    <tool name="lop_cycles_bake_setup" label="Cycles Bake (Setup)" icon="$CYCLES_ICON">
+        <toolMenuContext name="viewer">
+            <contextNetType>LOP</contextNetType>
+        </toolMenuContext>
+        <toolMenuContext name="network">
+            <contextNetType>LOP</contextNetType>
+        </toolMenuContext>
+        <toolSubmenu>Cycles</toolSubmenu>
+        <toolSubmenu>Rendering</toolSubmenu>
+        <script scriptType="python"><![CDATA[
+# Texture baking setup: a Cycles Render Settings LOP that bakes the prim selected in the viewer
+# (Bake panel), square resolution, Diffuse Color and Normal render vars, and a USD Render ROP.
+import hou
+import loptoolutils
+node = loptoolutils.genericTool(kwargs, 'cyclesrendersettings', nodename='cyclesbake')
+prim = ''
+for viewer in hou.ui.paneTabs():
+    if isinstance(viewer, hou.SceneViewer):
+        selection = viewer.currentSceneGraphSelection()
+        if selection:
+            prim = str(selection[0])
+            break
+node.parm(hou.text.encodeParm('cycles:bake_object')).set(prim)
+try:
+    node.parm('res_mode').set('manual')
+except hou.Error:
+    pass
+node.parmTuple('resolution').set((2048, 2048))
+node.parm('picture').set('$HIP/render/bake_$OS.$F4.exr')
+for name in ('aov_diffuse_color', 'aov_normal'):
+    if node.parm(name):
+        node.parm(name).set(True)
+nodename = node.name()
+kwargs['inputnodename'] = nodename
+kwargs['inputs'] = [(nodename, 0)]
+kwargs['nodepositionx'] = str(node.position().x())
+kwargs['nodepositiony'] = str(node.position().y() - 0.5)
+rop = loptoolutils.genericTool(kwargs, 'usdrender_rop')
+rop.parm('renderer').set('HdCyclesPlugin')
+rop.parm('rendersettings').setExpression('chs("../%s/primpath")' % nodename)
+node.setCurrent(True)
+node.setSelected(True)
+]]></script>
+    </tool>
 </shelfDocument>
