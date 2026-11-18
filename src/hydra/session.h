@@ -186,6 +186,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     RequestResync(false, true);
   }
   std::atomic<bool> bakeChanged = false;
+  /* Bake margin in pixels (Blender's Extend margin). */
+  std::atomic<int> bakeMargin = 16;
 
   void SetDicing(const DicingSettings &dicing)
   {

@@ -43,6 +43,78 @@ float AsFloat(const uint bits)
 
 }  // namespace
 
+std::vector<unsigned char> BakeCoverage(const OutputDriver::Tile &tile)
+{
+  const size_t num = size_t(tile.size.x) * tile.size.y;
+  std::vector<float> primitive(num * 3);
+  if (!tile.get_pass_pixels(kBakePrimitivePass, 3, primitive.data())) {
+    return {};
+  }
+  std::vector<unsigned char> coverage(num);
+  for (size_t i = 0; i < num; ++i) {
+    uint bits;
+    std::memcpy(&bits, &primitive[i * 3 + 2], sizeof(bits));
+    coverage[i] = bits != ~0u;
+  }
+  return coverage;
+}
+
+void ExtendBakeMargin(float *pixels,
+                      const int width,
+                      const int height,
+                      const int channels,
+                      std::vector<unsigned char> coverage,
+                      const int margin)
+{
+  if (coverage.size() != size_t(width) * height) {
+    return;
+  }
+  std::vector<size_t> ring;
+  for (int step = 0; step < margin; ++step) {
+    ring.clear();
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        const size_t pixel = size_t(y) * width + x;
+        if (coverage[pixel]) {
+          continue;
+        }
+        int count = 0;
+        float sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        for (int dy = -1; dy <= 1; ++dy) {
+          for (int dx = -1; dx <= 1; ++dx) {
+            const int nx = x + dx, ny = y + dy;
+            if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= width || ny >= height) {
+              continue;
+            }
+            const size_t neighbor = size_t(ny) * width + nx;
+            if (coverage[neighbor] != 1) {
+              continue;
+            }
+            for (int c = 0; c < channels && c < 4; ++c) {
+              sum[c] += pixels[neighbor * channels + c];
+            }
+            count++;
+          }
+        }
+        if (count > 0) {
+          for (int c = 0; c < channels && c < 4; ++c) {
+            pixels[pixel * channels + c] = sum[c] / float(count);
+          }
+          ring.push_back(pixel);
+        }
+      }
+    }
+    if (ring.empty()) {
+      break;
+    }
+    /* Filled this step: neighbors of the next ring (2 while the step runs, so a ring only reads
+     * the pixels of the steps before it). */
+    for (const size_t pixel : ring) {
+      coverage[pixel] = 1;
+    }
+  }
+}
+
 void SetBakeTarget(Scene *scene, const std::string &name)
 {
   Object *const target = FindBakeObject(scene, name);

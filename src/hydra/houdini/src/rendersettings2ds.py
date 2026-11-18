@@ -89,6 +89,7 @@ SESSION_SETTINGS = {
     "cycles:max_subdivisions": {"type": "int", "default": 12},
     "cycles:dicing_camera": {"type": "string", "default": ""},
     "cycles:bake_object": {"type": "string", "default": ""},
+    "cycles:bake_margin": {"type": "int", "default": 16},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -589,6 +590,10 @@ LAYOUT = [
           "UV space, with the render vars (beauty, diffuse color, normal, ...) as the baked "
           "maps. The resolution is the render resolution. Empty renders the camera view.",
           tags=PRIM_PATH_TAGS),
+        S("cycles:bake_margin", "Margin",
+          "Extends the baked result as a post process filter, in pixels (Blender's Extend "
+          "margin), so seams of the UV islands do not show.",
+          range=(0, 64, True, False)),
     ]),
 ]
 

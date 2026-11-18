@@ -111,6 +111,21 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
     }
   }
 
+  /* Texture baking: the margin around the UV islands, in every AOV but the IDs.
+   * shortcut: margin x pixels work per update, so only final images and husk's progressive
+   * updates get it; visit only the pixels next to the islands if it gets slow. */
+  const bool useBakeMargin = final || !_renderParam->IsViewport();
+  const std::vector<unsigned char> bakeCoverage = (!useBakeMargin ||
+                                                   _renderParam->GetBakeObject().empty()) ?
+                                                      std::vector<unsigned char>() :
+                                                      BakeCoverage(tile);
+  const auto bakeMargin = [&](float *data, const size_t channels) {
+    if (!bakeCoverage.empty()) {
+      ExtendBakeMargin(
+          data, tile.size.x, tile.size.y, int(channels), bakeCoverage, _renderParam->bakeMargin);
+    }
+  };
+
   for (const HdRenderPassAovBinding &aovBinding : _renderParam->GetAovBindings()) {
     if (auto *const renderBuffer = static_cast<HdCyclesRenderBuffer *>(aovBinding.renderBuffer)) {
       if (aovBinding == displayAovBinding ? skipDisplayAov : skipOtherAovs) {
@@ -134,6 +149,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
         TF_VERIFY(
             tile.get_pass_pixels(_renderParam->GetPassName(aovBinding.aovName), channels, data));
         convert_units(aovBinding.aovName, data, tile.size.x * tile.size.y, channels);
+        bakeMargin(data, channels);
         renderBuffer->Unmap();
       }
       else {
@@ -144,6 +160,9 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
           convert_units(aovBinding.aovName, pixels.data(), tile.size.x * tile.size.y, channels);
           // Integer buffers hold IDs (Hydra's primId/instanceId/elementId, Karma's primid)
           const bool isId = format == HdFormatInt32;
+          if (!isId) {
+            bakeMargin(pixels.data(), channels);
+          }
           renderBuffer->Map();
           renderBuffer->WritePixels(pixels.data(),
                                     GfVec2i(tile.offset.x, tile.offset.y),

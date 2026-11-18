@@ -8,6 +8,7 @@
 #include "session/output_driver.h"
 
 #include <string>
+#include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -22,6 +23,19 @@ extern const char *const kBakeDifferentialPass;
 bool FillBakeTile(CCL_NS::Scene *scene,
                   const std::string &object,
                   const CCL_NS::OutputDriver::Tile &tile);
+
+/* Pixels of the tile inside the UV islands (1), from its bake primitive pass. Empty when the
+ * tile has no bake passes. */
+std::vector<unsigned char> BakeCoverage(const CCL_NS::OutputDriver::Tile &tile);
+
+/* Blender's Extend bake margin: fills the pixels outside the UV islands up to `margin` pixels
+ * away with the average of their filled neighbors, one ring per step. */
+void ExtendBakeMargin(float *pixels,
+                      int width,
+                      int height,
+                      int channels,
+                      std::vector<unsigned char> coverage,
+                      int margin);
 
 /* Makes the first mesh object of the prim the bake target (none for an empty name). */
 void SetBakeTarget(CCL_NS::Scene *scene, const std::string &object);
