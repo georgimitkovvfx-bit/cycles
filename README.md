@@ -82,8 +82,8 @@ too; it found that dome light textures were rotated (fixed).
   samples with the Motion Blur LOP, as for Karma. The Vector pass needs samples at the previous and next frame
   and is empty with motion blur on (like Blender); animated focal length gives no zoom vectors.
 - **Textures:** a texture file overwritten in place, with nothing changed in the scene, updates after
-  **Reload Textures** (viewport renderer menu) or any material edit. Only the `<UDIM>` tile token is supported
-  (not `<UVTILE>`), and `op:` paths to Copernicus images are not.
+  **Reload Textures** (viewport renderer menu) or any material edit. `op:` paths to Copernicus images are
+  not supported.
 - **Primvars:** matrix, string and int64 primvars are not exported. Per-object settings (`cycles:object:*`) are not
   read per instance.
 - **UsdPreviewSurface:** `occlusion` and `displacement` are not translated; in the specular workflow `ior` is

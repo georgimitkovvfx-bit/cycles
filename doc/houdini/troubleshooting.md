@@ -129,8 +129,7 @@ These are the open limits of the current version that affect users.
 - MaterialX: Cycles' noise instead of MaterialX's noise patterns, approximated OpenPBR coat, layering
   as an add, no matrix nodes, hex tiling, some compositing nodes or volume materials. Editing a
   parameter rebuilds the whole shader.
-- Only the `<UDIM>` tile token is supported (not `<UVTILE>`), and Copernicus (`op:`) images cannot
-  be used as textures.
+- Copernicus (`op:`) images cannot be used as textures.
 - Ramps: Houdini's monotone cubic keys approximate Blender's curve handles; Min X and Max X stay
   visible. Animated angles in hip files saved before angles were shown in degrees stay in radians.
   The Raycast node has 4 attribute slots.
