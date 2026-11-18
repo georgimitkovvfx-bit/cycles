@@ -226,12 +226,17 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
     const int shader_index = shader & SHADER_MASK;
     const int shader_flags = kernel_data_fetch(shaders, shader_index).flags;
 
-    /* Fast path for position and normal passes not affected by shaders. */
-    if (kernel_data.film.pass_position != PASS_UNUSED) {
+    /* Fast path for position and normal passes not affected by shaders, when no other pass
+     * needs the shading (the Hydra delegate bakes several passes at once). */
+    const bool only_data_passes = kernel_data.film.pass_combined == PASS_UNUSED &&
+                                  kernel_data.film.light_pass_flag == 0;
+    if (kernel_data.film.pass_position != PASS_UNUSED && only_data_passes) {
       film_write_pass_float3(buffer + kernel_data.film.pass_position, P);
       return true;
     }
-    if (kernel_data.film.pass_normal != PASS_UNUSED && !(shader_flags & SD_HAS_BUMP)) {
+    if (kernel_data.film.pass_normal != PASS_UNUSED && !(shader_flags & SD_HAS_BUMP) &&
+        only_data_passes)
+    {
       film_write_pass_float3(buffer + kernel_data.film.pass_normal, N);
       return true;
     }
