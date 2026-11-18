@@ -7817,6 +7817,8 @@ OSLNode::OSLNode() : ShaderNode(new NodeType(NodeType::SHADER))
 {
   special_type = SHADER_SPECIAL_TYPE_OSL;
   has_emission = false;
+  has_bssrdf = false;
+  has_transparent = false;
 }
 
 OSLNode::~OSLNode()

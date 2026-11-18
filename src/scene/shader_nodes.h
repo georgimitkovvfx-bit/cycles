@@ -1766,6 +1766,14 @@ class OSLNode final : public ShaderNode {
   {
     return has_emission;
   }
+  bool has_surface_bssrdf() override
+  {
+    return has_bssrdf;
+  }
+  bool has_surface_transparent() override
+  {
+    return has_transparent;
+  }
 
   /* Ideally we could better detect this, but we can't query this now. */
   bool has_spatial_varying() override
@@ -1789,6 +1797,9 @@ class OSLNode final : public ShaderNode {
   string filepath;
   string bytecode_hash;
   bool has_emission;
+  /* Closures in the byte code that need kernel features (subsurface, transparent shadows). */
+  bool has_bssrdf;
+  bool has_transparent;
   /* Attributes the shader reads with getattribute(): (string parameter or empty, name or its
    * default). */
   vector<pair<ustring, ustring>> requested_attributes;

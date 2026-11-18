@@ -716,9 +716,12 @@ const char *OSLManager::shader_load_bytecode(const string &hash, const string &b
   }
 
   /* this is a bit weak, but works */
-  info.has_surface_emission = (bytecode.find("\"emission\"") != string::npos);
-  info.has_surface_transparent = (bytecode.find("\"transparent\"") != string::npos);
-  info.has_surface_bssrdf = (bytecode.find("\"bssrdf\"") != string::npos);
+  info.has_surface_emission = (bytecode.find("\"emission\"") != string::npos ||
+                               bytecode.find("\"uniform_edf\"") != string::npos);
+  info.has_surface_transparent = (bytecode.find("\"transparent\"") != string::npos ||
+                                  bytecode.find("\"transparent_bsdf\"") != string::npos);
+  info.has_surface_bssrdf = (bytecode.find("\"bssrdf\"") != string::npos ||
+                             bytecode.find("\"subsurface_bssrdf\"") != string::npos);
   info.attributes = oso_getattribute_names(bytecode);
 
   loaded_shaders[hash] = info;
@@ -1025,6 +1028,8 @@ OSLNode *OSLShaderManager::osl_node(ShaderGraph *graph,
     node->filepath = filepath;
   }
   node->requested_attributes = info->attributes;
+  node->has_bssrdf = info->has_surface_bssrdf;
+  node->has_transparent = info->has_surface_transparent;
 
   /* Generate inputs and outputs */
   node->create_inputs_outputs(node->type);
