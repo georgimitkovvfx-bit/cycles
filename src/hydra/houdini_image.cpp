@@ -17,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -158,7 +159,37 @@ bool Convert(const fs::path &source, const fs::path &destination)
 
 }  // namespace
 
+namespace {
+
+std::string ResolveSource(const std::string &filename);
+
+/* Source of each converted file, so resolving a converted file (Reload Textures resolves the
+ * compiled shader graphs again) converts its source again when it changed. */
+std::mutex sourcesMutex;
+std::unordered_map<std::string, std::string> sources;
+
+}  // namespace
+
 std::string ResolveHoudiniImage(const std::string &filename)
+{
+  std::string source = filename;
+  {
+    const std::lock_guard<std::mutex> lock(sourcesMutex);
+    if (const auto it = sources.find(filename); it != sources.end()) {
+      source = it->second;
+    }
+  }
+  const std::string resolved = ResolveSource(source);
+  if (resolved != source) {
+    const std::lock_guard<std::mutex> lock(sourcesMutex);
+    sources[resolved] = source;
+  }
+  return resolved;
+}
+
+namespace {
+
+std::string ResolveSource(const std::string &filename)
 {
   if (CacheDirectory().empty()) {
     return filename;
@@ -216,5 +247,7 @@ std::string ResolveHoudiniImage(const std::string &filename)
   }
   return (CacheDirectory() / (key + ".<UDIM>.tif")).string();
 }
+
+}  // namespace
 
 }  // namespace HdCycles
