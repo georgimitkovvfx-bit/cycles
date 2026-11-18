@@ -182,7 +182,10 @@ static void optimize_group(OSLThreadInfoPool &thread_infos,
    * identifies the image manager in #OSLRenderServices::get_texture_handle(). */
   OSLRenderServices *services = static_cast<OSLRenderServices *>(ss->renderer());
   OSL::PerThreadInfo *thread_info = thread_infos.acquire(ss);
-  OSL::ShadingContext *context = ss->get_context(thread_info);
+  /* Dummy texture thread info like the render threads (OSLThreadData): there is no OSL texture
+   * system, which constant folding of gettextureinfo would ask for one. */
+  OSL::ShadingContext *context = ss->get_context(
+      thread_info, reinterpret_cast<OSL::TextureSystem::Perthread *>(1));
   services->image_manager_add(context, image_manager);
 
   ss->optimize_group(group, context, true);
