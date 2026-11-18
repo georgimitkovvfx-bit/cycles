@@ -67,7 +67,7 @@ Angle and Cone Softness, Cast Shadow is Shadow > Enable.
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
-| Camera | `inputs:cycles:light:visible_camera` | Off | Light visibility for camera rays (the light's shape seen directly by the camera) |
+| Camera | `inputs:cycles:light:visible_camera` | Off | Light visibility for camera rays (the light's shape seen directly by the camera). Unset, Karma's **Render Light Geometry** (`inputs:karma:light:renderlightgeo`) decides |
 | Diffuse | `inputs:cycles:light:visible_diffuse` | On | Light contribution to diffuse reflection |
 | Glossy | `inputs:cycles:light:visible_glossy` | On | Light contribution to glossy reflection |
 | Transmission | `inputs:cycles:light:visible_transmission` | On | Light contribution to transmission |

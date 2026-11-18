@@ -27,6 +27,7 @@ extern Transform convert_transform(const GfMatrix4d &matrix);
 // clang-format off
 TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (visibleInPrimaryRay)
+    ((karmaRenderLightGeo, "inputs:karma:light:renderlightgeo"))
     ((visibleCamera, "inputs:cycles:light:visible_camera"))
     ((visibleDiffuse, "inputs:cycles:light:visible_diffuse"))
     ((visibleGlossy, "inputs:cycles:light:visible_glossy"))
@@ -179,9 +180,13 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
         }
       }
       visibility &= LightMultiplierVisibility(lightDs);
-      if (GetTypedValue<bool>(lightDs,
-                              _tokens->visibleCamera,
-                              GetTypedValue<bool>(lightDs, _tokens->visibleInPrimaryRay, false)))
+      if (GetTypedValue<bool>(
+              lightDs,
+              _tokens->visibleCamera,
+              GetTypedValue<bool>(
+                  lightDs,
+                  _tokens->visibleInPrimaryRay,
+                  GetTypedValue<bool>(lightDs, _tokens->karmaRenderLightGeo, false))))
       {
         visibility |= PATH_RAY_VISIBILITY_CAMERA;
       }
