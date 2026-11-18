@@ -73,6 +73,9 @@ Volume Scatter, with Karma's patterns (`*`, `-shadow`, `primary|shadow`,
 | Shadow Catcher | `primvars:cycles:object:is_shadow_catcher` | Off | Only render shadows and reflections on this object, for compositing renders into real footage. Render the Shadow Catcher pass to get the shadows as a separate image (see [aovs.md](aovs.md)) |
 | Holdout | `primvars:cycles:object:use_holdout` | Off | Render a hole in the image with transparent alpha instead of the object |
 
+Karma's **Holdout Mode** (`primvars:karma:object:holdoutmode`) also works when these are not set:
+Matte makes the object a Holdout, Background a Shadow Catcher.
+
 ### Visibility > Caustics
 
 | Setting | USD attribute | Default | Description |

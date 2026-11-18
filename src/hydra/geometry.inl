@@ -360,6 +360,22 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
                                                    karma.UncheckedGet<std::string>());
     visibility &= ~(karmaRays & ~cyclesRays & ~visible);
   }
+  /* Karma's Holdout Mode: Matte is a Cycles holdout, Background a shadow catcher. */
+  static const TfToken karmaHoldout("karma:object:holdoutmode");
+  const int holdout = VtValue::Cast<int>(ReadPrimvar(primvars, karmaHoldout)).GetWithDefault(0);
+  const auto authored = [&](const char *name) {
+    return std::any_of(values.begin(), values.end(), [&](const auto &value) {
+      return value.first->name == name;
+    });
+  };
+  if (holdout == 1 && !authored("use_holdout")) {
+    values.emplace_back(Object::get_node_type()->find_input(ustring("use_holdout")),
+                        VtValue(true));
+  }
+  else if (holdout == 2 && !authored("is_shadow_catcher")) {
+    values.emplace_back(Object::get_node_type()->find_input(ustring("is_shadow_catcher")),
+                        VtValue(true));
+  }
 
   _visibility = visibility;
   for (Object *instance : _instances) {
