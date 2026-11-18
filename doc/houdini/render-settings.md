@@ -371,7 +371,7 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the default UV map, at the render resolution. Empty renders the camera view. |
-| Normal Space | `cycles:bake_normal_space` | Tangent | Space of baked Normal render vars: Tangent (a normal map: tangent along the UV map's U direction, bitangent along V, normal, mapped from -1..1 to 0..1 like Blender's), Object, or World (Cycles' normal pass). Tangents come from each triangle's UVs (not MikkTSpace), so they can differ from Blender's at UV seams. |
+| Normal Space | `cycles:bake_normal_space` | Tangent | Space of baked Normal render vars: Tangent (a normal map: tangent along the UV map's U direction, bitangent along V, normal, mapped from -1..1 to 0..1 like Blender's), Object, or World (Cycles' normal pass). Tangents are MikkTSpace tangents, like Blender's. |
 | Margin | `cycles:bake_margin` | 16 | Extends the baked result around the UV islands, in pixels, so seams do not show (Blender's Extend margin). Applied to the final image (and husk's updates), not to progressive viewport updates. ID AOVs get no margin. |
 
 **Cycles Bake (Setup)** in the LOP Tab menu (Cycles and Rendering) adds a Cycles Render Settings LOP
