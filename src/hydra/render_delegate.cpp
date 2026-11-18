@@ -6,6 +6,7 @@
 #include "hydra/render_delegate.h"
 #include "hydra/camera.h"
 #include "hydra/curves.h"
+#include "hydra/cylinder_light.h"
 #include "hydra/field.h"
 #include "hydra/instancer.h"
 #include "hydra/light.h"
@@ -75,6 +76,7 @@ const TfTokenVector kSupportedSPrimTypes = {
     HdPrimTypeTokens->camera,
     /* Hydra syncs sprims in this order: lights before materials, so that a world material
      * knows its dome light (HdCyclesSession::SetWorldMaterial) on the first sync. */
+    HdPrimTypeTokens->cylinderLight,
     HdPrimTypeTokens->diskLight,
     HdPrimTypeTokens->distantLight,
     HdPrimTypeTokens->domeLight,
@@ -454,6 +456,9 @@ HdSprim *HdCyclesDelegate::CreateSprim(const TfToken &typeId, const SdfPath &spr
   }
   if (typeId == HdPrimTypeTokens->material) {
     return new HdCyclesMaterial(sprimId);
+  }
+  if (typeId == HdPrimTypeTokens->cylinderLight) {
+    return new HdCyclesCylinderLight(sprimId);
   }
   if (typeId == HdPrimTypeTokens->diskLight || typeId == HdPrimTypeTokens->distantLight ||
       typeId == HdPrimTypeTokens->domeLight || typeId == HdPrimTypeTokens->rectLight ||

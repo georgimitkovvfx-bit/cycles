@@ -743,12 +743,13 @@ void HdCyclesSession::UpdateLightLinking()
   for (Object *object : scene->objects) {
     std::array<uint, 2> objectSet = {0, 0};
     std::pair<TfToken, TfToken> links;
-    if (object->get_geometry()->is_light()) {
-      if (const auto it = _lightLinks.find(object->name.string()); it != _lightLinks.end()) {
-        links = it->second;
-      }
+    /* Lights, and mesh lights (cylinder lights) by their name. */
+    if (const auto it = _lightLinks.find(object->name.string()); it != _lightLinks.end()) {
+      links = it->second;
     }
-    else if (const auto it = objectSets.find(object->name.string()); it != objectSets.end()) {
+    else if (const auto it = objectSets.find(object->name.string());
+             !object->get_geometry()->is_light() && it != objectSets.end())
+    {
       objectSet = it->second;
     }
 

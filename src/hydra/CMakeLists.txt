@@ -31,6 +31,7 @@ set(SRC_HD_CYCLES_HEADERS
   geometry.inl
   implicit_mesh.h
   instancer.h
+  cylinder_light.h
   light.h
   material.h
   mesh.h
@@ -55,6 +56,7 @@ set(SRC_HD_CYCLES
   geometry.cpp
   implicit_mesh.cpp
   instancer.cpp
+  cylinder_light.cpp
   light.cpp
   material.cpp
   mesh.cpp

@@ -117,7 +117,7 @@ These are the open limits of the current version that affect users.
 
 **Lights and world**
 
-- Cylinder lights do not render (Cycles has no cylinder light).
+- Cylinder lights are mesh lights: shadow enable, shaping (IES, cone) and textures do not apply to them.
 - Dome lights with a Z pole axis (`poleAxis` of DomeLight_1) are not supported.
 - At most 64 light linking and 64 shadow linking sets; point instances use their prototype's links.
 

@@ -14,7 +14,7 @@ light source too.
 | Disk light | Round area light | `radius` |
 | Distant light | Sun light | `angle` (angular diameter in degrees) |
 | Dome light | World background light | `texture:file` as a latitude-longitude environment map |
-| Cylinder light | Not supported | Cycles has no cylinder light; these lights do not render |
+| Cylinder light | Mesh light | Cycles has no cylinder light: the side of the cylinder (along X, `radius`, `length`) is an emissive tube with the light's radiance, like USD's cylinder light (no light from the caps). Supports color, intensity, exposure, normalize, light linking, the Cycles tab's ray visibility, light group and Multiple Importance; no shadow, spread, IES or texture settings |
 
 Mesh lights (the UsdLux mesh light API) and USD portal lights (`PortalLight`) are not supported;
 use an emissive material on the geometry instead, and a rect light with the Cycles **Portal**

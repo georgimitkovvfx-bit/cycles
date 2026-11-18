@@ -66,7 +66,7 @@ MaterialX, primvars, motion blur, AOVs, review fixes, ...). 3D curve hair now ma
 A feature test scene (a hip file with one section per feature and a Run All Checks button, 133 checks) passes
 too; it found that dome light textures were rotated (fixed).
 
-- **Cylinder lights** do not render: Cycles has no cylinder light.
+- **Cylinder lights** render as mesh lights (Cycles has no cylinder light): no shaping or shadow settings.
 
 - **DLSS** needs an NVIDIA RTX GPU and driver 620 or newer, and has no upscale modes yet (Houdini's depth and ID
   outputs need full resolution passes).
@@ -135,7 +135,7 @@ Next, roughly in this order:
 
 1. Path guiding (biased guided renders to resolve).
 2. USD portal light prims.
-3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
+3. DLSS upscale modes.
 4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, live camera Cycles settings
    and displacement with Adaptive Subdivision on polygon meshes.
 
