@@ -159,7 +159,13 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
     EmissionNode *emission = graph->create_node<EmissionNode>();
     emission->set_color(visible ? strength : zero_float3());
     emission->set_strength(1.0f);
-    graph->connect(emission->output("Emission"), graph->output()->input("Surface"));
+    /* Only the outside emits: Cycles emission is two-sided and the inside shows through the open
+     * ends (+36% light from a short wide tube). */
+    GeometryNode *geometry = graph->create_node<GeometryNode>();
+    MixClosureNode *frontOnly = graph->create_node<MixClosureNode>();
+    graph->connect(geometry->output("Backfacing"), frontOnly->input("Fac"));
+    graph->connect(emission->output("Emission"), frontOnly->input("Closure1"));
+    graph->connect(frontOnly->output("Closure"), graph->output()->input("Surface"));
     _shader->set_emission_sampling_method(GetTypedValue<bool>(lightDs, _tokens->useMis, true) ?
                                               EMISSION_SAMPLING_FRONT :
                                               EMISSION_SAMPLING_NONE);
