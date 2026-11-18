@@ -13,6 +13,7 @@
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
 #include <pxr/imaging/hd/sceneGlobalsSchema.h>
+#include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hdsi/renderSettingsFilteringSceneIndex.h>
 #include <pxr/imaging/hdsi/velocityMotionResolvingSceneIndex.h>
 
@@ -151,8 +152,14 @@ void HdCyclesResyncSceneIndex::_PrimsDirtied(
   std::optional<HdSceneIndexObserver::DirtiedPrimEntries> mapped;
   for (size_t i = 0; i < entries.size(); ++i) {
     const HdDataSourceLocatorSet &locators = entries[i].dirtyLocators;
-    if (!locators.Intersects(HdPrimvarsSchema::GetDefaultLocator()) ||
-        std::none_of(locators.begin(), locators.end(), IsCameraSettingLocator))
+    if (!locators.Intersects(HdPrimvarsSchema::GetDefaultLocator())) {
+      continue;
+    }
+    /* All primvars (added or removed ones): only cameras, which this asks the scene for. */
+    const bool allPrimvars = locators.Contains(HdPrimvarsSchema::GetDefaultLocator());
+    if (allPrimvars ? _GetInputSceneIndex()->GetPrim(entries[i].primPath).primType !=
+                          HdPrimTypeTokens->camera :
+                      std::none_of(locators.begin(), locators.end(), IsCameraSettingLocator))
     {
       continue;
     }
