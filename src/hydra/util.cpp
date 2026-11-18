@@ -382,4 +382,60 @@ unsigned int LightMultiplierVisibility(const HdContainerDataSourceHandle &light)
   return visibility;
 }
 
+static bool KarmaRayVisible(const std::string &pattern, const std::string &ray)
+{
+  const auto trim = [](std::string text) {
+    const size_t begin = text.find_first_not_of(" \t");
+    const size_t end = text.find_last_not_of(" \t");
+    return begin == std::string::npos ? std::string() : text.substr(begin, end - begin + 1);
+  };
+  if (trim(pattern).empty()) {
+    return true;
+  }
+  /* Alternatives ("|") of terms that must all hold ("&"). */
+  size_t start = 0;
+  while (start <= pattern.size()) {
+    const size_t bar = std::min(pattern.find('|', start), pattern.size());
+    const std::string alternative = pattern.substr(start, bar - start);
+    bool all = true;
+    size_t termStart = 0;
+    while (termStart <= alternative.size()) {
+      const size_t amp = std::min(alternative.find('&', termStart), alternative.size());
+      std::string term = trim(alternative.substr(termStart, amp - termStart));
+      bool negate = false;
+      while (!term.empty() && (term[0] == '-' || term[0] == '!' || term[0] == '+')) {
+        negate ^= term[0] != '+';
+        term = trim(term.substr(1));
+      }
+      const bool match = term == "*" || term == ray;
+      all = all && (negate ? !match : match);
+      termStart = amp + 1;
+    }
+    if (all) {
+      return true;
+    }
+    start = bar + 1;
+  }
+  return false;
+}
+
+unsigned int KarmaRenderVisibility(const std::string &pattern)
+{
+  static const std::pair<const char *, unsigned int> rays[] = {
+      {"primary", PATH_RAY_VISIBILITY_CAMERA},
+      {"shadow", PATH_RAY_VISIBILITY_SHADOW},
+      {"diffuse", PATH_RAY_VISIBILITY_DIFFUSE},
+      {"reflect", PATH_RAY_VISIBILITY_GLOSSY},
+      {"refract", PATH_RAY_VISIBILITY_TRANSMIT},
+      {"volume", PATH_RAY_VISIBILITY_VOLUME_SCATTER},
+  };
+  unsigned int visibility = 0;
+  for (const auto &[ray, bit] : rays) {
+    if (KarmaRayVisible(pattern, ray)) {
+      visibility |= bit;
+    }
+  }
+  return visibility;
+}
+
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

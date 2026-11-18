@@ -60,6 +60,12 @@ casts shadows and shows in reflections.
 | Shadow | `primvars:cycles:object:visible_shadow` | On | Object visibility for shadow rays (off: the object casts no shadows) |
 | Raycast | `primvars:cycles:object:visible_raycast` | On | Object visibility for the rays of Raycast shader nodes |
 
+Karma's **Render Visibility** (`primvars:karma:object:rendervisibility`, Karma tab of the Render
+Geometry Settings LOP) also works, for the ray types without a Cycles setting: `primary` is
+Camera, `shadow` Shadow, `diffuse` Diffuse, `reflect` Glossy, `refract` Transmission and `volume`
+Volume Scatter, with Karma's patterns (`*`, `-shadow`, `primary|shadow`,
+`-diffuse&-reflect&-refract&-volume&-sss`). Houdini's SOP Import sets `-shadow` on Gaussian splats.
+
 ### Visibility > Mask
 
 | Setting | USD attribute | Default | Description |

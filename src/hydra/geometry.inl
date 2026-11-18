@@ -307,6 +307,7 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
   static const std::string prefix = "cycles:object:";
 
   uint visibility = Base::IsVisible() ? PATH_RAY_VISIBILITY_OBJECT_ALL : 0;
+  uint cyclesRays = 0; /* Ray types a Cycles setting decides. */
   std::vector<std::pair<const SocketType *, VtValue>> values;
 
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
@@ -320,6 +321,7 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
 
     const auto ray = rayVisibility.find(setting);
     if (ray != rayVisibility.end()) {
+      cyclesRays |= ray->second;
       if (!VtValue::Cast<bool>(value).GetWithDefault(true)) {
         visibility &= ~ray->second;
       }
@@ -343,6 +345,20 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
       continue;
     }
     values.emplace_back(socket, value);
+  }
+
+  /* Karma's Render Visibility for the ray types without a Cycles setting, so scenes set up for
+   * Karma (and Houdini's SOP Import, which makes Gaussian splats invisible to shadows) work. */
+  static const TfToken karmaVisibility("karma:object:rendervisibility");
+  const VtValue karma = ReadPrimvar(primvars, karmaVisibility);
+  if (karma.IsHolding<std::string>() || karma.IsHolding<TfToken>()) {
+    const uint karmaRays = PATH_RAY_VISIBILITY_CAMERA | PATH_RAY_VISIBILITY_SHADOW |
+                           PATH_RAY_VISIBILITY_DIFFUSE | PATH_RAY_VISIBILITY_GLOSSY |
+                           PATH_RAY_VISIBILITY_TRANSMIT | PATH_RAY_VISIBILITY_VOLUME_SCATTER;
+    const uint visible = KarmaRenderVisibility(karma.IsHolding<TfToken>() ?
+                                                   karma.UncheckedGet<TfToken>().GetString() :
+                                                   karma.UncheckedGet<std::string>());
+    visibility &= ~(karmaRays & ~cyclesRays & ~visible);
   }
 
   _visibility = visibility;

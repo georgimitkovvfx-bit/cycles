@@ -170,4 +170,10 @@ void ApplyPrimvars(CCL_NS::AttributeSet &attributes,
  * multipliers, a multiplier of 0 turns off the diffuse or glossy rays. */
 unsigned int LightMultiplierVisibility(const PXR_NS::HdContainerDataSourceHandle &light);
 
+/* Cycles ray visibility of Karma's object Render Visibility ("karma:object:rendervisibility"):
+ * ray types (primary, shadow, diffuse, reflect, refract, volume, sss) or "*" combined with "|"
+ * (or), "&" (and) and a "-" or "!" prefix (not), e.g. "-shadow" or "primary|shadow". The result
+ * has the camera, shadow, diffuse, glossy, transmission and volume scatter bits. */
+unsigned int KarmaRenderVisibility(const std::string &pattern);
+
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
