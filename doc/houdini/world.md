@@ -53,8 +53,11 @@ light's Texture parameter.
 
 The delegate does this through the nodes' Texture Mapping, so Cycles can still sample the Sky
 Texture's sun directly (low noise). Texture Mapping parameters you set yourself on these two nodes
-in a world material are replaced. Other nodes see directions in Houdini's world space: a
-Gradient Texture or a Separate XYZ on the ray direction has **Y** as up.
+apply on top of the dome's orientation, in the texture's own space like in Blender (Z is the
+zenith there: a rotation around Z turns the HDRI or the sun around the dome's +Y). The sun of a
+Sky Texture with its own Texture Mapping is then sampled through the world's importance map.
+Other nodes see directions in Houdini's world space: a Gradient Texture or a Separate XYZ on the
+ray direction has **Y** as up.
 
 ### Sky Texture sun direction
 

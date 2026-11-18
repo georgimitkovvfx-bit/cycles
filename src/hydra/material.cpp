@@ -963,23 +963,50 @@ HdDirtyBits HdCyclesMaterial::GetInitialDirtyBitsMask() const
  * lights on their +Y and +Z, like the dome light textures (light.cpp): look up light space
  * (x, y, z) as (z, x, y), in the texture mapping, so that Cycles still samples the sun of a sky
  * texture directly (LightManager::device_update_background).
- * shortcut: overrides the Texture Mapping parameters of these nodes, compose them with the
- * rotation if anyone sets them on a world material. */
+ * Texture Mapping parameters set on such a node apply after this, in the texture's space (like
+ * Blender): the rotation then goes into a Mapping node before the node instead. */
+static float3 EulerAngles(const Transform &r)
+{
+  /* Euler angles of transform_euler() (Z * Y * X) and the Mapping node. */
+  return make_float3(
+      atan2f(r.z.y, r.z.z), asinf(clamp(-r.z.x, -1.0f, 1.0f)), atan2f(r.y.x, r.x.x));
+}
+
 static void OrientWorldTextures(ShaderGraph *graph, const Transform &lightRotation)
 {
   const Transform swap = make_transform(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0);
-  /* swap * inverse(light) = r * swap, as Euler angles of transform_euler() (Z * Y * X). */
+  /* swap * inverse(light) = r * swap. */
   const Transform r = swap * transform_inverse(lightRotation) * transform_inverse(swap);
-  const float3 euler = make_float3(atan2f(r.z.y, r.z.z),
-                                   asinf(clamp(-r.z.x, -1.0f, 1.0f)),
-                                   atan2f(r.y.x, r.x.x));
-  for (ShaderNode *node : graph->nodes) {
+  const float3 euler = EulerAngles(r);
+  const vector<ShaderNode *> nodes(graph->nodes.begin(), graph->nodes.end());
+  for (ShaderNode *node : nodes) {
     if (node->type != SkyTextureNode::get_node_type() &&
         node->type != EnvironmentTextureNode::get_node_type())
     {
       continue;
     }
     TextureMapping &mapping = static_cast<TextureNode *>(node)->tex_mapping;
+    if (!mapping.skip()) {
+      /* The node's default vector (sky: Generated, environment: Position, both the direction in
+       * the world) through the rotation. Sky sun sampling then falls back to the map. */
+      ShaderInput *vectorIn = node->input("Vector");
+      ShaderOutput *source = vectorIn->link;
+      if (source) {
+        graph->disconnect(vectorIn);
+      }
+      else if (vectorIn->flags() & SocketType::LINK_POSITION) {
+        source = graph->create_node<GeometryNode>()->output("Position");
+      }
+      else {
+        source = graph->create_node<TextureCoordinateNode>()->output("Generated");
+      }
+      MappingNode *orient = graph->create_node<MappingNode>();
+      orient->set_mapping_type(NODE_MAPPING_TYPE_VECTOR);
+      orient->set_rotation(EulerAngles(r * swap));
+      graph->connect(source, orient->input("Vector"));
+      graph->connect(orient->output("Vector"), vectorIn);
+      continue;
+    }
     mapping.type = TextureMapping::VECTOR;
     mapping.translation = zero_float3();
     mapping.rotation = euler;
