@@ -728,20 +728,36 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
                                    creaseWeights[creaseLengthOffset] :
                                    creaseWeights[createWeightOffset];
 
-          _geom->add_edge_crease(v0, v1, weight);
+          /* USD sharpness is OpenSubdiv's (10 = infinitely sharp), Cycles' crease is that / 10. */
+          _geom->add_edge_crease(v0, v1, weight / 10.0f);
         }
 
         indexOffset += creaseLength;
         creaseLengthOffset++;
       }
-
-      const VtIntArray cornerIndices = subdivTags.GetCornerIndices();
-      const VtFloatArray cornerWeights = subdivTags.GetCornerWeights();
-
-      for (size_t i = 0; i < cornerIndices.size(); ++i) {
-        _geom->add_vertex_crease(cornerIndices[i], cornerWeights[i]);
-      }
     }
+
+    /* Corners also without edge creases. */
+    const VtIntArray cornerIndices = subdivTags.GetCornerIndices();
+    const VtFloatArray cornerWeights = subdivTags.GetCornerWeights();
+    for (size_t i = 0; i < std::min(cornerIndices.size(), cornerWeights.size()); ++i) {
+      _geom->add_vertex_crease(cornerIndices[i], cornerWeights[i] / 10.0f);
+    }
+
+    /* Boundary and face-varying rules, with the USD fallbacks when not authored. */
+    const TfToken boundary = subdivTags.GetVertexInterpolationRule();
+    _geom->set_subdivision_boundary_interpolation(
+        boundary == PxOsdOpenSubdivTokens->none     ? Mesh::SUBDIVISION_BOUNDARY_NONE :
+        boundary == PxOsdOpenSubdivTokens->edgeOnly ? Mesh::SUBDIVISION_BOUNDARY_EDGE_ONLY :
+                                                      Mesh::SUBDIVISION_BOUNDARY_EDGE_AND_CORNER);
+    const TfToken fvar = subdivTags.GetFaceVaryingInterpolationRule();
+    _geom->set_subdivision_fvar_interpolation(
+        fvar == PxOsdOpenSubdivTokens->none         ? Mesh::SUBDIVISION_FVAR_LINEAR_NONE :
+        fvar == PxOsdOpenSubdivTokens->cornersOnly  ? Mesh::SUBDIVISION_FVAR_LINEAR_CORNERS_ONLY :
+        fvar == PxOsdOpenSubdivTokens->cornersPlus2 ? Mesh::SUBDIVISION_FVAR_LINEAR_CORNERS_PLUS2 :
+        fvar == PxOsdOpenSubdivTokens->boundaries   ? Mesh::SUBDIVISION_FVAR_LINEAR_BOUNDARIES :
+        fvar == PxOsdOpenSubdivTokens->all          ? Mesh::SUBDIVISION_FVAR_LINEAR_ALL :
+                                                      Mesh::SUBDIVISION_FVAR_LINEAR_CORNERS_PLUS1);
 
     /* Diced in pixels of the dicing camera (the render camera, HdCyclesRenderPass). */
     const HdCyclesSession::DicingSettings &dicing = _session->GetDicing();
