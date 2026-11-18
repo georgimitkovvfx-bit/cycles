@@ -19,6 +19,7 @@
 #  include <pxr/imaging/hd/retainedDataSource.h>
 #  include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
 #  include <pxr/imaging/hd/tokens.h>
+#  include <pxr/imaging/hdGp/generativeProceduralResolvingSceneIndex.h>
 #  include <pxr/imaging/hdsi/lightLinkingSceneIndex.h>
 #endif
 
@@ -107,6 +108,7 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
   const VtArray<TfToken> geometryTypes = {HdPrimTypeTokens->mesh,
                                           HdPrimTypeTokens->basisCurves,
                                           HdPrimTypeTokens->points,
+                                          HdPrimTypeTokens->particleField,
                                           HdPrimTypeTokens->volume};
   HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
       "Cycles",
@@ -125,6 +127,21 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
           HdRetainedTypedSampledDataSource<VtArray<TfToken>>::New(geometryTypes)),
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
+
+  /* Hydra generative procedurals (hdGp plugins), which USD only resolves for every renderer
+   * with HDGP_INCLUDE_DEFAULT_RESOLVER; resolving procedurals twice finds none the second time. */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HdGpGenerativeProceduralResolvingSceneIndex::New(inputScene);
+      },
+      nullptr,
+      /* Registered after the implicit surfaces at the start of the same phase: first in the
+       * chain, so the shapes procedurals make become meshes too. */
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtStart);
 
   /* Last in the chain, after every scene index that adds prims, so that the render delegate can
    * have any prim synced again (HdCyclesDelegate::Update), and the velocities of all prims are
