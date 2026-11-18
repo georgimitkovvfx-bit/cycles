@@ -249,7 +249,7 @@ LAYOUT = [
                   "Prefilter of the guiding passes (albedo and normal). Accurate gives the best "
                   "detail, None should only be used when the guiding passes are noise free.",
                   viewport=True,
-                  hidewhen="{ cycles:integrator:denoiser_type == dlss }"),
+                  hidewhen="{ cycles:integrator:denoiser_type != openimagedenoise }"),
                 S("cycles:integrator:denoiser_quality", "Quality",
                   "Quality of the OpenImageDenoise denoiser, balanced and fast trade quality for "
                   "speed.",
@@ -262,14 +262,15 @@ LAYOUT = [
                 S("cycles:integrator:denoise_use_gpu", "Use GPU",
                   "Run the denoiser on the GPU when available.",
                   viewport=True,
-                  hidewhen="{ cycles:integrator:denoiser_type == dlss }"),
+                  hidewhen="{ cycles:integrator:denoiser_type != openimagedenoise }"),
             ], toggle="cycles:integrator:use_denoise"),
         ], open=True),
         P("Path Guiding", [
             S("cycles:integrator:use_guiding", "Path Guiding",
               "Use path guiding for sampling paths. Path guiding incrementally learns the light "
               "distribution of the scene and guides paths into directions with high direct and "
-              "indirect light contributions. Only supported on the CPU."),
+              "indirect light contributions. Only supported on the CPU.",
+              disablewhen="{ cycles:device != CPU }"),
             S("cycles:integrator:guiding_training_samples", "Training Samples",
               "The maximum number of samples used for training path guiding. 0 trains for all "
               "samples.",
@@ -340,8 +341,10 @@ LAYOUT = [
               "shading point."),
             S("cycles:integrator:light_sampling_threshold", "Light Threshold",
               "Probabilistically terminate light samples when the light contribution is below "
-              "this threshold (more noise but faster rendering). 0 disables the test.",
-              range=(0, 1, True, False)),
+              "this threshold (more noise but faster rendering). 0 disables the test. Not "
+              "used with the light tree.",
+              range=(0, 1, True, False),
+              disablewhen="{ cycles:integrator:use_light_tree == 1 }"),
         ]),
     ], open=True),
     P("Light Paths", [
@@ -432,8 +435,8 @@ LAYOUT = [
           viewport=True),
         S("cycles:curve_subdivisions", "Curve Subdivisions",
           "Number of subdivisions used in curve intersection, as a power of 2 (Blender uses 2). "
-          "Changing it restarts the render.",
-          range=(0, 4, True, False)),
+          "Changing it restarts the render. Only for Rounded Ribbons.",
+          range=(0, 4, True, False), hidewhen="{ cycles:curve_shape != ribbon }"),
     ]),
     P("Subdivision", [
         S("cycles:dicing_rate", "Dicing Rate Render",
@@ -848,10 +851,12 @@ LIGHT_LAYOUT = [
     P("Light", [
         S("inputs:cycles:light:max_bounces", "Max Bounces",
           "Maximum number of bounces the light will contribute to the render.",
-          range=(0, 1024, True, False)),
+          range=(0, 1024, True, False),
+          hidewhen="{ inputs:cycles:light:is_portal == 1 }"),
         S("inputs:cycles:light:use_mis", "Multiple Importance",
           "Use multiple importance sampling for the light, reduces noise for area lights and "
-          "sharp glossy materials."),
+          "sharp glossy materials.",
+          disablewhen="{ inputs:cycles:light:is_portal == 1 }"),
         S("inputs:cycles:light:use_caustics", "Shadow Caustics",
           "Generate approximate caustics in shadows of refractive surfaces. Lights, caster and "
           "receiver objects must have shadow caustics options set to enable this."),
