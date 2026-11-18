@@ -170,8 +170,8 @@ These are the open limits of the current version that affect users.
   change is not shown; transparent pixels show Houdini's environment map display.
 - DLSS has no upscaling modes, and needs an RTX GPU with driver 620 or newer. The shareable build
   does not include DLSS.
-- Changes to the Camera LOP's **Cycles** tab (panorama, aperture blades, rolling shutter) need a
-  render restart to show in the viewport.
+- Camera LOPs saved with earlier builds author `cycles:camera:*` attributes: changes to them need
+  a render restart. Cameras from this build author `primvars:cycles:camera:*` and update live.
 
 **Other**
 

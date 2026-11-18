@@ -17,8 +17,11 @@ blur and exposure. Blender's extra camera settings are on the **Cycles** tab of 
 
 ## Cycles settings
 
-The Camera LOP's **Cycles** tab authors `cycles:camera:<setting>` attributes on the camera. Settings
-that are not authored use the defaults below (Blender's). Angles are in degrees.
+The Camera LOP's **Cycles** tab authors `primvars:cycles:camera:<setting>` primvars on the camera
+(the tables below leave out the `primvars:` prefix). Changing them updates a running render. Settings
+that are not authored use the defaults below (Blender's). Angles are in degrees. `cycles:camera:*`
+attributes without the prefix (from earlier builds) are still read, but do not update a running
+render.
 
 ### Lens
 

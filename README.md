@@ -137,8 +137,8 @@ Next, roughly in this order:
    curve bases.
 2. Gaussian splats (`particleField`), panoramic cameras, portal lights.
 3. DLSS upscale modes; cylinder lights (as mesh lights); dome lights with `poleAxis` Z (DomeLight_1).
-4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness. Camera Cycles settings need a
-   render restart in the viewport (fix pending).
+4. Confirm in the GUI: orbit pivot, Reload Textures, responsiveness, live camera Cycles settings
+   and displacement with Adaptive Subdivision on polygon meshes.
 
 ## Building
 

@@ -10,6 +10,7 @@
 
 #include <pxr/base/gf/frustum.h>
 #include <pxr/imaging/hd/cameraSchema.h>
+#include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/xformSchema.h>
 #include <pxr/usd/usdGeom/tokens.h>
@@ -29,11 +30,17 @@ static Transform convert_camera_transform(const GfMatrix4d &matrix)
 
 namespace {
 
-/* Value of a "cycles:camera:<setting>" attribute of the camera prim, empty if not authored.
- * Attributes outside the camera schema are in its namespaced properties, by namespace. */
-VtValue GetCameraSetting(const HdCameraSchema &cameraSchema, const std::string &setting)
+/* Value of a Cycles camera setting, empty if not authored: the "primvars:cycles:camera:<setting>"
+ * primvar the Camera LOP authors, or a "cycles:camera:<setting>" attribute (earlier builds; these
+ * do not update a running render: UsdImaging dirties no camera locator for them). Attributes
+ * outside the camera schema are in its namespaced properties, by namespace. */
+VtValue GetCameraSetting(const HdContainerDataSourceHandle &primDs, const std::string &setting)
 {
   const TfToken name("cycles:camera:" + setting);
+  if (auto ds = HdPrimvarsSchema::GetFromParent(primDs).GetPrimvar(name).GetPrimvarValue()) {
+    return ds->GetValue(0.0f);
+  }
+  const HdCameraSchema cameraSchema = HdCameraSchema::GetFromParent(primDs);
   if (const HdContainerDataSourceHandle cameraDs = cameraSchema.GetContainer()) {
     if (auto ds = HdSampledDataSource::Cast(cameraDs->Get(name))) {
       return ds->GetValue(0.0f);
@@ -56,16 +63,18 @@ VtValue GetCameraSetting(const HdCameraSchema &cameraSchema, const std::string &
 }
 
 template<typename T>
-T GetCameraSetting(const HdCameraSchema &cameraSchema, const std::string &setting, const T &fallback)
+T GetCameraSetting(const HdContainerDataSourceHandle &primDs,
+                   const std::string &setting,
+                   const T &fallback)
 {
-  return VtValue::Cast<T>(GetCameraSetting(cameraSchema, setting)).GetWithDefault(fallback);
+  return VtValue::Cast<T>(GetCameraSetting(primDs, setting)).GetWithDefault(fallback);
 }
 
-std::string GetCameraStringSetting(const HdCameraSchema &cameraSchema,
+std::string GetCameraStringSetting(const HdContainerDataSourceHandle &primDs,
                                    const std::string &setting,
                                    const std::string &fallback)
 {
-  const VtValue value = GetCameraSetting(cameraSchema, setting);
+  const VtValue value = GetCameraSetting(primDs, setting);
   if (value.IsHolding<TfToken>()) {
     return value.UncheckedGet<TfToken>().GetString();
   }
@@ -228,38 +237,32 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
 
     const CyclesSettings defaults;
     CyclesSettings &settings = _settings;
-    settings.blades = std::max(0, GetCameraSetting(cameraSchema, "blades", defaults.blades));
-    settings.bladesRotation = GetCameraSetting(
-        cameraSchema, "blades_rotation", defaults.bladesRotation);
-    settings.apertureRatio = GetCameraSetting(
-        cameraSchema, "aperture_ratio", defaults.apertureRatio);
+    settings.blades = std::max(0, GetCameraSetting(primDs, "blades", defaults.blades));
+    settings.bladesRotation = GetCameraSetting(primDs, "blades_rotation", defaults.bladesRotation);
+    settings.apertureRatio = GetCameraSetting(primDs, "aperture_ratio", defaults.apertureRatio);
     settings.rollingShutterType = GetCameraStringSetting(
-        cameraSchema, "rolling_shutter_type", defaults.rollingShutterType);
+        primDs, "rolling_shutter_type", defaults.rollingShutterType);
     settings.rollingShutterDuration = GetCameraSetting(
-        cameraSchema, "rolling_shutter_duration", defaults.rollingShutterDuration);
-    settings.panoramaType = GetCameraStringSetting(
-        cameraSchema, "panorama_type", defaults.panoramaType);
-    settings.fisheyeFov = GetCameraSetting(cameraSchema, "fisheye_fov", defaults.fisheyeFov);
-    settings.fisheyeLens = GetCameraSetting(cameraSchema, "fisheye_lens", defaults.fisheyeLens);
-    settings.latitudeMin = GetCameraSetting(cameraSchema, "latitude_min", defaults.latitudeMin);
-    settings.latitudeMax = GetCameraSetting(cameraSchema, "latitude_max", defaults.latitudeMax);
-    settings.longitudeMin = GetCameraSetting(
-        cameraSchema, "longitude_min", defaults.longitudeMin);
-    settings.longitudeMax = GetCameraSetting(
-        cameraSchema, "longitude_max", defaults.longitudeMax);
+        primDs, "rolling_shutter_duration", defaults.rollingShutterDuration);
+    settings.panoramaType = GetCameraStringSetting(primDs, "panorama_type", defaults.panoramaType);
+    settings.fisheyeFov = GetCameraSetting(primDs, "fisheye_fov", defaults.fisheyeFov);
+    settings.fisheyeLens = GetCameraSetting(primDs, "fisheye_lens", defaults.fisheyeLens);
+    settings.latitudeMin = GetCameraSetting(primDs, "latitude_min", defaults.latitudeMin);
+    settings.latitudeMax = GetCameraSetting(primDs, "latitude_max", defaults.latitudeMax);
+    settings.longitudeMin = GetCameraSetting(primDs, "longitude_min", defaults.longitudeMin);
+    settings.longitudeMax = GetCameraSetting(primDs, "longitude_max", defaults.longitudeMax);
     for (int i = 0; i < 5; ++i) {
-      settings.fisheyePolynomial[i] = GetCameraSetting(cameraSchema,
-                                                       "fisheye_polynomial_k" + std::to_string(i),
-                                                       defaults.fisheyePolynomial[i]);
+      settings.fisheyePolynomial[i] = GetCameraSetting(
+          primDs, "fisheye_polynomial_k" + std::to_string(i), defaults.fisheyePolynomial[i]);
     }
     settings.centralCylindricalRangeUMin = GetCameraSetting(
-        cameraSchema, "central_cylindrical_range_u_min", defaults.centralCylindricalRangeUMin);
+        primDs, "central_cylindrical_range_u_min", defaults.centralCylindricalRangeUMin);
     settings.centralCylindricalRangeUMax = GetCameraSetting(
-        cameraSchema, "central_cylindrical_range_u_max", defaults.centralCylindricalRangeUMax);
+        primDs, "central_cylindrical_range_u_max", defaults.centralCylindricalRangeUMax);
     settings.centralCylindricalRangeVMin = GetCameraSetting(
-        cameraSchema, "central_cylindrical_range_v_min", defaults.centralCylindricalRangeVMin);
+        primDs, "central_cylindrical_range_v_min", defaults.centralCylindricalRangeVMin);
     settings.centralCylindricalRangeVMax = GetCameraSetting(
-        cameraSchema, "central_cylindrical_range_v_max", defaults.centralCylindricalRangeVMax);
+        primDs, "central_cylindrical_range_v_max", defaults.centralCylindricalRangeVMax);
   }
 
   *dirtyBits = DirtyBits::Clean;

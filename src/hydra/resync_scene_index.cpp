@@ -4,7 +4,13 @@
 
 #include "hydra/resync_scene_index.h"
 
+#include <algorithm>
+#include <optional>
+
+#include <pxr/base/tf/stringUtils.h>
+#include <pxr/imaging/hd/cameraSchema.h>
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
+#include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
 #include <pxr/imaging/hd/sceneGlobalsSchema.h>
 #include <pxr/imaging/hdsi/renderSettingsFilteringSceneIndex.h>
@@ -129,10 +135,33 @@ void HdCyclesResyncSceneIndex::_PrimsRemoved(
   _SendPrimsRemoved(entries);
 }
 
+/* True for a locator of a Cycles camera setting ("primvars:cycles:camera:<setting>"). */
+static bool IsCameraSettingLocator(const HdDataSourceLocator &locator)
+{
+  return locator.GetElementCount() >= 2 &&
+         locator.GetFirstElement() == HdPrimvarsSchema::GetSchemaToken() &&
+         TfStringStartsWith(locator.GetElement(1).GetString(), "cycles:camera:");
+}
+
 void HdCyclesResyncSceneIndex::_PrimsDirtied(
     const HdSceneIndexBase & /*sender*/, const HdSceneIndexObserver::DirtiedPrimEntries &entries)
 {
-  _SendPrimsDirtied(entries);
+  /* Hydra maps no primvar of a camera to its dirty bits: dirty its parameters for the Cycles
+   * camera settings, so HdCyclesCamera::Sync reads them again. */
+  std::optional<HdSceneIndexObserver::DirtiedPrimEntries> mapped;
+  for (size_t i = 0; i < entries.size(); ++i) {
+    const HdDataSourceLocatorSet &locators = entries[i].dirtyLocators;
+    if (!locators.Intersects(HdPrimvarsSchema::GetDefaultLocator()) ||
+        std::none_of(locators.begin(), locators.end(), IsCameraSettingLocator))
+    {
+      continue;
+    }
+    if (!mapped) {
+      mapped = entries;
+    }
+    (*mapped)[i].dirtyLocators.insert(HdCameraSchema::GetDefaultLocator());
+  }
+  _SendPrimsDirtied(mapped ? *mapped : entries);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

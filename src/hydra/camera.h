@@ -56,8 +56,8 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
   void Finalize(PXR_NS::HdRenderParam *renderParam) override;
 
  private:
-  /* Cycles camera settings from "cycles:camera:<setting>" attributes, like Blender's camera
-   * properties. Angles in degrees. */
+  /* Cycles camera settings from "primvars:cycles:camera:<setting>" primvars, like Blender's
+   * camera properties. Angles in degrees. */
   struct CyclesSettings {
     int blades = 0;
     float bladesRotation = 0.0f;

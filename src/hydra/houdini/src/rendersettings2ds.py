@@ -713,8 +713,9 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:map_resolution": {"type": "int", "default": 0},
 }
 
-# Per-camera settings, authored as "cycles:camera:<setting>" attributes by the Camera LOP. Angles
-# are in degrees, like Blender's camera properties. Defaults are Blender's.
+# Per-camera settings, authored as "primvars:cycles:camera:<setting>" attributes by the Camera LOP
+# (primvars, so that UsdImaging dirties the camera when they change). Angles are in degrees, like
+# Blender's camera properties. Defaults are Blender's.
 PANORAMA_TYPES = {
     "none": "None",
     "equirectangular": "Equirectangular",
@@ -726,109 +727,109 @@ PANORAMA_TYPES = {
     "panorama_central_cylindrical": "Central Cylindrical",
 }
 CAMERA_SETTINGS = {
-    "cycles:camera:panorama_type": {"type": "menu", "default": "none",
+    "primvars:cycles:camera:panorama_type": {"type": "menu", "default": "none",
                                     "enum_values": PANORAMA_TYPES},
-    "cycles:camera:fisheye_fov": {"type": "float", "default": 180.0},
-    "cycles:camera:fisheye_lens": {"type": "float", "default": 10.5},
-    "cycles:camera:latitude_min": {"type": "float", "default": -90.0},
-    "cycles:camera:latitude_max": {"type": "float", "default": 90.0},
-    "cycles:camera:longitude_min": {"type": "float", "default": -180.0},
-    "cycles:camera:longitude_max": {"type": "float", "default": 180.0},
-    "cycles:camera:fisheye_polynomial_k0": {"type": "float", "default": -1.1735143712967577e-05},
-    "cycles:camera:fisheye_polynomial_k1": {"type": "float", "default": -0.019988736953434998},
-    "cycles:camera:fisheye_polynomial_k2": {"type": "float", "default": -3.3525322965709175e-06},
-    "cycles:camera:fisheye_polynomial_k3": {"type": "float", "default": 3.099275275886036e-06},
-    "cycles:camera:fisheye_polynomial_k4": {"type": "float", "default": -2.6064646454854524e-08},
-    "cycles:camera:central_cylindrical_range_u_min": {"type": "float", "default": -180.0},
-    "cycles:camera:central_cylindrical_range_u_max": {"type": "float", "default": 180.0},
-    "cycles:camera:central_cylindrical_range_v_min": {"type": "float", "default": -1.0},
-    "cycles:camera:central_cylindrical_range_v_max": {"type": "float", "default": 1.0},
-    "cycles:camera:blades": {"type": "int", "default": 0},
-    "cycles:camera:blades_rotation": {"type": "float", "default": 0.0},
-    "cycles:camera:aperture_ratio": {"type": "float", "default": 1.0},
-    "cycles:camera:rolling_shutter_type": {"type": "menu", "default": "none",
+    "primvars:cycles:camera:fisheye_fov": {"type": "float", "default": 180.0},
+    "primvars:cycles:camera:fisheye_lens": {"type": "float", "default": 10.5},
+    "primvars:cycles:camera:latitude_min": {"type": "float", "default": -90.0},
+    "primvars:cycles:camera:latitude_max": {"type": "float", "default": 90.0},
+    "primvars:cycles:camera:longitude_min": {"type": "float", "default": -180.0},
+    "primvars:cycles:camera:longitude_max": {"type": "float", "default": 180.0},
+    "primvars:cycles:camera:fisheye_polynomial_k0": {"type": "float", "default": -1.1735143712967577e-05},
+    "primvars:cycles:camera:fisheye_polynomial_k1": {"type": "float", "default": -0.019988736953434998},
+    "primvars:cycles:camera:fisheye_polynomial_k2": {"type": "float", "default": -3.3525322965709175e-06},
+    "primvars:cycles:camera:fisheye_polynomial_k3": {"type": "float", "default": 3.099275275886036e-06},
+    "primvars:cycles:camera:fisheye_polynomial_k4": {"type": "float", "default": -2.6064646454854524e-08},
+    "primvars:cycles:camera:central_cylindrical_range_u_min": {"type": "float", "default": -180.0},
+    "primvars:cycles:camera:central_cylindrical_range_u_max": {"type": "float", "default": 180.0},
+    "primvars:cycles:camera:central_cylindrical_range_v_min": {"type": "float", "default": -1.0},
+    "primvars:cycles:camera:central_cylindrical_range_v_max": {"type": "float", "default": 1.0},
+    "primvars:cycles:camera:blades": {"type": "int", "default": 0},
+    "primvars:cycles:camera:blades_rotation": {"type": "float", "default": 0.0},
+    "primvars:cycles:camera:aperture_ratio": {"type": "float", "default": 1.0},
+    "primvars:cycles:camera:rolling_shutter_type": {"type": "menu", "default": "none",
                                            "enum_values": {"none": "None",
                                                            "top": "Top-Bottom"}},
-    "cycles:camera:rolling_shutter_duration": {"type": "float", "default": 0.1},
+    "primvars:cycles:camera:rolling_shutter_duration": {"type": "float", "default": 0.1},
 }
 
 
 def not_panorama(*types):
-    return "{ %s }" % " ".join("cycles:camera:panorama_type != %s" % t for t in types)
+    return "{ %s }" % " ".join("primvars:cycles:camera:panorama_type != %s" % t for t in types)
 
 
 # Layout of the per-camera settings, following Blender's camera properties.
 CAMERA_LAYOUT = [
     P("Lens", [
-        S("cycles:camera:panorama_type", "Panorama Type",
+        S("primvars:cycles:camera:panorama_type", "Panorama Type",
           "Render a panoramic image with this projection instead of the camera's perspective "
           "or orthographic projection. Fisheye lens types use the camera's aperture as the "
           "sensor size."),
-        S("cycles:camera:fisheye_fov", "Field of View",
+        S("primvars:cycles:camera:fisheye_fov", "Field of View",
           "Field of view of the fisheye lens, in degrees.",
           range=(10, 360, True, True),
           hidewhen=not_panorama("fisheye_equidistant", "fisheye_equisolid",
                                 "fisheye_lens_polynomial")),
-        S("cycles:camera:fisheye_lens", "Fisheye Lens",
+        S("primvars:cycles:camera:fisheye_lens", "Fisheye Lens",
           "Lens focal length of the fisheye lens (in the unit of the aperture, millimeters).",
           range=(0.01, 100, True, False),
           hidewhen=not_panorama("fisheye_equisolid")),
-        S("cycles:camera:latitude_min", "Latitude Min",
+        S("primvars:cycles:camera:latitude_min", "Latitude Min",
           "Minimum latitude (vertical angle) of the panorama, in degrees.",
           range=(-90, 90, True, True), hidewhen=not_panorama("equirectangular")),
-        S("cycles:camera:latitude_max", "Latitude Max",
+        S("primvars:cycles:camera:latitude_max", "Latitude Max",
           "Maximum latitude (vertical angle) of the panorama, in degrees.",
           range=(-90, 90, True, True), hidewhen=not_panorama("equirectangular")),
-        S("cycles:camera:longitude_min", "Longitude Min",
+        S("primvars:cycles:camera:longitude_min", "Longitude Min",
           "Minimum longitude (horizontal angle) of the panorama, in degrees.",
           range=(-180, 180, True, True), hidewhen=not_panorama("equirectangular")),
-        S("cycles:camera:longitude_max", "Longitude Max",
+        S("primvars:cycles:camera:longitude_max", "Longitude Max",
           "Maximum longitude (horizontal angle) of the panorama, in degrees.",
           range=(-180, 180, True, True), hidewhen=not_panorama("equirectangular")),
     ] + [
-        S("cycles:camera:fisheye_polynomial_k%d" % i, "K%d" % i,
+        S("primvars:cycles:camera:fisheye_polynomial_k%d" % i, "K%d" % i,
           "Coefficient K%d of the lens polynomial." % i,
           hidewhen=not_panorama("fisheye_lens_polynomial"))
         for i in range(5)
     ] + [
-        S("cycles:camera:central_cylindrical_range_u_min", "Min Longitude",
+        S("primvars:cycles:camera:central_cylindrical_range_u_min", "Min Longitude",
           "Minimum longitude of the central cylindrical panorama, in degrees.",
           range=(-180, 180, True, True), hidewhen=not_panorama("panorama_central_cylindrical")),
-        S("cycles:camera:central_cylindrical_range_u_max", "Max Longitude",
+        S("primvars:cycles:camera:central_cylindrical_range_u_max", "Max Longitude",
           "Maximum longitude of the central cylindrical panorama, in degrees.",
           range=(-180, 180, True, True), hidewhen=not_panorama("panorama_central_cylindrical")),
-        S("cycles:camera:central_cylindrical_range_v_min", "Min Height",
+        S("primvars:cycles:camera:central_cylindrical_range_v_min", "Min Height",
           "Minimum height of the central cylindrical panorama.",
           range=(-10, 10, False, False),
           hidewhen=not_panorama("panorama_central_cylindrical")),
-        S("cycles:camera:central_cylindrical_range_v_max", "Max Height",
+        S("primvars:cycles:camera:central_cylindrical_range_v_max", "Max Height",
           "Maximum height of the central cylindrical panorama.",
           range=(-10, 10, False, False),
           hidewhen=not_panorama("panorama_central_cylindrical")),
     ], open=True),
     P("Depth of Field", [
         P("Aperture", [
-            S("cycles:camera:blades", "Blades",
+            S("primvars:cycles:camera:blades", "Blades",
               "Number of blades in the aperture for polygonal bokeh (at least 3, 0 for a round "
               "bokeh). The aperture size comes from the camera's F-Stop.",
               range=(0, 16, True, False)),
-            S("cycles:camera:blades_rotation", "Rotation",
+            S("primvars:cycles:camera:blades_rotation", "Rotation",
               "Rotation of the blades in the aperture, in degrees.",
               range=(-180, 180, True, True)),
-            S("cycles:camera:aperture_ratio", "Ratio",
+            S("primvars:cycles:camera:aperture_ratio", "Ratio",
               "Distortion to simulate an anamorphic lens bokeh.",
               range=(0.01, 2, True, False)),
         ], open=True),
     ], open=True),
     P("Motion Blur", [
         P("Rolling Shutter", [
-            S("cycles:camera:rolling_shutter_type", "Rolling Shutter",
+            S("primvars:cycles:camera:rolling_shutter_type", "Rolling Shutter",
               "Type of rolling shutter effect matching CMOS-based cameras, with motion blur."),
-            S("cycles:camera:rolling_shutter_duration", "Rolling Shutter Duration",
+            S("primvars:cycles:camera:rolling_shutter_duration", "Rolling Shutter Duration",
               "Scanline \"exposure\" time for the rolling shutter effect: 0 scans the image "
               "over the whole shutter, 1 exposes all scanlines over the whole shutter.",
               range=(0, 1, True, True),
-              disablewhen="{ cycles:camera:rolling_shutter_type == none }"),
+              disablewhen="{ primvars:cycles:camera:rolling_shutter_type == none }"),
         ], open=True),
     ], open=True),
 ]
