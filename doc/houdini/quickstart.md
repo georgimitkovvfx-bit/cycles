@@ -43,7 +43,9 @@ render product and render var prims in one node, with the output picture, camera
 at the top and every Cycles setting below, laid out like Blender's render properties.
 
 It makes itself the stage's default render settings, so `husk`, the USD Render ROP, TOPs and the
-viewport pick it up without further setup. The **Blender Defaults** button sets Blender's values
+viewport pick it up without further setup. **Cycles (Setup)** in the Tab menu (under **Cycles** and
+**Rendering**) adds the Cycles Render Settings LOP with a USD Render ROP below it that renders with
+Cycles, like Houdini's Karma (Setup) tool. The **Blender Defaults** button sets Blender's values
 for final renders (4096 samples, denoising, Blackman-Harris filter, Blender's bounce limits and so
 on), if you want results that match a default Blender scene.
 

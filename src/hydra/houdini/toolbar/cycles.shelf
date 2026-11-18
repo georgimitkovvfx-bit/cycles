@@ -75,4 +75,33 @@ group.append(settings)
 node.setParmTemplateGroup(group)
 ]]></script>
     </tool>
+    <tool name="lop_cycles_setup" label="Cycles (Setup)" icon="$CYCLES_ICON">
+        <toolMenuContext name="viewer">
+            <contextNetType>LOP</contextNetType>
+        </toolMenuContext>
+        <toolMenuContext name="network">
+            <contextNetType>LOP</contextNetType>
+        </toolMenuContext>
+        <toolSubmenu>Cycles</toolSubmenu>
+        <toolSubmenu>Rendering</toolSubmenu>
+        <script scriptType="python"><![CDATA[
+# Like Houdini's Karma (Setup) tool: Cycles Render Settings LOP and a USD Render ROP below it
+# that renders those settings with Cycles.
+import hou
+import loptoolutils
+node = loptoolutils.genericTool(kwargs, 'cyclesrendersettings')
+nodename = node.name()
+kwargs['inputnodename'] = nodename
+kwargs['inputs'] = [(nodename, 0)]
+kwargs['nodepositionx'] = str(node.position().x())
+kwargs['nodepositiony'] = str(node.position().y() - 0.5)
+rop = loptoolutils.genericTool(kwargs, 'usdrender_rop')
+rop.parm('renderer').set('HdCyclesPlugin')
+rop.parm('rendersettings').setExpression('chs("../%s/primpath")' % nodename)
+rop.parm('husk_instantshutter').setExpression(
+    '1 - ch("../%s/%s")' % (nodename, hou.text.encodeParm('cycles:integrator:motion_blur')))
+node.setCurrent(True)
+node.setSelected(True)
+]]></script>
+    </tool>
 </shelfDocument>
