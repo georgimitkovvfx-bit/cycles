@@ -118,7 +118,7 @@ with a Sky Texture through a Background shader, like Blender's default sky setup
 | Turbidity | 2.2 | Haze of the analytic models |
 | Ground Albedo | 0.3 | Ground color reflected into the sky (Hosek / Wilkie) |
 | **Sun** | | |
-| Sun Disc | On | Include the sun. It lights the scene; Cycles samples it directly |
+| Sun Disc | On | Include the sun. It lights the scene; Cycles samples it directly. A Distant Light in the stage adds to it, like a Sun light with a Sky Texture world in Blender: turn one of them off for a single sun |
 | Sun Size | 0.545 | Angular diameter in degrees (the real sun is about 0.53) |
 | Sun Intensity | 1 | Strength of the sun disc |
 | Sun Position | Elevation and Azimuth | Place the sun by angles, or by location, date and time |
