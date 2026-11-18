@@ -61,6 +61,13 @@ HdCyclesRenderPass::~HdCyclesRenderPass()
 
 bool HdCyclesRenderPass::IsConverged() const
 {
+  /* A batch render that failed (e.g. kernels or OSL shaders the device could not load) never
+   * writes its result: it is done, so husk finishes instead of waiting for it forever. */
+  const Session *const session = _renderParam->session;
+  if (session->params.background && session->progress.get_error()) {
+    return true;
+  }
+
   /* Changed settings or re-synced prims restart the render at the next execute. */
   if (GetRenderIndex()->GetRenderDelegate()->GetRenderSettingsVersion() != _lastSettingsVersion ||
       _renderParam->IsResyncing() || _renderParam->sceneChanged)
@@ -85,6 +92,11 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
 
   if (session->progress.get_cancel()) {
     return;  // Something went wrong and cannot continue without recreating the session
+  }
+
+  if (session->progress.get_error() && !_errorReported) {
+    _errorReported = true;
+    TF_RUNTIME_ERROR("Cycles render failed: %s", session->progress.get_error_message().c_str());
   }
 
   if (scene->mutex.try_lock()) {

@@ -28,6 +28,7 @@ class HdCyclesRenderPass final : public PXR_NS::HdRenderPass {
 
   HdCyclesSession *_renderParam;
   unsigned int _lastSettingsVersion = 0;
+  bool _errorReported = false;
   // Render tags drawn by the last execute, and the version of the prims' render tags then
   PXR_NS::TfTokenVector _lastRenderTags;
   unsigned int _lastRenderTagVersion = ~0u;
