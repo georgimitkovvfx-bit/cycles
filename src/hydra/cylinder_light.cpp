@@ -103,31 +103,34 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
     const float length = std::max(GetTypedValue<float>(lightDs, HdLightTokens->length, 1.0f),
                                   0.0f);
 
-    /* The tube: kSegments quads around the X axis, outward normals. */
-    _mesh->clear(true);
-    _mesh->resize_mesh(2 * kSegments, 2 * kSegments);
-    packed_float3 *P = _mesh->attributes.add(ATTR_STD_POSITION)->data_for_write<packed_float3>();
-    for (int i = 0; i < kSegments; ++i) {
-      const float angle = 2.0f * M_PI_F * float(i) / float(kSegments);
-      const float y = radius * cosf(angle);
-      const float z = radius * sinf(angle);
-      P[2 * i + 0] = make_float3(-0.5f * length, y, z);
-      P[2 * i + 1] = make_float3(0.5f * length, y, z);
+    /* The tube: kSegments quads around the X axis, outward normals. Moves only change the
+     * object transform. */
+    if (*dirtyBits & DirtyBits::DirtyParams) {
+      _mesh->clear(true);
+      _mesh->resize_mesh(2 * kSegments, 2 * kSegments);
+      packed_float3 *P = _mesh->attributes.add(ATTR_STD_POSITION)->data_for_write<packed_float3>();
+      for (int i = 0; i < kSegments; ++i) {
+        const float angle = 2.0f * M_PI_F * float(i) / float(kSegments);
+        const float y = radius * cosf(angle);
+        const float z = radius * sinf(angle);
+        P[2 * i + 0] = make_float3(-0.5f * length, y, z);
+        P[2 * i + 1] = make_float3(0.5f * length, y, z);
+      }
+      int *triangles = _mesh->get_triangles().data();
+      for (int i = 0; i < kSegments; ++i) {
+        const int a = 2 * i;
+        const int b = 2 * ((i + 1) % kSegments);
+        /* Counter-clockwise seen from outside. */
+        const int tri[6] = {a, b, a + 1, a + 1, b, b + 1};
+        std::copy_n(tri, 6, triangles + 6 * i);
+      }
+      std::fill(_mesh->get_shader().begin(), _mesh->get_shader().end(), 0);
+      std::fill(_mesh->get_smooth().begin(), _mesh->get_smooth().end(), true);
+      _mesh->tag_position_modified();
+      _mesh->tag_triangles_modified();
+      _mesh->tag_shader_modified();
+      _mesh->tag_smooth_modified();
     }
-    int *triangles = _mesh->get_triangles().data();
-    for (int i = 0; i < kSegments; ++i) {
-      const int a = 2 * i;
-      const int b = 2 * ((i + 1) % kSegments);
-      /* Counter-clockwise seen from outside. */
-      const int tri[6] = {a, b, a + 1, a + 1, b, b + 1};
-      std::copy_n(tri, 6, triangles + 6 * i);
-    }
-    std::fill(_mesh->get_shader().begin(), _mesh->get_shader().end(), 0);
-    std::fill(_mesh->get_smooth().begin(), _mesh->get_smooth().end(), true);
-    _mesh->tag_position_modified();
-    _mesh->tag_triangles_modified();
-    _mesh->tag_shader_modified();
-    _mesh->tag_smooth_modified();
 
     /* Radiance like the other USD lights; Cycles' emission strength is radiance. */
     const GfVec3f color = GetTypedValue<GfVec3f>(lightDs, HdLightTokens->color, GfVec3f(1.0f));
