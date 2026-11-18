@@ -77,6 +77,8 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
     _object->name = GetId().GetString();
     _object->set_geometry(_mesh);
     _object->set_random_id(hash_uint2(hash_string(_object->name.c_str()), 0));
+    ++session->meshLights;
+    session->lightsChanged = true;
   }
 
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
@@ -218,6 +220,8 @@ void HdCyclesCylinderLight::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   auto *const session = static_cast<HdCyclesSession *>(renderParam);
   session->RemoveLinking(_object->name.string());
+  --session->meshLights;
+  session->lightsChanged = true;
   if (!session->keep_nodes) {
     session->DeleteNode(_object);
     session->DeleteNode(_mesh);

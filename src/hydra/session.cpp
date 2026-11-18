@@ -341,7 +341,7 @@ void HdCyclesSession::UpdateScene()
      * first dome light in scene order samples it and gives its light settings (ray visibility,
      * Multiple Importance, light group) to the whole world. */
     std::vector<Object *> domeObjects;
-    bool have_lights = false;
+    bool have_lights = meshLights > 0;
     for (Object *object : scene->objects) {
       if (!object->get_geometry()->is_light()) {
         continue;
