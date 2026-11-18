@@ -60,6 +60,10 @@ class Camera : public Node {
   /* motion blur */
   NODE_SOCKET_API(float, shuttertime)
   NODE_SOCKET_API(MotionPosition, motion_position)
+  /* Where the frame time of the geometry lies in the shutter, as a fraction of the shutter: 0 at
+   * the start, 0.5 at the center, outside 0..1 for shutters not over the frame. FLT_MAX (default)
+   * uses the motion position. Volume velocity blur moves the density from that time. */
+  NODE_SOCKET_API(float, motion_time_offset)
   NODE_SOCKET_API_ARRAY(array<float>, shutter_curve)
   size_t shutter_table_offset;
 

@@ -376,9 +376,11 @@ ccl_device_inline void volume_shader_motion_blur(KernelGlobals kg,
   const float3 P = sd->P;
   const float velocity_scale =
       kernel_data_fetch(objects, sd->object).mesh_volume.volume_velocity_scale;
-  const float time_offset = kernel_data.cam.motion_position == MOTION_POSITION_CENTER ? 0.5f :
+  const bool use_time_offset = kernel_data.cam.motion_time_offset != FLT_MAX;
+  const float time_offset = use_time_offset ? kernel_data.cam.motion_time_offset :
+                            kernel_data.cam.motion_position == MOTION_POSITION_CENTER ? 0.5f :
                                                                                         0.0f;
-  const float time = kernel_data.cam.motion_position == MOTION_POSITION_END ?
+  const float time = kernel_data.cam.motion_position == MOTION_POSITION_END && !use_time_offset ?
                          (1.0f - kernel_data.cam.shuttertime) + sd->time :
                          sd->time;
 

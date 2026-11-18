@@ -383,16 +383,16 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   // Motion steps are evenly spaced over the camera shutter (in frames)
   if (_shutterClose > _shutterOpen) {
     cam->set_shuttertime(float(_shutterClose - _shutterOpen));
-    /* Only volume velocity blur uses this, to move the density from the frame time. The motion
-     * steps of everything else are sampled at their times over the shutter.
-     * shortcut: other shutters not centered on the frame blur volumes around mid-shutter, add a
-     * time offset per object to volume_shader_motion_blur if they need to be exact. */
-    cam->set_motion_position(_shutterOpen == 0.0 ? MOTION_POSITION_START : MOTION_POSITION_CENTER);
+    /* Only volume velocity blur uses these, to move the density from the frame time. The motion
+     * steps of everything else are sampled at their times over the shutter. */
+    cam->set_motion_position(MOTION_POSITION_CENTER);
+    cam->set_motion_time_offset(float(-_shutterOpen / (_shutterClose - _shutterOpen)));
   }
   else {
     // Cycles' defaults, not the shutter of the camera rendered before
     cam->set_shuttertime(1.0f);
     cam->set_motion_position(MOTION_POSITION_CENTER);
+    cam->set_motion_time_offset(FLT_MAX);
   }
 }
 
@@ -483,6 +483,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   cam->set_motion(motion);
   cam->set_shuttertime(1.0f);
   cam->set_motion_position(MOTION_POSITION_CENTER);
+  cam->set_motion_time_offset(FLT_MAX);
 }
 
 bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera *cam, Scene *scene)

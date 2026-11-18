@@ -55,6 +55,7 @@ NODE_DEFINE(Camera)
   motion_position_enum.insert("center", MOTION_POSITION_CENTER);
   motion_position_enum.insert("end", MOTION_POSITION_END);
   SOCKET_ENUM(motion_position, "Motion Position", motion_position_enum, MOTION_POSITION_CENTER);
+  SOCKET_FLOAT(motion_time_offset, "Motion Time Offset", FLT_MAX);
 
   static NodeEnum rolling_shutter_type_enum;
   rolling_shutter_type_enum.insert("none", ROLLING_SHUTTER_NONE);
@@ -459,6 +460,7 @@ void Camera::update(Scene *scene)
   /* motion blur */
   kcam->shuttertime = (need_motion == Scene::MOTION_BLUR) ? shuttertime : -1.0f;
   kcam->motion_position = motion_position;
+  kcam->motion_time_offset = motion_time_offset;
 
   /* type */
   kcam->type = camera_type;

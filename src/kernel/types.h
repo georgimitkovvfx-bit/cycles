@@ -1221,8 +1221,8 @@ struct KernelCamera {
   /* motion blur */
   float shuttertime;
   int num_motion_steps, have_perspective_motion;
+  float motion_time_offset;
 
-  int pad1;
   int pad2;
   int pad3;
 
