@@ -247,7 +247,11 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
   const HdInterpolation interpolation = ReadPrimvarInterpolation(primvars, HdTokens->widths);
 
   if (!value.IsHolding<VtFloatArray>()) {
-    TF_WARN("Invalid widths data for %s", GetId().GetText());
+    /* Without widths, width 1 like Karma and Storm. */
+    if (!value.IsEmpty()) {
+      TF_WARN("Invalid widths data for %s", GetId().GetText());
+    }
+    std::fill_n(_geom->get_radius_for_write(), _geom->num_keys(), 0.5f);
     return;
   }
 
@@ -260,9 +264,7 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
   const auto &widths = keyValue.UncheckedGet<VtFloatArray>();
   float *radius = _geom->get_radius_for_write();
 
-  if (interpolation == HdInterpolationConstant) {
-    TF_VERIFY(widths.size() == 1);
-
+  if (interpolation == HdInterpolationConstant && !widths.empty()) {
     const float constantRadius = widths[0] * 0.5f;
 
     for (size_t i = 0; i < _geom->num_keys(); ++i) {

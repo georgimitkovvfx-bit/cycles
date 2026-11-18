@@ -172,28 +172,33 @@ void HdCyclesPoints::PopulateWidths(HdSceneDelegate *sceneDelegate)
   const HdInterpolation interpolation = ReadPrimvarInterpolation(primvars, HdTokens->widths);
 
   if (!value.IsHolding<VtFloatArray>()) {
-    TF_WARN("Invalid widths data for %s", GetId().GetText());
+    /* Without widths, width 1 like Karma and Storm. */
+    if (!value.IsEmpty()) {
+      TF_WARN("Invalid widths data for %s", GetId().GetText());
+    }
+    std::fill_n(_geom->get_radius_for_write(), _geom->num_points(), 0.5f);
     return;
   }
 
   const auto &widths = value.UncheckedGet<VtFloatArray>();
   float *radius = _geom->get_radius_for_write();
 
-  if (interpolation == HdInterpolationConstant) {
-    TF_VERIFY(widths.size() == 1);
-
+  if (interpolation == HdInterpolationConstant && !widths.empty()) {
     const float constantRadius = widths[0] * 0.5f;
 
     for (size_t i = 0; i < _geom->num_points(); ++i) {
       radius[i] = constantRadius;
     }
   }
-  else if (interpolation == HdInterpolationVertex) {
-    TF_VERIFY(widths.size() == _geom->num_points());
-
+  else if (widths.size() == _geom->num_points()) {
+    /* Vertex, or varying which is the same for points. */
     for (size_t i = 0; i < _geom->num_points(); ++i) {
       radius[i] = widths[i] * 0.5f;
     }
+  }
+  else {
+    TF_WARN("Invalid widths data for %s", GetId().GetText());
+    std::fill_n(radius, _geom->num_points(), 0.5f);
   }
 }
 
