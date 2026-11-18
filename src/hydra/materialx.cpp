@@ -1366,6 +1366,27 @@ class Translator {
       Link(Const(1.0f), In(emission, "Strength"));
       return Of(Out(emission, "Emission"), Kind::Closure);
     }
+    /* Volumes: MaterialX's VDFs are coefficients per unit length, like Cycles' Volume
+     * Coefficients node; the volume's EDF is volume emission. */
+    if (category == "anisotropic_vdf" || category == "absorption_vdf") {
+      ShaderNode *volume = Create("volume_coefficients");
+      Link(input("absorption"), In(volume, "Absorption Coefficients"));
+      if (category == "anisotropic_vdf") {
+        Link(input("scattering"), In(volume, "Scatter Coefficients"));
+        Link(input("anisotropy"), In(volume, "Anisotropy"));
+      }
+      else {
+        Link(Const(0.0f, 0.0f, 0.0f), In(volume, "Scatter Coefficients"));
+      }
+      Link(Const(0.0f, 0.0f, 0.0f), In(volume, "Emission Coefficients"));
+      return Of(Out(volume, "Volume"), Kind::Closure);
+    }
+    if (category == "volume") {
+      return AddClosures(input("vdf"), input("edf"));
+    }
+    if (category == "volumematerial") {
+      return input("volumeshader");
+    }
     if (category == "layer" || category == "add") {
       /* Cycles has no layering: the top layer is added, which is too bright where the top
        * reflects. */

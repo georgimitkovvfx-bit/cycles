@@ -203,7 +203,9 @@ it into a Cycles shader graph.
   `geompropvalue`, `geomcolor`, position, normal, tangent, bitangent, `time`), normal maps and
   height to normal, and closures (`dielectric_bsdf`, `conductor_bsdf`, `generalized_schlick_bsdf`,
   `subsurface_bsdf`, `sheen_bsdf`, `burley_diffuse_bsdf`, `translucent_bsdf`, `uniform_edf`,
-  `surface`, `surface_unlit`, `displacement`).
+  `surface`, `surface_unlit`, `displacement`), and volumes (`volumematerial`, `volume`,
+  `anisotropic_vdf` and `absorption_vdf` as Cycles' Volume Coefficients, with `uniform_edf` as
+  volume emission).
 - Nodes that MaterialX defines as node graphs of other nodes (`tiledimage`, `place2d`,
   `colorcorrect`, `hsvadjust`, `checkerboard`, Houdini's `hmtlx` nodes and others) are expanded and translated node
   by node.
@@ -215,8 +217,7 @@ it into a Cycles shader graph.
   than Karma's.
 - The OpenPBR coat is approximated.
 - BSDF layering (`layer`) is approximated by adding the layers.
-- Matrix nodes, hex tiling (`hextiledimage`, rendered as a plain image) and MaterialX volumes
-  (`volumematerial`) are not supported. Unsupported nodes output zero and print a warning.
+- Matrix nodes and hex tiling (`hextiledimage`, rendered as a plain image) are not supported. Unsupported nodes output zero and print a warning.
 - Editing any parameter of a MaterialX material rebuilds the whole Cycles shader.
 
 To see what the delegate receives, set the environment variable `HD_CYCLES_MTLX_DEBUG=1`; each
