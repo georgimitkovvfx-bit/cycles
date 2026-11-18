@@ -237,7 +237,7 @@ the mesh's resolution after subdivision, so use Adaptive Subdivision with a smal
 
 ## Units
 
-Cycles works in meters. The delegate scales the scene by the stage's `metersPerUnit`, so stages in
-meters and in centimeters render the same. Depth and Position passes are written in stage units,
-like Karma's. Settings that are distances (for example AO Distance, Mist Start and Depth) are in
-meters.
+The scene renders in stage units (since Cycles 5.4 the delegate no longer scales it by the stage's
+`metersPerUnit`), so Depth and Position passes are in stage units, like Karma's, and settings that
+are distances (for example AO Distance, Mist Start and Depth, volume step sizes) are in stage units
+too. Camera apertures and focal lengths are converted with `metersPerUnit`.

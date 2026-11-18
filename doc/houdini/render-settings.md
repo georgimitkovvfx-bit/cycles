@@ -363,9 +363,8 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
   behave.
 - **Device menu:** HIP, oneAPI (and Metal on macOS) are listed, but only CUDA, OptiX and the CPU are
   enabled in this build; a device that is not available falls back to the CPU.
-- **Distances** such as Mist Start and Depth and the AO Distance are in Cycles' scene units. Cycles
-  works in meters internally (the delegate scales the stage by `metersPerUnit`), so on a centimeter
-  stage these distances are in meters.
+- **Distances** such as Mist Start and Depth and the AO Distance are in stage units (the scene is not
+  scaled by `metersPerUnit`).
 
 ### Bake
 
