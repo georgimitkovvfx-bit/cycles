@@ -18,15 +18,16 @@ or change it will find the internals in [developers.md](developers.md).
 | Devices | NVIDIA GPUs through OptiX or CUDA, chosen automatically, and the CPU. AMD (HIP) and Intel (oneAPI) GPUs are not enabled |
 | Denoising | OpenImageDenoise (GPU or CPU) and the OptiX denoiser; DLSS Ray Reconstruction for the viewport in builds made with the DLSS SDK |
 | Shaders | All user-facing Cycles shader nodes (99 nodes) as VOP nodes inside a **USD Cycles Material Builder**, laid out like Blender's shader editor |
-| Other materials | Karma and MaterialX materials (Standard Surface, OpenPBR, glTF PBR, about 100 MaterialX nodes) and UsdPreviewSurface are translated to Cycles |
+| Other materials | Karma and MaterialX materials (Standard Surface, OpenPBR, glTF PBR, about 100 MaterialX nodes, MaterialX volumes) and UsdPreviewSurface are translated to Cycles; Houdini `.rat` and Copernicus (`op:`) textures |
 | OSL | Open Shading Language on the CPU and with OptiX, a **Cycles Script** node for `.osl`/`.oso` files, and Houdini's OSL Generic Shader Builder |
-| Lights | USD sphere, rect, disk, distant and dome lights, matching Karma's intensities; light and shadow linking; per-light Cycles settings and light groups |
-| Cameras | USD perspective and orthographic cameras with depth of field and exposure; Cycles panoramic cameras (equirectangular, fisheye, mirror ball, cubemap face, central cylindrical), aperture blades and rolling shutter |
-| Objects | Meshes (with adaptive subdivision), curves, points, volumes, point instancers and native instances, implicit USD shapes; per-object ray visibility, holdout, shadow catcher and more |
+| Lights | USD sphere, rect, disk, distant and dome lights, matching Karma's intensities, and cylinder lights as mesh lights; light and shadow linking; per-light Cycles settings and light groups |
+| Cameras | USD perspective and orthographic cameras with depth of field and exposure; Cycles panoramic cameras (equirectangular, fisheye, mirror ball, cubemap face, central cylindrical), custom OSL lenses, aperture blades and rolling shutter |
+| Objects | Meshes (with adaptive subdivision and creases), curves of every USD basis, points, Gaussian splats, volumes, point instancers and native instances, implicit USD shapes; per-object ray visibility, holdout, shadow catcher and more (Karma's render visibility and holdout mode work too) |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs |
 | AOVs | Blender's view layer passes, Karma's common light path expressions, Cryptomatte, light groups, shader AOVs, primvar AOVs, split image per render var |
 | Motion blur | Transforms, deforming meshes, curves, points, instancers, volumes with velocity fields and the camera |
-| Render settings | A **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP and Cycles options in the viewport's display options, all laid out like Blender's render properties |
+| Render settings | A **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP and Cycles options in the viewport's display options, all laid out like Blender's render properties; **Cycles (Setup)** and **Cycles Bake (Setup)** Tab tools |
+| Baking | Texture baking like Blender's (any render var, margin, tangent space normal maps) |
 
 ## Pages
 
