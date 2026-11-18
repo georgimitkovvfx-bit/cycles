@@ -843,7 +843,8 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->dicingRate ||
            key == HdCyclesRenderSettingsTokens->previewDicingRate ||
            key == HdCyclesRenderSettingsTokens->maxSubdivisions ||
-           key == HdCyclesRenderSettingsTokens->offscreenDicingScale)
+           key == HdCyclesRenderSettingsTokens->offscreenDicingScale ||
+           key == HdCyclesRenderSettingsTokens->dicingCamera)
   {
     // Blender's Subdivision panel, with Blender's defaults and limits
     const auto get = [&](const TfToken &setting, const auto fallback) {
@@ -859,6 +860,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     dicing.maxLevel = std::clamp(get(HdCyclesRenderSettingsTokens->maxSubdivisions, 12), 0, 16);
     dicing.offscreenScale = std::max(
         1.0f, get(HdCyclesRenderSettingsTokens->offscreenDicingScale, 4.0f));
+    if (const auto it = _settingsMap.find(HdCyclesRenderSettingsTokens->dicingCamera);
+        it != _settingsMap.end())
+    {
+      dicing.camera = GetStringSetting(it->second, "");
+    }
     _renderParam->SetDicing(dicing);
   }
   else if (key == HdCyclesRenderSettingsTokens->shutterOpen ||

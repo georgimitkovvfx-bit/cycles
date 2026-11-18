@@ -204,8 +204,8 @@ no motion blur.
 
 Meshes with the `subdivisionScheme` `catmullClark` (or `bilinear`) are subdivided by Cycles. Creases,
 corners and boundary interpolation rules are passed to Cycles. Cycles dices the surface into
-micropolygons of a size in pixels of the render camera (the dicing camera follows the camera you
-render through).
+micropolygons of a size in pixels of the camera you render through, or of the render settings'
+**Dicing Camera** when it is set.
 
 - **Without Adaptive Subdivision** (default), a mesh is subdivided when Hydra passes a refine level
   above 0 (Houdini's level of detail; `husk` passes one), up to that many levels, with micropolygons

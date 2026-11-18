@@ -247,11 +247,21 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     scene->film->set_exposure(_renderParam->GetFilmExposure() * exposureScale);
 
     /* Adaptive subdivision dices in pixels of the render camera, like Blender's default dicing
-     * camera. Only tessellation reads it, so changes do not restart the render. */
+     * camera, or of the Dicing Camera setting's camera (with the render resolution). Only
+     * tessellation reads it, so changes do not restart the render. */
     for (const SocketType &socket : scene->camera->type->inputs) {
       // Setting an array takes it from the camera; dicing needs none (motion, shutter curve)
       if (!socket.is_array()) {
         scene->dicing_camera->set_value(socket, *scene->camera, socket);
+      }
+    }
+    const std::string &dicingCameraPath = _renderParam->GetDicing().camera;
+    if (!dicingCameraPath.empty() && SdfPath::IsValidPathString(dicingCameraPath)) {
+      if (const auto *const dicingCamera = static_cast<const HdCyclesCamera *>(
+              GetRenderIndex()->GetSprim(HdPrimTypeTokens->camera, SdfPath(dicingCameraPath))))
+      {
+        dicingCamera->ApplyCameraSettings(
+            _renderParam, scene->dicing_camera, CameraUtilFit, aspectRatio);
       }
     }
     scene->dicing_camera->set_offscreen_dicing_scale(_renderParam->GetDicing().offscreenScale);

@@ -87,6 +87,7 @@ SESSION_SETTINGS = {
     "cycles:preview_dicing_rate": {"type": "float", "default": 8.0},
     "cycles:offscreen_dicing_scale": {"type": "float", "default": 4.0},
     "cycles:max_subdivisions": {"type": "int", "default": 12},
+    "cycles:dicing_camera": {"type": "string", "default": ""},
     "cycles:texture_limit": {
         "type": "menu",
         "default": "off",
@@ -198,6 +199,15 @@ LEGACY_SETTINGS = [
     S("cycles:integrator:ao_additive_factor", "AO Additive Factor",
       "Replaced by Fast GI Approximation."),
 ]
+
+
+# Parameter tags of prim path settings: select the prim in the viewer.
+PRIM_PATH_TAGS = (
+    ("script_action", "import loputils; loputils.selectPrimsInParm(kwargs, False)"),
+    ("script_action_help", "Select a primitive in the Scene Viewer or Scene Graph Tree pane."),
+    ("script_action_icon", "BUTTONS_reselect"),
+    ("sidefx::usdpathtype", "prim"),
+)
 
 
 # Layout of the settings, following Blender's Cycles render properties.
@@ -457,6 +467,11 @@ LAYOUT = [
           "Stop subdividing when this level is reached even if the dice rate would produce "
           "finer micropolygons.",
           range=(0, 16, True, True)),
+        S("cycles:dicing_camera", "Dicing Camera",
+          "Camera to use as reference point when subdividing geometry, useful to avoid crawling "
+          "artifacts in animations when the scene camera is moving. Empty uses the render "
+          "camera.",
+          tags=PRIM_PATH_TAGS),
     ]),
     P("Simplify", [
         S("cycles:texture_limit", "Texture Size Limit",
@@ -839,12 +854,6 @@ CAMERA_LAYOUT = [
 
 
 # Prim path field with Houdini's prim picker button.
-PRIM_PATH_TAGS = (
-    ("script_action", "import loputils; loputils.selectPrimsInParm(kwargs, False)"),
-    ("script_action_help", "Select a primitive in the Scene Viewer or Scene Graph Tree pane."),
-    ("script_action_icon", "BUTTONS_reselect"),
-    ("sidefx::usdpathtype", "prim"),
-)
 
 # Layout of the per-light settings, following Blender's light properties and object panels.
 LIGHT_LAYOUT = [

@@ -152,12 +152,14 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::vector<float> GetMotionTimes(float shutterOpen, float shutterClose, int steps = 0) const;
 
   // Blender's Subdivision render settings: dicing rate in pixels (viewport and final renders),
-  // max subdivision level of adaptive subdivision and offscreen dicing scale
+  // max subdivision level of adaptive subdivision, offscreen dicing scale and the dicing camera
+  // (camera prim path, empty for the render camera)
   struct DicingSettings {
     float rate = 1.0f;
     float previewRate = 8.0f;
     int maxLevel = 12;
     float offscreenScale = 4.0f;
+    std::string camera;
     bool operator==(const DicingSettings &other) const = default;
   };
   const DicingSettings &GetDicing() const

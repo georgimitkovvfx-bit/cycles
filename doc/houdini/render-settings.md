@@ -251,6 +251,7 @@ render.
 | Viewport | `cycles:preview_dicing_rate` | 8 | Size of a micropolygon in pixels in the viewport, for objects with Adaptive Subdivision. Also in the viewport display options. |
 | Offscreen Scale | `cycles:offscreen_dicing_scale` | 4 | Multiplier for the dicing rate of geometry outside of the camera view. The dicing rate of objects is gradually increased the further they are outside the camera view. Lower values provide higher quality reflections and shadows for off screen objects, while higher values use less memory. |
 | Max Subdivisions | `cycles:max_subdivisions` | 12 | Stop subdividing when this level is reached even if the dice rate would produce finer micropolygons. |
+| Dicing Camera | `cycles:dicing_camera` | (empty) | Camera prim to use as reference point when subdividing geometry, useful to avoid crawling artifacts in animations when the scene camera is moving. Empty uses the render camera. Meshes are diced at the render resolution. |
 
 ### Simplify
 
