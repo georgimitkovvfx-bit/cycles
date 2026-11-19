@@ -21,10 +21,6 @@
 #  include <pxr/imaging/hd/tokens.h>
 #  include <pxr/imaging/hdGp/generativeProceduralResolvingSceneIndex.h>
 #  include <pxr/imaging/hdsi/lightLinkingSceneIndex.h>
-#  include <pxr/imaging/hd/primvarSchema.h>
-#  include <pxr/imaging/hd/primvarsSchema.h>
-#  include <pxr/usd/usdGeom/points.h>
-#  include <pxr/usdImaging/usdImaging/dataSourceAttribute.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -84,54 +80,10 @@ TF_REGISTRY_FUNCTION(TfType)
   HdRendererPluginRegistry::Define<PXR_NS::HdCyclesPlugin>();
 #if PXR_VERSION >= 2408
   HdSceneIndexPluginRegistry::Define<PXR_NS::HdCycles_ImplicitSurfaceSceneIndexPlugin>();
-  TfType::Define<HdCycles_PointsIdsAdapter, TfType::Bases<HdCycles_PointsIdsAdapter::BaseAdapter>>()
-      .SetFactory<UsdImagingAPISchemaAdapterFactory<HdCycles_PointsIdsAdapter>>();
 #endif
 }
 
 #if PXR_VERSION >= 2408
-HdContainerDataSourceHandle HdCycles_PointsIdsAdapter::GetImagingSubprimData(
-    const UsdPrim &prim,
-    const TfToken &subprim,
-    const TfToken & /*appliedInstanceName*/,
-    const UsdImagingDataSourceStageGlobals &stageGlobals)
-{
-  if (!subprim.IsEmpty() || !prim.IsA<UsdGeomPoints>()) {
-    return nullptr;
-  }
-  const UsdAttribute ids = UsdGeomPoints(prim).GetIdsAttr();
-  if (!ids.HasAuthoredValue()) {
-    return nullptr;
-  }
-  static const HdDataSourceLocator valueLocator = HdPrimvarsSchema::GetDefaultLocator().Append(
-      UsdGeomTokens->ids).Append(HdPrimvarSchemaTokens->primvarValue);
-  return HdRetainedContainerDataSource::New(
-      HdPrimvarsSchema::GetSchemaToken(),
-      HdRetainedContainerDataSource::New(
-          UsdGeomTokens->ids,
-          HdPrimvarSchema::Builder()
-              .SetPrimvarValue(
-                  UsdImagingDataSourceAttributeNew(ids, stageGlobals, prim.GetPath(), valueLocator))
-              .SetInterpolation(
-                  HdPrimvarSchema::BuildInterpolationDataSource(HdPrimvarSchemaTokens->vertex))
-              .Build()));
-}
-
-HdDataSourceLocatorSet HdCycles_PointsIdsAdapter::InvalidateImagingSubprim(
-    const UsdPrim & /*prim*/,
-    const TfToken &subprim,
-    const TfToken & /*appliedInstanceName*/,
-    const TfTokenVector &properties,
-    UsdImagingPropertyInvalidationType /*invalidationType*/)
-{
-  if (subprim.IsEmpty() &&
-      std::find(properties.begin(), properties.end(), UsdGeomTokens->ids) != properties.end())
-  {
-    return HdDataSourceLocatorSet(HdPrimvarsSchema::GetDefaultLocator().Append(UsdGeomTokens->ids));
-  }
-  return HdDataSourceLocatorSet();
-}
-
 HdSceneIndexBaseRefPtr HdCycles_ImplicitSurfaceSceneIndexPlugin::_AppendSceneIndex(
     const HdSceneIndexBaseRefPtr &inputScene, const HdContainerDataSourceHandle & /*inputArgs*/)
 {

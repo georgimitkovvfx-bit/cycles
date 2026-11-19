@@ -194,6 +194,27 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     cycles_hydra
   )
 
+  # UsdImaging adapters in their own library that only links USD: UsdImaging loads keyless
+  # adapters in every session, so in hdCycles they would load Cycles for any renderer.
+  set(HdCyclesImagingName hdCyclesImaging)
+  add_library(${HdCyclesImagingName} SHARED imaging_plugin.cpp)
+  set_target_properties(${HdCyclesImagingName}
+    PROPERTIES PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  target_compile_definitions(${HdCyclesImagingName}
+    PRIVATE
+    MFB_PACKAGE_NAME=${HdCyclesImagingName}
+    MFB_ALT_PACKAGE_NAME=${HdCyclesImagingName}
+    $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX=1>
+  )
+  target_include_directories(${HdCyclesImagingName} SYSTEM PRIVATE ${USD_INCLUDE_DIR})
+  target_link_libraries(${HdCyclesImagingName}
+    bf::dependencies::optional::tbb
+    bf::dependencies::optional::usd
+  )
+
   if(APPLE)
     set_property(
       TARGET
@@ -224,10 +245,12 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   if(HOUDINI_FOUND)
     delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins)
     delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
+    delayed_install("" $<TARGET_FILE:${HdCyclesImagingName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
   else()
     # Put the root `plugInfo.json` one level up.
     delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH})
     delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH})
+    delayed_install("" $<TARGET_FILE:${HdCyclesImagingName}> ${CYCLES_HYDRA_INSTALL_PATH})
   endif()
 
   set_target_properties(${HdCyclesPluginName}
@@ -268,12 +291,23 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     @ONLY
   )
 
+  # The imaging plugin folder is a sibling of the delegate's, its library next to hdCycles.
+  string(REPLACE "${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    "${HdCyclesImagingName}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    PLUG_INFO_IMAGING_LIBRARY_PATH "${PLUG_INFO_LIBRARY_PATH}")
+  configure_file(resources/imaging/plugInfo.json
+    ${CMAKE_CURRENT_BINARY_DIR}/imaging/resources/plugInfo.json
+    @ONLY
+  )
+
   if(HOUDINI_FOUND)
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesPluginName}/resources")
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/imaging/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesImagingName}/resources")
     # Houdini package, renderer registration and shader nodes.
     add_subdirectory(houdini)
   else()
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}/resources")
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/imaging/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesImagingName}/resources")
   endif()
 
   if(WITH_CYCLES_BLENDER)

@@ -1,0 +1,21 @@
+{
+    "Plugins": [
+        {
+            "Info": {
+                "Types": {
+                    "HdCycles_PointsIdsAdapter": {
+                        "bases": [
+                            "UsdImagingAPISchemaAdapter"
+                        ],
+                        "apiSchemaName": ""
+                    }
+                }
+            },
+            "LibraryPath": "@PLUG_INFO_IMAGING_LIBRARY_PATH@",
+            "Name": "hdCyclesImaging",
+            "ResourcePath": ".",
+            "Root": "@PLUG_INFO_ROOT@",
+            "Type": "library"
+        }
+    ]
+}
