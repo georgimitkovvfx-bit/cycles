@@ -22,14 +22,20 @@
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 extern Transform convert_transform(const GfMatrix4d &matrix);
-static Transform convert_camera_transform(const GfMatrix4d &matrix)
+/* USD cameras look along -Z. Cycles' panoramic projections look along +X (the mirror ball along
+ * -Y), rotate them onto -Z like Blender's blender_camera_matrix. Needs the camera type set. */
+static Transform convert_camera_transform(const GfMatrix4d &matrix, const Camera *cam)
 {
-  Transform t = convert_transform(matrix);
-  // Flip Z axis
-  t.x.z *= -1.0f;
-  t.y.z *= -1.0f;
-  t.z.z *= -1.0f;
-  return t;
+  const Transform t = convert_transform(matrix);
+  if (cam->get_camera_type() != CAMERA_PANORAMA) {
+    return t * transform_scale(1.0f, 1.0f, -1.0f);
+  }
+  if (cam->get_panorama_type() == PANORAMA_MIRRORBALL) {
+    return t *
+           make_transform(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+  }
+  return t *
+         make_transform(0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f);
 }
 
 namespace {
@@ -376,7 +382,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
 
   array<Transform> motion(_transformSamples.count);
   for (size_t i = 0; i < _transformSamples.count; ++i) {
-    motion[i] = convert_camera_transform(_transformSamples.values[i]);
+    motion[i] = convert_camera_transform(_transformSamples.values[i], cam);
   }
   cam->set_motion(motion);
 
@@ -461,7 +467,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     cam->set_aperturesize(0.0f);  // No depth of field, also after a camera with it
   }
 
-  cam->set_matrix(convert_camera_transform(data.GetTransform()));
+  cam->set_matrix(convert_camera_transform(data.GetTransform(), cam));
 }
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
