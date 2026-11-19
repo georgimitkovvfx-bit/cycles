@@ -119,8 +119,9 @@ if(HOUDINI_FOUND)
   set_source_files_properties(${_hdk_sources} PROPERTIES COMPILE_DEFINITIONS "${_hdk_definitions}")
   unset(_hdk_definitions)
   unset(_hdk_sources)
-  # Houdini libraries used by the VDB and volume primitives, image files and their headers.
-  foreach(_hdk_lib GT GU GEO UT CE IMG)
+  # Houdini libraries used by the VDB and volume primitives, image files, op: images (TIL) and
+  # their headers.
+  foreach(_hdk_lib GT GU GEO UT CE IMG TIL)
     find_library(_hdk_library NAMES lib${_hdk_lib} HOUDINI_${_hdk_lib}
       PATHS ${HOUDINI_ROOT}/custom/houdini/dsolib ${HOUDINI_ROOT}/dsolib
       ${HOUDINI_ROOT}/Frameworks/Houdini.framework/Libraries NO_DEFAULT_PATH)

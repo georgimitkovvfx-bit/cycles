@@ -8,6 +8,8 @@
 #include "hydra/houdini_image.h"
 
 #include <IMG/IMG_File.h>
+#include <TIL/TIL_CopResolver.h>
+#include <TIL/TIL_Raster.h>
 
 #include <algorithm>
 #include <cctype>
@@ -109,7 +111,15 @@ std::string ConvertOpImage(const std::string &path)
                               Hex(std::hash<std::thread::id>()(std::this_thread::get_id())) +
                               ".tif");
   std::error_code ec;
-  if (!IMG_File::copyToFile(path.c_str(), temporary.string().c_str())) {
+  /* Houdini's image library has no op: format, the COP resolver cooks the node (only inside
+   * Houdini, husk has no resolver). */
+  int opid = -1;
+  bool saved = false;
+  if (TIL_Raster *raster = TIL_CopResolver::getRaster(path.c_str(), opid)) {
+    saved = IMG_File::saveRasterAsFile(temporary.string().c_str(), raster);
+    TIL_CopResolver::doneWithRaster(raster);
+  }
+  if (!saved && !IMG_File::copyToFile(path.c_str(), temporary.string().c_str())) {
     fs::remove(temporary, ec);
     return path;
   }
