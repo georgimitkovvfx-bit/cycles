@@ -1087,9 +1087,31 @@ class Translator {
         {"minus", "subtract"},
         {"difference", "difference"},
         {"screen", "screen"},
-        {"dodge", "dodge"},
-        {"burn", "burn"},
     };
+    /* Not Cycles' Burn and Dodge blends (Blender's formulas): MaterialX's per channel
+     * mix * (1 - (1 - bg) / fg) and mix * bg / (1 - fg) over (1 - mix) * bg, 0 where the divisor
+     * is below M_FLOAT_EPS. */
+    if (category == "burn" || category == "dodge") {
+      const bool burn = category == "burn";
+      const Val fg = input("fg"), bg = input("bg"), mix = input("mix");
+      const auto channel = [&](const Val &f, const Val &b) {
+        const Val divisor = burn ? f : Math("subtract", Const(1.0f), f);
+        const Val zero = Math("less_than", Math("absolute", divisor), Const(1e-8f));
+        const Val q = Math("divide",
+                           burn ? Math("subtract", Const(1.0f), b) : b,
+                           Mix(Kind::Float, zero, divisor, Const(1.0f)));
+        const Val blended = Mix(Kind::Float, mix, b, burn ? Math("subtract", Const(1.0f), q) : q);
+        return Mix(Kind::Float, zero, blended, Const(0.0f));
+      };
+      if (kind == Kind::Float) {
+        return channel(fg, bg);
+      }
+      const Val rgb = Combine(channel(Component(fg, 0), Component(bg, 0)),
+                              channel(Component(fg, 1), Component(bg, 1)),
+                              channel(Component(fg, 2), Component(bg, 2)));
+      return kind == Kind::Vec4 ? WithAlpha(rgb, channel(Component(fg, 3), Component(bg, 3))) :
+                                  rgb;
+    }
     if (const auto it = blends.find(category); it != blends.end()) {
       const Val fg = input("fg"), bg = input("bg"), mix = input("mix");
       const Val rgb = Blend(it->second, mix, bg, fg);
