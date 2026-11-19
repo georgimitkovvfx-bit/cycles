@@ -1081,6 +1081,8 @@ void LightManager::device_update_tree(Device * /*unused*/,
   /* We want to create separate arrays corresponding to triangles and lights,
    * which will be used to index back into the light tree for PDF calculations. */
   flatten.light_array = dscene->light_to_tree.alloc(scene->objects.size());
+  /* Lights not in the tree have no entry: keep their lookups deterministic. */
+  std::fill_n(flatten.light_array, scene->objects.size(), 0u);
   flatten.triangle_array = dscene->triangle_to_tree.alloc(light_tree.num_triangles);
 
   /* Allocate emitters */
@@ -1444,6 +1446,11 @@ void LightManager::device_update_lights(DeviceScene *dscene, Scene *scene)
     else if (light->is_enabled) {
       light->copy_to_kernel(klights + light_index, scene, object);
       light_index++;
+      /* The object manager picks the last background light, which may be disabled and so have
+       * no light tree entry for the forward MIS lookup: use the enabled one. */
+      if (light->is_background_light()) {
+        dscene->data.background.object_index = object->index;
+      }
     }
   }
 
