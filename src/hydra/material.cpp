@@ -581,8 +581,9 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
     if (name == CyclesMaterialTokens->ior || name == CyclesMaterialTokens->metallic) {
       return !isSpecularWorkflow(params);
     }
-    /* Applied to the opacity in finalize(). */
-    return name != CyclesMaterialTokens->opacityThreshold;
+    /* Applied to the opacity in finalize(), and as the displacement terminal. */
+    return name != CyclesMaterialTokens->opacityThreshold &&
+           name != HdMaterialTerminalTokens->displacement;
   }
 
   void finalize(ShaderGraph *graph,
@@ -1483,6 +1484,55 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     UpdateConnections(nodeIt->second, nodes.Get(nodeName), nodePath, graph.get());
   }
 
+  /* UsdPreviewSurface's displacement is a height along the normal, like MaterialX's displacement
+   * (Midlevel 0, Scale 1). Returns no node when it is unauthored or 0. */
+  auto previewSurfaceDisplacement = [&](HdMaterialNodeSchema surface) -> ShaderNode * {
+    const TfToken &name = HdMaterialTerminalTokens->displacement;
+    const float height = GetParameter(surface.GetParameters(), name, 0.0f);
+    HdMaterialConnectionVectorSchema connVec = surface.GetInputConnections().Get(name);
+    if (connVec.GetNumElements() == 0 && height == 0.0f) {
+      return nullptr;
+    }
+    DisplacementNode *displacement = graph->create_node<DisplacementNode>();
+    displacement->set_space(NODE_NORMAL_MAP_OBJECT);
+    displacement->set_height(height);
+    displacement->set_midlevel(0.0f);
+    displacement->set_scale(1.0f);
+    if (connVec.GetNumElements() > 0) {
+      HdMaterialConnectionSchema conn = connVec.GetElement(0);
+      const auto srcIt = _nodes.find(
+          conn.GetUpstreamNodePath() ?
+              MaterialNodeNameToSdfPath(conn.GetUpstreamNodePath()->GetTypedValue(0.0f)) :
+              SdfPath());
+      ShaderInput *input = displacement->input("Height");
+      if (srcIt != _nodes.end()) {
+        const TfToken output = conn.GetUpstreamNodeOutputName() ?
+                                   conn.GetUpstreamNodeOutputName()->GetTypedValue(0.0f) :
+                                   TfToken();
+        const std::string outputName =
+            srcIt->second.mapping ? srcIt->second.mapping->parameterName(output, input) :
+                                    output.GetString();
+        if (ShaderOutput *link = FindOutput(srcIt->second.node, outputName)) {
+          graph->connect(link, input);
+        }
+      }
+    }
+    return displacement;
+  };
+
+  const UsdToCyclesMapping *previewSurface = sUsdToCyles->findUsd(
+      CyclesMaterialTokens->UsdPreviewSurface);
+  /* Before finalize(), which applies UsdUVTexture's scale and bias to the linked outputs. A node
+   * without a displacement terminal stays unlinked and the graph removes it. */
+  std::unordered_map<SdfPath, ShaderNode *, SdfPath::Hash> previewDisplacements;
+  for (const TfToken &nodeName : nodes.GetNames()) {
+    const SdfPath nodePath = MaterialNodeNameToSdfPath(nodeName);
+    const auto nodeIt = _nodes.find(nodePath);
+    if (nodeIt != _nodes.end() && nodeIt->second.mapping == previewSurface) {
+      previewDisplacements[nodePath] = previewSurfaceDisplacement(nodes.Get(nodeName));
+    }
+  }
+
   /* USD inputs that need more nodes than the one their node maps to. */
   for (const TfToken &nodeName : nodes.GetNames()) {
     const auto nodeIt = _nodes.find(MaterialNodeNameToSdfPath(nodeName));
@@ -1535,7 +1585,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       continue;
     }
 
-    ShaderNode *const node = nodeIt->second.node;
+    ShaderNode *node = nodeIt->second.node;
 
     const char *inputName = nullptr;
     const char *outputName = nullptr;
@@ -1566,7 +1616,13 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     else if (terminalName == HdMaterialTerminalTokens->displacement ||
              terminalName == CyclesMaterialTokens->cyclesDisplacement)
     {
-      if (nodeIt->second.mapping) {
+      if (nodeIt->second.mapping == previewSurface) {
+        node = previewDisplacements[upstreamNodePath];
+        if (!node) {
+          continue;
+        }
+      }
+      else if (nodeIt->second.mapping) {
         /* Unsupported mapped USD inputs and connections are reported while
          * processing the node. */
         continue;
