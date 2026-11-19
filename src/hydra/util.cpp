@@ -389,8 +389,9 @@ static bool KarmaRayVisible(const std::string &pattern, const std::string &ray)
     const size_t end = text.find_last_not_of(" \t");
     return begin == std::string::npos ? std::string() : text.substr(begin, end - begin + 1);
   };
+  /* An empty expression makes the object unrenderable, like in Karma. */
   if (trim(pattern).empty()) {
-    return true;
+    return false;
   }
   /* Alternatives ("|") of terms that must all hold ("&"). */
   size_t start = 0;
