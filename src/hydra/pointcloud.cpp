@@ -19,6 +19,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 // clang-format off
 TF_DEFINE_PRIVATE_TOKENS(_tokens,
+    (ids)
     (positions)
     (orientations)
     (scales)
@@ -128,20 +129,29 @@ void HdCyclesPoints::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
   }
 
   if (dirtyBits & (HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyPrimvar)) {
-    PopulatePointRandom();
+    PopulatePointRandom(sceneDelegate);
   }
 }
 
-/* Point Info Random, like Blender: a hash of the point index. */
-void HdCyclesPoints::PopulatePointRandom()
+/* Point Info Random, like Blender: a hash of the point id (the ids of USD points, which stay
+ * with a point when the points are reordered), else of the point index. */
+void HdCyclesPoints::PopulatePointRandom(HdSceneDelegate *sceneDelegate)
 {
   if (!_geom->need_attribute((Scene *)_geom->get_owner(), ATTR_STD_POINT_RANDOM)) {
     _geom->attributes.remove(ATTR_STD_POINT_RANDOM);
     return;
   }
+  const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
+  const VtValue value = ReadPrimvar(HdPrimvarsSchema::GetFromParent(prim.dataSource),
+                                    _tokens->ids);
+  const VtInt64Array *ids = value.IsHolding<VtInt64Array>() &&
+                                    value.UncheckedGet<VtInt64Array>().size() ==
+                                        _geom->num_points() ?
+                                &value.UncheckedGet<VtInt64Array>() :
+                                nullptr;
   float *random = _geom->attributes.add(ATTR_STD_POINT_RANDOM)->data_for_write<float>();
   for (size_t i = 0; i < _geom->num_points(); ++i) {
-    random[i] = hash_uint2_to_float(uint(i), 0);
+    random[i] = hash_uint2_to_float(ids ? uint((*ids)[i]) : uint(i), 0);
   }
 }
 

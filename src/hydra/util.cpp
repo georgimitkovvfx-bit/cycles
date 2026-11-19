@@ -140,6 +140,13 @@ VtValue PrimvarAsFloats(const VtValue &value)
     std::transform(bools.begin(), bools.end(), result.begin(), [](bool b) { return float(b); });
     return VtValue(std::move(result));
   }
+  if (value.IsHolding<VtInt64Array>()) {
+    /* Nor for int64 arrays, like the ids of USD points. */
+    const VtInt64Array &ints = value.UncheckedGet<VtInt64Array>();
+    VtFloatArray result(ints.size());
+    std::transform(ints.begin(), ints.end(), result.begin(), [](int64_t i) { return float(i); });
+    return VtValue(std::move(result));
+  }
 
   /* Scalars have a count of 1, so they become 1-element arrays like constant array primvars. */
   const HdTupleType tupleType = HdGetValueTupleType(value);

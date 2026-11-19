@@ -9,6 +9,7 @@
 #include <pxr/imaging/hd/rendererPlugin.h>
 #if PXR_VERSION >= 2408
 #  include <pxr/imaging/hd/sceneIndexPlugin.h>
+#  include <pxr/usdImaging/usdImaging/apiSchemaAdapter.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -38,6 +39,26 @@ class HdCycles_ImplicitSurfaceSceneIndexPlugin final : public PXR_NS::HdSceneInd
  protected:
   HdSceneIndexBaseRefPtr _AppendSceneIndex(const HdSceneIndexBaseRefPtr &inputScene,
                                            const HdContainerDataSourceHandle &inputArgs) override;
+};
+
+/* Keyless API schema adapter (runs for every prim): the ids of UsdGeomPoints as the vertex
+ * primvar "ids", which UsdImaging does not pass to Hydra. */
+class HdCycles_PointsIdsAdapter final : public PXR_NS::UsdImagingAPISchemaAdapter {
+ public:
+  using BaseAdapter = PXR_NS::UsdImagingAPISchemaAdapter;
+
+  HdContainerDataSourceHandle GetImagingSubprimData(
+      const UsdPrim &prim,
+      const TfToken &subprim,
+      const TfToken &appliedInstanceName,
+      const UsdImagingDataSourceStageGlobals &stageGlobals) override;
+
+  HdDataSourceLocatorSet InvalidateImagingSubprim(
+      const UsdPrim &prim,
+      const TfToken &subprim,
+      const TfToken &appliedInstanceName,
+      const TfTokenVector &properties,
+      UsdImagingPropertyInvalidationType invalidationType) override;
 };
 #endif
 
