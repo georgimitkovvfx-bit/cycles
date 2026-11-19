@@ -5,6 +5,7 @@
 #pragma once
 
 #include "hydra/config.h"
+#include "hydra/light.h"
 
 #include <pxr/imaging/hd/light.h>
 
@@ -27,6 +28,7 @@ class HdCyclesCylinderLight final : public PXR_NS::HdLight {
 
  private:
   CCL_NS::Object *_object = nullptr;
+  HdCyclesLightInstances _instances;
   CCL_NS::Mesh *_mesh = nullptr;
   CCL_NS::Shader *_shader = nullptr;
 };

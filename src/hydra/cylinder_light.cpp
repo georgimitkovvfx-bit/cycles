@@ -18,11 +18,8 @@
 #include <pxr/imaging/hd/lightSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/visibilitySchema.h>
-#include <pxr/imaging/hd/xformSchema.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
-
-extern Transform convert_transform(const GfMatrix4d &matrix);
 
 // clang-format off
 TF_DEFINE_PRIVATE_TOKENS(_tokens,
@@ -85,12 +82,9 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
   const HdContainerDataSourceHandle lightDs = HdLightSchema::GetFromParent(primDs).GetContainer();
 
+  _instances.Sync(sceneDelegate, GetId(), primDs, dirtyBits);
   if (*dirtyBits & DirtyBits::DirtyTransform) {
-    GfMatrix4d xform(1.0);
-    if (auto matrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix()) {
-      xform = matrixDs->GetTypedValue(0.0f);
-    }
-    _object->set_tfm(convert_transform(xform));
+    _object->set_tfm(_instances.GetTransform());
   }
 
   if (*dirtyBits & (DirtyBits::DirtyParams | DirtyBits::DirtyCollection)) {
@@ -154,6 +148,7 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
     if (auto ds = HdVisibilitySchema::GetFromParent(primDs).GetVisibility()) {
       visible = ds->GetTypedValue(0.0f);
     }
+    visible &= !_instances.IsEmpty();
 
     unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
     EmissionNode *emission = graph->create_node<EmissionNode>();
@@ -210,6 +205,9 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
   if (_mesh->is_modified()) {
     _mesh->tag_update(lock.scene, true);
   }
+  /* shortcut: the normalized strength of all instances follows the size of the first one (it is
+   * in the shared shader), give scaled instances shaders of their own if needed. */
+  _instances.Update(lock.scene, session, _object);
   if (_object->is_modified()) {
     _object->tag_update(lock.scene);
   }
@@ -228,6 +226,7 @@ void HdCyclesCylinderLight::Finalize(HdRenderParam *renderParam)
   session->RemoveLinking(_object->name.string());
   --session->meshLights;
   session->lightsChanged = true;
+  _instances.Finalize(session, GetId());
   if (!session->keep_nodes) {
     session->DeleteNode(_object);
     session->DeleteNode(_mesh);

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/light.h"
+#include "hydra/instancer.h"
 #ifdef WITH_HOUDINI_IMAGES
 #  include "hydra/houdini_image.h"
 #endif
@@ -26,11 +27,14 @@
 #include <pxr/imaging/hd/materialBindingSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/materialSchema.h>
+#include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/visibilitySchema.h>
 #include <pxr/imaging/hd/xformSchema.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/usdLux/tokens.h>
+
+#include <algorithm>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -107,13 +111,9 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
   const HdContainerDataSourceHandle lightDs = HdLightSchema::GetFromParent(primDs).GetContainer();
 
+  _instances.Sync(sceneDelegate, id, primDs, dirtyBits);
   if (*dirtyBits & DirtyBits::DirtyTransform) {
-    GfMatrix4d xform(1.0);
-    if (auto matrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix()) {
-      xform = matrixDs->GetTypedValue(0.0f);
-    }
-
-    _object->set_tfm(convert_transform(xform));
+    _object->set_tfm(_instances.GetTransform());
   }
 
   // Light and shadow linking categories (HdsiLightLinkingSceneIndex), empty for all objects
@@ -281,6 +281,7 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     if (auto ds = HdVisibilitySchema::GetFromParent(primDs).GetVisibility()) {
       visible = ds->GetTypedValue(0.0f);
     }
+    visible &= !_instances.IsEmpty();
     /* Disable invisible lights by zeroing the strength
     So 'LightManager::test_enabled_lights' updates the enabled flag correctly */
     if (!visible) {
@@ -330,6 +331,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   if (_light->is_modified()) {
     _light->tag_update(lock.scene);
   }
+  _instances.Update(lock.scene,
+                    static_cast<HdCyclesSession *>(renderParam),
+                    _object,
+                    GetTypedValue<bool>(lightDs, HdLightTokens->normalize, false));
   // Light position and direction come from the object transform
   if (_object->is_modified()) {
     _object->tag_update(lock.scene);
@@ -900,6 +905,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   static_cast<HdCyclesSession *>(renderParam)->RemoveWorldMaterial(_light);
   static_cast<HdCyclesSession *>(renderParam)->RemoveWorldSource(_shader);
   static_cast<HdCyclesSession *>(renderParam)->lightsChanged = true;
+  _instances.Finalize(static_cast<HdCyclesSession *>(renderParam), GetId());
 
   if (!keep_nodes) {
     HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
@@ -959,6 +965,178 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
 
   /* Create default shader graph */
   PopulateShaderGraph(HdContainerDataSourceHandle(), renderParam);
+}
+
+void HdCyclesLightInstances::Sync(HdSceneDelegate *sceneDelegate,
+                                  const SdfPath &id,
+                                  const HdContainerDataSourceHandle &primDs,
+                                  HdDirtyBits *dirtyBits)
+{
+  HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
+  _tracker = &renderIndex.GetChangeTracker();
+  /* Instancer changes mark the light DirtyInstancer through this dependency. */
+  const SdfPath instancerId = sceneDelegate->GetInstancerId(id);
+  if (instancerId != _instancerId) {
+    if (!_instancerId.IsEmpty()) {
+      _tracker->RemoveInstancerSprimDependency(_instancerId, id);
+    }
+    if (!instancerId.IsEmpty()) {
+      _tracker->AddInstancerSprimDependency(instancerId, id);
+    }
+    _instancerId = instancerId;
+    *dirtyBits |= HdLight::DirtyTransform;
+  }
+  if (*dirtyBits & HdLight::DirtyInstancer) {
+    *dirtyBits |= HdLight::DirtyTransform;
+  }
+  if (!(*dirtyBits & HdLight::DirtyTransform)) {
+    return;
+  }
+
+  _xform = GfMatrix4d(1.0);
+  if (auto matrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix()) {
+    _xform = matrixDs->GetTypedValue(0.0f);
+  }
+  _transforms.clear();
+  if (!_instancerId.IsEmpty()) {
+    HdInstancer::_SyncInstancerAndParents(renderIndex, _instancerId);
+    /* shortcut: instances at the current frame only, lights have no motion blur. */
+    if (auto *instancer = static_cast<HdCyclesInstancer *>(renderIndex.GetInstancer(_instancerId)))
+    {
+      _transforms = instancer->ComputeInstanceTransforms(id, {}).front();
+    }
+  }
+}
+
+Transform HdCyclesLightInstances::GetTransform() const
+{
+  return convert_transform(_transforms.empty() ? _xform : _xform * _transforms.front());
+}
+
+bool HdCyclesLightInstances::IsEmpty() const
+{
+  return !_instancerId.IsEmpty() && _transforms.empty();
+}
+
+/* Copies the non-array sockets of `src` to `dst` (of the same type), except `skip`. */
+static void CopySockets(Node *dst, const Node &src, std::initializer_list<const char *> skip)
+{
+  for (const SocketType &socket : src.type->inputs) {
+    if (!socket.is_array() &&
+        std::none_of(skip.begin(), skip.end(), [&](const char *n) { return socket.name == n; }) &&
+        !dst->equals_value(src, socket))
+    {
+      dst->set_value(socket, src, socket);
+    }
+  }
+}
+
+static float AverageScale(const Transform &tfm)
+{
+  return (len(transform_get_column(&tfm, 0)) + len(transform_get_column(&tfm, 1)) +
+          len(transform_get_column(&tfm, 2))) /
+         3.0f;
+}
+
+void HdCyclesLightInstances::Update(Scene *scene,
+                                    HdCyclesSession *session,
+                                    const Object *object,
+                                    const bool normalize)
+{
+  const size_t num = _transforms.empty() ? 0 : _transforms.size() - 1;
+  if (num != _objects.size()) {
+    session->lightsChanged = true;
+  }
+  for (size_t i = num; i < _objects.size(); ++i) {
+    session->DeleteNode(_objects[i]);
+    if (_lights[i]) {
+      session->DeleteNode(_lights[i]);
+    }
+  }
+  const size_t oldNum = std::min(num, _objects.size());
+  _objects.resize(num);
+  _lights.resize(num, nullptr);
+
+  Geometry *geom = object->get_geometry();
+  Light *light = geom->is_light() ? static_cast<Light *>(geom) : nullptr;
+  for (size_t i = 0; i < num; ++i) {
+    if (i >= oldNum) {
+      _objects[i] = scene->create_node<Object>();
+      /* The same name: light linking finds the instances by the light's name. */
+      _objects[i]->name = object->name;
+      _objects[i]->set_random_id(hash_uint2(hash_string(object->name.c_str()), uint(i + 1)));
+    }
+    Object *instance = _objects[i];
+    CopySockets(instance, *object, {"tfm", "random_id", "geometry"});
+    const Transform tfm = convert_transform(_xform * _transforms[i + 1]);
+    instance->set_tfm(tfm);
+
+    /* Cycles does not scale sphere light radii by the object, and the strength of normalized
+     * lights depends on their size: instances scaled other than the first get their own light. */
+    float radiusScale = 1.0f;
+    float strengthScale = 1.0f;
+    if (light && light->is_point_light() && static_cast<PointLight *>(light)->get_radius() > 0.0f)
+    {
+      radiusScale = AverageScale(tfm) / AverageScale(object->get_tfm());
+      strengthScale = normalize ? 1.0f / sqr(radiusScale) : 1.0f;
+    }
+    else if (light && light->is_area_light() && normalize) {
+      const AreaLight *areaLight = static_cast<AreaLight *>(light);
+      strengthScale = areaLight->area(object->get_tfm()) / areaLight->area(tfm);
+    }
+    const bool ownLight = isfinite(radiusScale * strengthScale) &&
+                          (fabsf(radiusScale - 1.0f) > 1e-5f ||
+                           fabsf(strengthScale - 1.0f) > 1e-5f);
+    if (ownLight && !_lights[i]) {
+      if (light->is_point_light()) {
+        _lights[i] = scene->create_node<SpotLight>();
+      }
+      else {
+        _lights[i] = scene->create_node<AreaLight>();
+      }
+      _lights[i]->name = light->name;
+      array<Node *> usedShaders = light->get_used_shaders();
+      _lights[i]->set_used_shaders(usedShaders);
+    }
+    else if (!ownLight && _lights[i]) {
+      session->DeleteNode(_lights[i]);
+      _lights[i] = nullptr;
+    }
+    if (Light *own = _lights[i]) {
+      CopySockets(own, *light, {"strength", "radius"});
+      own->set_strength(light->get_strength() * strengthScale);
+      if (light->is_point_light()) {
+        static_cast<PointLight *>(own)->set_radius(static_cast<PointLight *>(light)->get_radius() *
+                                                   radiusScale);
+      }
+      if (own->is_modified()) {
+        own->tag_update(scene);
+      }
+    }
+    instance->set_geometry(_lights[i] ? _lights[i] : object->get_geometry());
+    if (instance->is_modified()) {
+      instance->tag_update(scene);
+    }
+  }
+}
+
+void HdCyclesLightInstances::Finalize(HdCyclesSession *session, const SdfPath &id)
+{
+  if (_tracker && !_instancerId.IsEmpty()) {
+    _tracker->RemoveInstancerSprimDependency(_instancerId, id);
+  }
+  _instancerId = SdfPath();
+  if (!session->keep_nodes) {
+    for (size_t i = 0; i < _objects.size(); ++i) {
+      session->DeleteNode(_objects[i]);
+      if (_lights[i]) {
+        session->DeleteNode(_lights[i]);
+      }
+    }
+  }
+  _objects.clear();
+  _lights.clear();
+  _transforms.clear();
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
