@@ -20,6 +20,8 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     (stageMetersPerUnit) \
     (stageUpAxis) \
     ((device, "cycles:device")) \
+    ((useCpuToo, "cycles:use_cpu_too")) \
+    ((gpuDevices, "cycles:gpu_devices")) \
     ((threads, "cycles:threads")) \
     ((shadingSystem, "cycles:shading_system")) \
     ((useResolutionDivider, "cycles:use_resolution_divider")) \

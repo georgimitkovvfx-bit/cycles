@@ -48,6 +48,8 @@ SESSION_SETTINGS = {
             "CPU": "CPU",
         },
     },
+    "cycles:use_cpu_too": {"type": "boolean", "default": False},
+    "cycles:gpu_devices": {"type": "string", "default": ""},
     "cycles:threads": {"type": "int", "default": 0},
     "cycles:abort_no_gpu": {"type": "boolean", "default": False},
     "cycles:abort_missing_texture": {"type": "boolean", "default": False},
@@ -225,6 +227,17 @@ LAYOUT = [
           "Device to render with. Automatic uses the best available GPU (OptiX, then CUDA, "
           "HIP, oneAPI, Metal) and falls back to the CPU. Changing it restarts the render.",
           viewport=True),
+        S("cycles:gpu_devices", "GPU Devices",
+          "GPUs of the chosen Device type to render with, like the device checkboxes of "
+          "Blender's preferences: comma separated indices starting at 0 (0,2) or parts of their "
+          "names or PCI bus ids (RTX 4090). Empty or * uses all of them. Changing it restarts "
+          "the render.",
+          viewport=True, disablewhen="{ cycles:device == CPU }"),
+        S("cycles:use_cpu_too", "Use CPU Too",
+          "Render with the CPU together with the GPUs, like enabling the CPU in Blender's "
+          "Cycles Render Devices. Only husk renders use it, one CPU thread is kept free for "
+          "each GPU; the viewport renders on the GPUs only. Changing it restarts the render.",
+          disablewhen="{ cycles:device == CPU }"),
         S("cycles:shading_system", "Open Shading Language",
           "Use Open Shading Language. On the GPU only OptiX supports it. Changing it restarts "
           "the render.",

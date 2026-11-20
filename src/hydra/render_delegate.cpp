@@ -240,6 +240,49 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
       }
     }
   }
+  /* GPU subset, like the device checkboxes in Blender's preferences: comma separated indices
+   * into the GPUs of the chosen type or parts of their names or ids (PCI bus), empty or "*" for
+   * all of them. */
+  it = settings.find(HdCyclesRenderSettingsTokens->gpuDevices);
+  const std::string gpuDevices = it != settings.end() ? GetStringSetting(it->second, "") : "";
+  if (!devices.empty() && devices.front().type != DEVICE_CPU && !gpuDevices.empty() &&
+      gpuDevices != "*")
+  {
+    vector<string> tokens;
+    string_split(tokens, string_to_lower(gpuDevices), ",");
+    vector<DeviceInfo> chosen;
+    for (size_t i = 0; i < devices.size(); i++) {
+      for (const string &part : tokens) {
+        const string token = string_strip(part);
+        const bool index = std::all_of(token.begin(), token.end(), ::isdigit);
+        if (index ? token == std::to_string(i) :
+                    string_to_lower(devices[i].id + " " + devices[i].description).find(token) != string::npos)
+        {
+          chosen.push_back(devices[i]);
+          break;
+        }
+      }
+    }
+    if (chosen.empty()) {
+      TF_WARN("Cycles: no GPU matches cycles:gpu_devices \"%s\", using all of them",
+              gpuDevices.c_str());
+    }
+    else {
+      devices = chosen;
+    }
+  }
+
+  /* Blender's CPU checkbox next to the GPUs. get_multi_device leaves the CPU out of interactive
+   * renders and frees a CPU thread for each GPU in background (husk) renders. */
+  it = settings.find(HdCyclesRenderSettingsTokens->useCpuToo);
+  if (!devices.empty() && devices.front().type != DEVICE_CPU && it != settings.end() &&
+      VtValue::Cast<bool>(it->second).GetWithDefault(false))
+  {
+    for (const DeviceInfo &info : Device::available_devices(DEVICE_MASK_CPU)) {
+      devices.push_back(info);
+    }
+  }
+
   if (devices.empty()) {
     devices = Device::available_devices(DEVICE_MASK_CPU);
     if (!devices.empty()) {
@@ -686,7 +729,16 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
   const double remaining = (fractionDone > 0.0 && fractionDone < 1.0) ?
                                renderTime * (1.0 / fractionDone - 1.0) :
                                0.0;
-  const std::string device = session->device ? session->device->info.description : "";
+  /* A multi device (several GPUs, or GPU and CPU) lists its devices instead of "Multi Device". */
+  std::string device;
+  if (session->device) {
+    for (const DeviceInfo &info : session->device->info.multi_devices) {
+      device += (device.empty() ? "" : " + ") + info.description;
+    }
+    if (device.empty()) {
+      device = session->device->info.description;
+    }
+  }
 
   VtDictionary renderStats = {{"rendererName", VtValue("Cycles")},
                               {"rendererVersion",
