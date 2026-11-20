@@ -199,6 +199,7 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->pass_volume_transmit_denoised = PASS_UNUSED;
   kfilm->pass_volume_majorant = PASS_UNUSED;
   kfilm->pass_lightgroup = PASS_UNUSED;
+  kfilm->pass_bake_object = PASS_UNUSED;
 
   /* Mark passes as unused so that the kernel knows the pass is inaccessible. */
   kfilm->pass_denoising_albedo = PASS_UNUSED;
@@ -378,6 +379,9 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
         break;
       case PASS_BAKE_DIFFERENTIAL:
         kfilm->pass_bake_differential = kfilm->pass_stride;
+        break;
+      case PASS_BAKE_OBJECT:
+        kfilm->pass_bake_object = kfilm->pass_stride;
         break;
 
       case PASS_CRYPTOMATTE:

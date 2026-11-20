@@ -106,6 +106,7 @@ const NodeEnum *Pass::get_type_enum()
     pass_type_enum.insert("bake_primitive", PASS_BAKE_PRIMITIVE);
     pass_type_enum.insert("bake_seed", PASS_BAKE_SEED);
     pass_type_enum.insert("bake_differential", PASS_BAKE_DIFFERENTIAL);
+    pass_type_enum.insert("bake_object", PASS_BAKE_OBJECT);
 
 #ifdef WITH_CYCLES_DEBUG
     pass_type_enum.insert("guiding_color", PASS_GUIDING_COLOR);
@@ -378,6 +379,11 @@ PassInfo Pass::get_info(const PassType type,
       break;
     case PASS_BAKE_DIFFERENTIAL:
       pass_info.num_components = 4;
+      pass_info.use_exposure = false;
+      pass_info.use_filter = false;
+      break;
+    case PASS_BAKE_OBJECT:
+      pass_info.num_components = 1;
       pass_info.use_exposure = false;
       pass_info.use_filter = false;
       break;

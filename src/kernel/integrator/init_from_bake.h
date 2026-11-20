@@ -132,7 +132,16 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
     return true;
   }
 
-  prim += kernel_data.bake.tri_offset;
+  /* The object of the pixel when the bake object pass has one (bakes from other objects than the
+   * target, like Selected to Active), else the bake target. */
+  int object = kernel_data.bake.object_index;
+  if (kernel_data.film.pass_bake_object != PASS_UNUSED) {
+    object = __float_as_uint(buffer[kernel_data.film.pass_bake_object]);
+    prim += kernel_data_fetch(object_prim_offset, object);
+  }
+  else {
+    prim += kernel_data.bake.tri_offset;
+  }
 
   /* Random number generator. */
   uint rng_pixel = 0;
@@ -161,7 +170,7 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
 
   /* Exactly at vertex? Nudge inwards to avoid self-intersection. */
   if ((u == 0.0f || u == 1.0f) && (v == 0.0f || v == 1.0f)) {
-    const float2 uv = bake_offset_towards_center(kg, kernel_data.bake.object_index, prim, u, v);
+    const float2 uv = bake_offset_towards_center(kg, object, prim, u, v);
     u = uv.x;
     v = uv.y;
   }
@@ -182,7 +191,6 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
   dvdy = -tmpdy - dvdy;
 
   /* Position and normal on triangle. */
-  const int object = kernel_data.bake.object_index;
   float3 P;
   float3 Ng;
   int shader;
@@ -313,7 +321,7 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
 
     /* Setup and write intersection. */
     Intersection isect ccl_optional_struct_init;
-    isect.object = kernel_data.bake.object_index;
+    isect.object = object;
     isect.prim = prim;
     isect.u = u;
     isect.v = v;
