@@ -203,6 +203,10 @@ bool CastBakeRay(const BakeMesh &mesh, float *primitive, float *object)
 {
 #ifdef WITH_EMBREE
   const BakeSources &sources = *mesh.sources;
+  if (!sources.scene) {
+    /* No Embree device: no ray hits a source. */
+    return false;
+  }
   const size_t c = size_t(__float_as_uint(primitive[2])) * 3;
   const float w[3] = {primitive[0], primitive[1], 1.0f - primitive[0] - primitive[1]};
   float3 P = w[0] * mesh.P[c] + w[1] * mesh.P[c + 1] + w[2] * mesh.P[c + 2];
