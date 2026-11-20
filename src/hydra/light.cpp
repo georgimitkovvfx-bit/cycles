@@ -136,6 +136,12 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
         area_light->set_sizev(ds->GetTypedValue(0.0f));
       }
     }
+    else if (_lightType == HdPrimTypeTokens->cylinderLight) {
+      /* Cycles has no line light: a point light with the same intensity, as Blender's USD importer makes it (radius
+       * 0, so the same brightness with or without normalize). Without this the light was not created at all. */
+      static_cast<SpotLight *>(_light)->set_radius(0.0f);
+      _light->set_light_type(LIGHT_POINT);
+    }
     else if (_lightType == HdPrimTypeTokens->sphereLight) {
       SpotLight *spot_light = static_cast<SpotLight *>(_light);
       const bool treatAsPoint = GetTypedValue<bool>(lightDs, _tokens->treatAsPoint, false);
@@ -403,7 +409,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
     _light = lock.scene->create_node<AreaLight>();
     static_cast<AreaLight *>(_light)->set_ellipse(false);
   }
-  else if (_lightType == HdPrimTypeTokens->sphereLight) {
+  else if (_lightType == HdPrimTypeTokens->sphereLight || _lightType == HdPrimTypeTokens->cylinderLight) {
     /* We can't know in advance if this is spot light or point light, so we set to derived class
      * SpotLight and change the type later. */
     _light = lock.scene->create_node<SpotLight>();

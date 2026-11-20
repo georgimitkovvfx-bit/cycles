@@ -51,6 +51,7 @@ const TfTokenVector kSupportedRPrimTypes = {
 const TfTokenVector kSupportedSPrimTypes = {
     HdPrimTypeTokens->camera,
     HdPrimTypeTokens->material,
+    HdPrimTypeTokens->cylinderLight,
     HdPrimTypeTokens->diskLight,
     HdPrimTypeTokens->distantLight,
     HdPrimTypeTokens->domeLight,
@@ -258,7 +259,7 @@ HdSprim *HdCyclesDelegate::CreateSprim(const TfToken &typeId, const SdfPath &spr
   }
   if (typeId == HdPrimTypeTokens->diskLight || typeId == HdPrimTypeTokens->distantLight ||
       typeId == HdPrimTypeTokens->domeLight || typeId == HdPrimTypeTokens->rectLight ||
-      typeId == HdPrimTypeTokens->sphereLight)
+      typeId == HdPrimTypeTokens->sphereLight || typeId == HdPrimTypeTokens->cylinderLight)
   {
     return new HdCyclesLight(sprimId, typeId);
   }
