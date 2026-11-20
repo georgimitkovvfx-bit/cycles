@@ -21,6 +21,18 @@ extern const char *const kBakeDifferentialPass;
 /* Space of baked normals (Cycles' normal pass is world space). */
 enum class BakeNormalSpace { World, Object, Tangent };
 
+/* The bake render settings that pick what is baked (cycles:bake_*). */
+struct BakeSettings {
+  /* Prim path of the bake target, empty when not baking. */
+  std::string object;
+  /* Instance of an instanced target: its instanceId (the instance index of its instancer). */
+  int instance = 0;
+  /* UV primvar of the target the image maps, empty for its default UV map. */
+  std::string uvMap;
+
+  bool operator==(const BakeSettings &other) const = default;
+};
+
 /* The bake target's triangles, three corners each, copied from the Cycles mesh while the scene
  * is locked: the output driver reads them while Cycles renders, without the scene lock (which
  * Hydra holds while it resets the session, and so waits for the render to stop).
@@ -42,10 +54,10 @@ struct BakeMesh {
   }
 };
 
-/* Texture baking like Blender's: the image is the UV space of the bake target mesh (the first
- * object of that prim), each pixel a point on the triangle that covers it in its default UV map.
+/* Texture baking like Blender's: the image is the UV space of the bake target mesh (the object of
+ * that prim and instance), each pixel a point on the triangle that covers it in the bake UV map.
  * Copies the target's data (empty when it has no triangles or UVs). Needs the scene lock. */
-BakeMesh SnapshotBakeMesh(CCL_NS::Scene *scene, const std::string &object);
+BakeMesh SnapshotBakeMesh(CCL_NS::Scene *scene, const BakeSettings &bake);
 
 /* Writes Cycles' bake primitive and differential passes of a tile (all empty for an invalid
  * snapshot). */
@@ -73,7 +85,7 @@ void ConvertBakeNormals(const BakeMesh &mesh,
                         int channels,
                         BakeNormalSpace space);
 
-/* Makes the first mesh object of the prim the bake target (none for an empty name). */
-void SetBakeTarget(CCL_NS::Scene *scene, const std::string &object);
+/* Makes the mesh object of the prim and instance the bake target (none for an empty name). */
+void SetBakeTarget(CCL_NS::Scene *scene, const BakeSettings &bake);
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

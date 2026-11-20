@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "hydra/bake.h"
 #include "hydra/config.h"
 #include "scene/pass.h"
 #include "util/set.h"
@@ -171,21 +172,27 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     return _dicing;
   }
-  /* Texture baking (bake.h): the prim path of the bake target, empty when not baking. Changing
-   * it rebuilds the passes (HdCyclesRenderPass) and resyncs the geometry for its UV map. */
+  /* Texture baking (bake.h): the bake settings, the prim path of the bake target empty when not
+   * baking. Changing them rebuilds the passes (HdCyclesRenderPass) and resyncs the geometry for
+   * the UV map. */
   std::string GetBakeObject() const
   {
     const std::lock_guard<std::mutex> lock(_bakeMutex);
-    return _bakeObject;
+    return _bake.object;
   }
-  void SetBakeObject(const std::string &object)
+  BakeSettings GetBake() const
+  {
+    const std::lock_guard<std::mutex> lock(_bakeMutex);
+    return _bake;
+  }
+  void SetBake(const BakeSettings &bake)
   {
     {
       const std::lock_guard<std::mutex> lock(_bakeMutex);
-      if (object == _bakeObject) {
+      if (bake == _bake) {
         return;
       }
-      _bakeObject = object;
+      _bake = bake;
     }
     bakeChanged = true;
     RequestResync(false, true);
@@ -429,7 +436,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   int _motionSteps = 1;
   DicingSettings _dicing;
   mutable std::mutex _bakeMutex;
-  std::string _bakeObject;
+  BakeSettings _bake;
   mutable std::mutex _materialOverrideMutex;
   std::string _materialOverride;
   float _filmExposure = 1.0f;

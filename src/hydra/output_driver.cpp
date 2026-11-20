@@ -73,18 +73,18 @@ bool HdCyclesOutputDriver::read_render_tile(const Tile &tile)
    * so waits for this render to stop): copy the bake target when the lock is free, otherwise
    * use the last copy of it. */
   Scene *const scene = _renderParam->session->scene.get();
-  const std::string bakeObject = _renderParam->GetBakeObject();
+  const BakeSettings bake = _renderParam->GetBake();
   std::unique_lock<thread_mutex> sceneLock(scene->mutex, std::try_to_lock);
   if (sceneLock.owns_lock()) {
-    BakeMesh mesh = SnapshotBakeMesh(scene, bakeObject);
+    BakeMesh mesh = SnapshotBakeMesh(scene, bake);
     sceneLock.unlock();
     const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
     _bakeMesh = std::move(mesh);
-    _bakeMeshName = bakeObject;
+    _bakeMeshSettings = bake;
   }
   const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
   static const BakeMesh noMesh;
-  return FillBakeTile(_bakeMeshName == bakeObject ? _bakeMesh : noMesh, tile);
+  return FillBakeTile(_bakeMeshSettings == bake ? _bakeMesh : noMesh, tile);
 }
 
 bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)
@@ -137,9 +137,9 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
                                                       std::vector<unsigned char>() :
                                                       BakeCoverage(tile);
   /* Baked normals in the Normal Space setting, before the margin. */
-  const std::string bakeObject = _renderParam->GetBakeObject();
+  const BakeSettings bake = _renderParam->GetBake();
   const auto bakeNormals = [&](const TfToken &aovName, float *data, const size_t channels) {
-    if (bakeObject.empty()) {
+    if (bake.object.empty()) {
       return;
     }
     Scene *const scene = _renderParam->session->scene.get();
@@ -147,7 +147,7 @@ void HdCyclesOutputDriver::update_render_buffers(const Tile &tile, const bool fi
     for (const Pass *pass : scene->passes) {
       if (pass->get_type() == PASS_NORMAL && pass->get_name() == passName) {
         const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
-        if (_bakeMeshName == bakeObject) {
+        if (_bakeMeshSettings == bake) {
           ConvertBakeNormals(_bakeMesh,
                              tile,
                              data,

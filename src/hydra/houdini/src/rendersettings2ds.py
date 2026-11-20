@@ -93,6 +93,8 @@ SESSION_SETTINGS = {
     "cycles:max_subdivisions": {"type": "int", "default": 12},
     "cycles:dicing_camera": {"type": "string", "default": ""},
     "cycles:bake_object": {"type": "string", "default": ""},
+    "cycles:bake_instance": {"type": "int", "default": 0},
+    "cycles:bake_uv_map": {"type": "string", "default": ""},
     "cycles:material_override": {"type": "string", "default": ""},
     "cycles:bake_margin": {"type": "int", "default": 16},
     "cycles:bake_normal_space": {"type": "menu", "default": "tangent",
@@ -621,11 +623,20 @@ LAYOUT = [
     ]),
     P("Bake", [
         S("cycles:bake_object", "Bake Object",
-          "Mesh to bake, like Blender's Bake: the render is the mesh's default UV map instead "
+          "Mesh to bake, like Blender's Bake: the render is the mesh's UV map instead "
           "of the camera view, each pixel shading the point of the surface that covers it in "
           "UV space, with the render vars (beauty, diffuse color, normal, ...) as the baked "
           "maps. The resolution is the render resolution. Empty renders the camera view.",
           tags=PRIM_PATH_TAGS),
+        S("cycles:bake_instance", "Instance",
+          "Instance of an instanced Bake Object to bake: its instance index in the point "
+          "instancer (the instanceId AOV). The instances of a prim share its UV map and "
+          "differ only in what they see, so pick the one whose lighting is baked.",
+          range=(0, 100, True, False)),
+        S("cycles:bake_uv_map", "UV Map",
+          "UV primvar of the Bake Object the image maps, like Blender's active UV map "
+          "(e.g. uv2). Empty uses the default UV map (st, uv, then the first texture "
+          "coordinate primvar)."),
         S("cycles:bake_normal_space", "Normal Space",
           "Space of baked Normal render vars: Tangent for normal maps (tangent along the UV "
           "map's U, bitangent along V, mapped to 0..1 like Blender's), Object, or World "

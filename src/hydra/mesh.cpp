@@ -9,6 +9,8 @@
 #include "hydra/util.h"
 #include "scene/mesh.h"
 
+#include <algorithm>
+
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/imaging/hd/geomSubsetSchema.h>
 #include <pxr/imaging/hd/legacyDisplayStyleSchema.h>
@@ -389,6 +391,10 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
   const TfToken uvName = FindUVPrimvar(primvars);
   const size_t numPoints = ReadPrimvar(primvars, HdTokens->points).GetArraySize();
+  /* The bake UV map of the bake target, exported even when no shader reads it. */
+  const BakeSettings bake = _session->GetBake();
+  const TfToken bakeUVName = bake.object == GetId().GetString() ? TfToken(bake.uvMap) :
+                                                                  TfToken();
 
   const std::pair<HdInterpolation, AttributeElement> interpolations[] = {
       std::make_pair(HdInterpolationFaceVarying, ATTR_ELEMENT_CORNER),
@@ -416,15 +422,22 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
       }
 
       // Skip attributes that are not needed
-      const std::vector<ustring> names = RequestedPrimvarNames(
+      std::vector<ustring> names = RequestedPrimvarNames(
           _geom, scene, primvars, primvarName, std);
+      const bool bakeUV = !bakeUVName.IsEmpty() && primvarName == bakeUVName;
+      if (bakeUV &&
+          std::find(names.begin(), names.end(), ustring(primvarName.GetString())) == names.end())
+      {
+        names.emplace_back(primvarName.GetString());
+      }
       if (names.empty()) {
         continue;
       }
 
       HdInterpolation primvarInterpolation = interpolation.first;
       AttributeElement elem = interpolation.second;
-      if (std == ATTR_STD_UV) {
+      /* The bake UV map is read like the UV map: float2 per face corner (bake.cpp). */
+      if (std == ATTR_STD_UV || bakeUV) {
         const VtVec2fArray uv = ComputeFaceVaryingUV(
             PrimvarAsFloat2(value), primvarInterpolation, _topology);
         if (uv.empty()) {

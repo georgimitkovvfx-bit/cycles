@@ -370,7 +370,9 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
-| Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the default UV map, at the render resolution. Empty renders the camera view. |
+| Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the UV map, at the render resolution. Empty renders the camera view. |
+| Instance | `cycles:bake_instance` | 0 | Instance of an instanced Bake Object to bake: its instance index in the point instancer (the `instanceId` AOV). |
+| UV Map | `cycles:bake_uv_map` | (empty) | UV primvar the image maps, like Blender's active UV map (e.g. `uv2`); the mesh exports it for the bake even when no shader reads it. Empty uses the default UV map (`st`, `uv`, then the first texture coordinate primvar). Tangent space normals use per triangle tangents for maps other than the default one. |
 | Normal Space | `cycles:bake_normal_space` | Tangent | Space of baked Normal render vars: Tangent (a normal map: tangent along the UV map's U direction, bitangent along V, normal, mapped from -1..1 to 0..1 like Blender's), Object, or World (Cycles' normal pass). Tangents are MikkTSpace tangents, like Blender's. |
 | Margin | `cycles:bake_margin` | 16 | Extends the baked result around the UV islands, in pixels, so seams do not show (Blender's Extend margin). Applied to the final image (and husk's updates), not to progressive viewport updates. ID AOVs get no margin. |
 
@@ -383,7 +385,7 @@ Glossy Color give albedo maps, Normal gives normals (see Normal Space), Emit, AO
 and light groups work too. Pixels outside the UV islands have zero alpha. Render it with husk or
 the USD Render ROP as usual (the camera is still needed by the render settings but not used).
 
-Limits: the default UV map only, the first instance of an instanced prim, and no Selected to Active (cage) baking.
+Limits: no Selected to Active (cage) baking.
 
 ## Settings without a UI
 

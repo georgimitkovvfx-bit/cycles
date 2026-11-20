@@ -36,7 +36,7 @@ class HdCyclesOutputDriver final : public CCL_NS::OutputDriver {
   // Copy of the bake target, read while Cycles renders (bake.h)
   std::mutex _bakeMeshMutex;
   BakeMesh _bakeMesh;
-  std::string _bakeMeshName;
+  BakeSettings _bakeMeshSettings;
   // Time of the last progressive viewport update of the AOVs that are not displayed
   double _aovsUpdateTime = 0.0;
 };

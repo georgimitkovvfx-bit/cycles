@@ -22,13 +22,27 @@ const char *const kBakeDifferentialPass = "BakeDifferential";
 
 namespace {
 
-Object *FindBakeObject(Scene *scene, const std::string &name)
+/* The instanceId of an object, its first attribute (HdCyclesGeometry::InitializeInstance): -1
+ * for a prim without instancer, which counts as instance 0. */
+int InstanceIndex(const Object *object)
+{
+  if (object->attributes.empty() || object->attributes.front().type() != TypeFloat) {
+    return 0;
+  }
+  return std::max(0, int(object->attributes.front().get<float>()));
+}
+
+Object *FindBakeObject(Scene *scene, const std::string &name, const int instance)
 {
   if (name.empty()) {
     return nullptr;
   }
+  /* By instanceId: the instances of a prim share its name, and scene->objects is not in
+   * instance order (objects are erased by swap). */
   for (Object *object : scene->objects) {
-    if (object->name == name && object->get_geometry() && object->get_geometry()->is_mesh()) {
+    if (object->name == name && object->get_geometry() && object->get_geometry()->is_mesh() &&
+        InstanceIndex(object) == instance)
+    {
       return object;
     }
   }
@@ -43,27 +57,34 @@ float AsFloat(const uint bits)
 
 }  // namespace
 
-BakeMesh SnapshotBakeMesh(Scene *scene, const std::string &name)
+BakeMesh SnapshotBakeMesh(Scene *scene, const BakeSettings &settings)
 {
   BakeMesh bake;
-  Object *const object = FindBakeObject(scene, name);
+  Object *const object = FindBakeObject(scene, settings.object, settings.instance);
   if (!object) {
     return bake;
   }
   const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
   const Attribute *const attrP = mesh->attributes.find(ATTR_STD_POSITION);
-  const Attribute *const attrUV = mesh->attributes.find(ATTR_STD_UV);
+  /* The bake UV map, which the mesh exports for the target (HdCyclesMesh::PopulatePrimvars). */
+  const Attribute *const attrUV = settings.uvMap.empty() ?
+                                      mesh->attributes.find(ATTR_STD_UV) :
+                                      mesh->attributes.find(ustring(settings.uvMap));
   const size_t num = mesh->num_triangles();
-  if (!attrP || !attrUV || num == 0 ||
+  if (!attrP || !attrUV || num == 0 || attrUV->type != TypeFloat2 ||
       (attrUV->element != ATTR_ELEMENT_CORNER && attrUV->element != ATTR_ELEMENT_VERTEX))
   {
     return bake;
   }
   const Attribute *const attrN = mesh->attributes.find(ATTR_STD_VERTEX_NORMAL);
-  /* MikkTSpace tangents, which Cycles computes while baking (Scene::need_global_attribute). */
+  /* MikkTSpace tangents, which Cycles computes while baking (Scene::need_global_attribute), of
+   * the default UV map.
+   * shortcut: other UV maps get per triangle tangents; request "<map>.tangent" if their normal
+   * maps must match Blender's across seams. */
   const Attribute *const attrT = mesh->attributes.find(ATTR_STD_UV_TANGENT);
   const Attribute *const attrS = mesh->attributes.find(ATTR_STD_UV_TANGENT_SIGN);
-  const bool tangents = attrT && attrS && attrT->element == ATTR_ELEMENT_CORNER &&
+  const bool tangents = attrUV->std == ATTR_STD_UV && attrT && attrS &&
+                        attrT->element == ATTR_ELEMENT_CORNER &&
                         attrS->element == ATTR_ELEMENT_CORNER;
 
   const array<int> &triangles = mesh->get_triangles();
@@ -240,9 +261,9 @@ void ConvertBakeNormals(const BakeMesh &mesh,
   }
 }
 
-void SetBakeTarget(Scene *scene, const std::string &name)
+void SetBakeTarget(Scene *scene, const BakeSettings &bake)
 {
-  Object *const target = FindBakeObject(scene, name);
+  Object *const target = FindBakeObject(scene, bake.object, bake.instance);
   bool changed = false;
   for (Object *object : scene->objects) {
     if (object->get_is_bake_target() != (object == target)) {

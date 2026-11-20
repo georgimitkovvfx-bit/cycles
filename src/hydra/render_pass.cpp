@@ -146,9 +146,9 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     }
 
     /* Texture baking: the bake target among the objects of this sync. */
-    const std::string bakeObject = _renderParam->GetBakeObject();
-    if (!bakeObject.empty() || scene->bake_manager->get_baking()) {
-      SetBakeTarget(scene, bakeObject);
+    const BakeSettings bake = _renderParam->GetBake();
+    if (!bake.object.empty() || scene->bake_manager->get_baking()) {
+      SetBakeTarget(scene, bake);
     }
 
     bool displayChanged = false;

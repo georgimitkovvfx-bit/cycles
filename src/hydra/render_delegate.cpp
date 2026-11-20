@@ -1301,8 +1301,20 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->materialOverride) {
     _renderParam->SetMaterialOverride(GetStringSetting(value, ""));
   }
-  else if (key == HdCyclesRenderSettingsTokens->bakeObject) {
-    _renderParam->SetBakeObject(GetStringSetting(value, ""));
+  else if (key == HdCyclesRenderSettingsTokens->bakeObject ||
+           key == HdCyclesRenderSettingsTokens->bakeInstance ||
+           key == HdCyclesRenderSettingsTokens->bakeUVMap)
+  {
+    const auto get = [&](const TfToken &setting) {
+      const auto it = _settingsMap.find(setting);
+      return it == _settingsMap.end() ? VtValue() : it->second;
+    };
+    BakeSettings bake;
+    bake.object = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeObject), "");
+    bake.instance = std::max(
+        0, VtValue::Cast<int>(get(HdCyclesRenderSettingsTokens->bakeInstance)).GetWithDefault(0));
+    bake.uvMap = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeUVMap), "");
+    _renderParam->SetBake(bake);
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeNormalSpace) {
     const std::string space = GetStringSetting(value, "tangent");
