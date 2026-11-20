@@ -11,6 +11,10 @@
 #include "scene/shader.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
+#include "util/colorspace.h"
+
+#include <algorithm>
+#include <filesystem>
 
 #include <pxr/imaging/hd/material.h>
 #include <pxr/imaging/hd/materialConnectionSchema.h>
@@ -299,6 +303,65 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
   *dirtyBits = DirtyBits::Clean;
 }
 
+namespace {
+
+/* A texture's colour space from USD: "auto" (USD's default: sRGB for 8-bit images, linear for float ones), "raw"
+ * (no conversion: data), "sRGB", or any OpenColorIO name. */
+void ApplyColorSpace(Node *node, const TfToken &space)
+{
+  if (space.IsEmpty()) {
+    return;
+  }
+  const SocketType *socket = node->type->find_input(ustring("colorspace"));
+  if (!socket) {
+    return;
+  }
+  ustring cyclesSpace(space.GetString());
+  if (space == "auto") {
+    cyclesSpace = u_colorspace_auto;
+  }
+  else if (space == "raw") {
+    cyclesSpace = u_colorspace_data;
+  }
+  node->set(*socket, cyclesSpace);
+}
+
+/* A <UDIM> file name: Cycles needs the tile numbers (Blender's sync passes them from the image). Found on disk. */
+void ApplyUdimTiles(Node *node, const SdfAssetPath &path)
+{
+  ImageTextureNode *image = dynamic_cast<ImageTextureNode *>(node);
+  const std::string &file = image ? image->get_filename().string() : std::string();
+  const size_t token = file.find("<UDIM>");
+  if (token == std::string::npos) {
+    return;
+  }
+  const std::filesystem::path folder = std::filesystem::path(file).parent_path();
+  const std::string name = std::filesystem::path(file).filename().string();
+  const size_t nameToken = name.find("<UDIM>");
+  const std::string prefix = name.substr(0, nameToken), suffix = name.substr(nameToken + 6);
+  array<int> tiles;
+  std::error_code error;
+  for (const auto &entry : std::filesystem::directory_iterator(folder, error)) {
+    const std::string found = entry.path().filename().string();
+    if (found.size() != prefix.size() + 4 + suffix.size() || !found.starts_with(prefix) ||
+        !found.ends_with(suffix))
+    {
+      continue;
+    }
+    const std::string digits = found.substr(prefix.size(), 4);
+    if (std::all_of(digits.begin(), digits.end(), ::isdigit)) {
+      tiles.push_back_slow(std::stoi(digits));
+    }
+  }
+  std::sort(tiles.begin(), tiles.end());
+  if (tiles.empty()) {
+    TF_WARN("No UDIM tiles found for '%s' (authored '%s')", file.c_str(), path.GetAssetPath().c_str());
+  }
+  image->set_tiles(tiles);
+}
+
+}  // namespace
+
 void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
                                         HdMaterialNodeParameterContainerSchema params,
                                         const SdfPath &nodePath)
@@ -309,7 +372,6 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
       continue;
     }
     VtValue value = valueDs->GetValue(0.0f);
-
     /* See if the parameter name is in USDPreviewSurface terms, and needs to be converted .*/
     const UsdToCyclesMapping *inputMapping = nodeDesc.mapping;
     const std::string inputName = inputMapping ?
@@ -351,6 +413,14 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     }
 
     SetNodeValue(nodeDesc.node, *input, value);
+
+    if (value.IsHolding<SdfAssetPath>()) {
+      if (auto colorSpaceDs = params.Get(paramName).GetColorSpace()) {
+        /* UsdImaging moves UsdUVTexture's sourceColorSpace onto the file parameter. */
+        ApplyColorSpace(nodeDesc.node, colorSpaceDs->GetTypedValue(0.0f));
+      }
+      ApplyUdimTiles(nodeDesc.node, value.UncheckedGet<SdfAssetPath>());
+    }
   }
 }
 
@@ -505,6 +575,10 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       /* If it's a native Cycles' node-type, just do the lookup now. */
       if (const NodeType *nodeType = NodeType::find(cyclesType)) {
         nodeDesc.node = graph->create_node(nodeType);
+        if (nodeTypeIdToken == CyclesMaterialTokens->UsdUVTexture) {
+          /* USD's default sourceColorSpace is "auto"; Cycles' image node defaults to scene linear. */
+          ApplyColorSpace(nodeDesc.node, TfToken("auto"));
+        }
         _nodes.emplace(nodePath, nodeDesc);
       }
       else {
