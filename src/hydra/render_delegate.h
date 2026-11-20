@@ -175,6 +175,10 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
   mutable std::vector<std::string> _checkedTextures;
   mutable std::string _missingTexture;
   mutable std::atomic<bool> _abortReported = false;
+
+  /* houdini:cop_texture_changed arrived: the next CommitResources converts the op: images
+   * again. */
+  std::atomic<bool> _copTexturesChanged = false;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

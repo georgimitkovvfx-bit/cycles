@@ -794,6 +794,48 @@ void HdCyclesDelegate::CommitResources(HdChangeTracker *tracker)
 
   const SceneLock lock(_renderParam.get());
 
+#ifdef WITH_HOUDINI_IMAGES
+  /* houdini:cop_texture_changed: convert the op: images again, through Houdini's resolver cache
+   * again so that its viewport keeps watching their COPs, and update the shaders whose image file
+   * changed. Only the op: images: this is set every frame of a time dependent COP, other images
+   * would stat files and list UDIM directories each time. */
+  if (_copTexturesChanged.exchange(false)) {
+    HdCycles::ForgetHoudiniOpImages();
+    const auto convertAgain = [](auto *image) {
+      const ustring file = image->get_filename();
+      if (!HdCycles::IsHoudiniOpImage(file.string())) {
+        return false;
+      }
+      const ustring resolved(HdCycles::ResolveHoudiniImage(file.string()));
+      if (resolved == file) {
+        return false;
+      }
+      image->set_filename(resolved);
+      image->handle.clear();
+      return true;
+    };
+    bool changed = false;
+    for (Shader *shader : lock.scene->shaders) {
+      bool shaderChanged = false;
+      for (ShaderNode *node : shader->graph->nodes) {
+        if (node->type == ImageTextureNode::get_node_type()) {
+          shaderChanged |= convertAgain(static_cast<ImageTextureNode *>(node));
+        }
+        else if (node->type == EnvironmentTextureNode::get_node_type()) {
+          shaderChanged |= convertAgain(static_cast<EnvironmentTextureNode *>(node));
+        }
+      }
+      if (shaderChanged) {
+        shader->tag_update(lock.scene);
+        changed = true;
+      }
+    }
+    if (changed) {
+      ++_settingsVersion;
+    }
+  }
+#endif
+
   _renderParam->UpdateScene();
   _renderParam->rprimsResyncing = false;
   _renderParam->materialsResyncing = false;
@@ -1120,44 +1162,12 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
 
 #ifdef WITH_HOUDINI_IMAGES
   /* Houdini's viewport sets this when a COP read by an op: image changed (or the frame of a time
-   * dependent one), which syncs no material (KNOWN_ISSUES #55): convert the images again and
-   * update the shaders whose image file changed. Only the op: images: this is set every frame of
-   * a time dependent COP, other images would stat files and list UDIM directories each time. */
+   * dependent one), which syncs no material (KNOWN_ISSUES #55). It sets it on its main thread,
+   * also while a sync runs, and only then clears the changed COPs from its resolver cache (all of
+   * them on frame changes): converting here read the stale raster, left the COP unwatched once
+   * Houdini cleared it, and blocked the main thread on the scene. The next sync converts. */
   if (key == _tokens->houdiniCopTextureChanged) {
-    HdCycles::ForgetHoudiniOpImages();
-    const auto convertAgain = [](auto *image) {
-      const ustring file = image->get_filename();
-      if (!HdCycles::IsHoudiniOpImage(file.string())) {
-        return false;
-      }
-      const ustring resolved(HdCycles::ResolveHoudiniImage(file.string()));
-      if (resolved == file) {
-        return false;
-      }
-      image->set_filename(resolved);
-      image->handle.clear();
-      return true;
-    };
-    const SceneLock lock(_renderParam.get());
-    bool changed = false;
-    for (Shader *shader : lock.scene->shaders) {
-      bool shaderChanged = false;
-      for (ShaderNode *node : shader->graph->nodes) {
-        if (node->type == ImageTextureNode::get_node_type()) {
-          shaderChanged |= convertAgain(static_cast<ImageTextureNode *>(node));
-        }
-        else if (node->type == EnvironmentTextureNode::get_node_type()) {
-          shaderChanged |= convertAgain(static_cast<EnvironmentTextureNode *>(node));
-        }
-      }
-      if (shaderChanged) {
-        shader->tag_update(lock.scene);
-        changed = true;
-      }
-    }
-    if (changed) {
-      ++_settingsVersion;
-    }
+    _copTexturesChanged = true;
     return;
   }
 #endif
