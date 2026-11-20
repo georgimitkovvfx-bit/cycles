@@ -22,7 +22,9 @@
 #  include <pxr/imaging/hd/tokens.h>
 #  include <pxr/imaging/hdGp/generativeProceduralResolvingSceneIndex.h>
 #  include <pxr/imaging/hdsi/lightLinkingSceneIndex.h>
+#  include <pxr/imaging/hdsi/nurbsApproximatingSceneIndex.h>
 #  include <pxr/imaging/hdsi/renderPassPruneSceneIndex.h>
+#  include <pxr/imaging/hdsi/tetMeshConversionSceneIndex.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -99,6 +101,21 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
   HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
       "Cycles",
       TfToken("HdCycles_ImplicitSurfaceSceneIndexPlugin"),
+      nullptr,
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+
+  /* Nor tetrahedral meshes (their surface triangles as a mesh) or NURBS (curves approximated as
+   * basis curves, patches as meshes), like Storm. Registered before the procedurals at the start
+   * of the phase: after them in the chain, so procedurals can make these too. */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HdsiNurbsApproximatingSceneIndex::New(
+            HdsiTetMeshConversionSceneIndex::New(inputScene));
+      },
       nullptr,
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
