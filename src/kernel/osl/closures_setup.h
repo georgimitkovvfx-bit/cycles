@@ -330,7 +330,13 @@ ccl_device void osl_closure_dielectric_bsdf_setup(KernelGlobals kg,
 {
   osl_zero_albedo(layer_albedo);
 
-  if (osl_closure_priority_masked(sd, path_flag, weight, closure->ior, layer_albedo)) {
+  /* Only a transmitting closure records the medium IOR, not a coat or specular layer. */
+  if (osl_closure_priority_masked(sd,
+                                  path_flag,
+                                  weight,
+                                  is_zero(closure->transmission_tint) ? 0.0f : closure->ior,
+                                  layer_albedo))
+  {
     return;
   }
 
@@ -441,16 +447,26 @@ ccl_device void osl_closure_generalized_schlick_bsdf_setup(
 {
   osl_zero_albedo(layer_albedo);
 
-  /* A negative exponent is the real IOR (trick for the Principled BSDF), else it comes from F0. */
-  const float absolute_ior = (closure->exponent < 0.0f) ? -closure->exponent :
-                                                          ior_from_F0(average(closure->f0));
-  if (osl_closure_priority_masked(sd, path_flag, weight, absolute_ior, layer_albedo)) {
-    return;
-  }
-  const float relative_ior = absolute_ior / sd->opposite_ior;
-
   const bool has_reflection = !is_zero(closure->reflection_tint);
   const bool has_transmission = !is_zero(closure->transmission_tint);
+
+  /* A negative exponent is the real IOR (trick for the Principled BSDF), else it comes from F0.
+   * Only a real IOR or a transmitting closure describes a medium: an F0 only reflection (metals,
+   * F82, specular workflows) keeps its IOR and records none. */
+  const bool medium = has_transmission || closure->exponent < 0.0f;
+  const float absolute_ior = (closure->exponent < 0.0f) ? -closure->exponent :
+                                                          ior_from_F0(average(closure->f0));
+  if (osl_closure_priority_masked(
+          sd, path_flag, weight, medium ? absolute_ior : 0.0f, layer_albedo))
+  {
+    return;
+  }
+  const float relative_ior = medium ? absolute_ior / sd->opposite_ior : absolute_ior;
+  /* F0 for the relative IOR, keeping the tint of the closure's F0. */
+  const float absolute_F0 = F0_from_ior(absolute_ior);
+  const float f0_scale = (relative_ior != absolute_ior && absolute_F0 > 0.0f) ?
+                             F0_from_ior(relative_ior) / absolute_F0 :
+                             1.0f;
 
   int label = LABEL_GLOSSY | LABEL_REFLECT;
   if (has_transmission) {
@@ -530,7 +546,7 @@ ccl_device void osl_closure_generalized_schlick_bsdf_setup(
                                                     zero_spectrum();
   fresnel->tint.transmittance = refractive_caustics ? rgb_to_spectrum(closure->transmission_tint) :
                                                       zero_spectrum();
-  fresnel->f0 = rgb_to_spectrum(closure->f0);
+  fresnel->f0 = rgb_to_spectrum(closure->f0) * f0_scale;
   fresnel->f90 = rgb_to_spectrum(closure->f90);
   fresnel->exponent = (closure->exponent < 0.0f) ? -relative_ior : closure->exponent;
   fresnel->thin_film.thickness = closure->thinfilm_thickness;
@@ -636,7 +652,9 @@ ccl_device void osl_closure_microfacet_setup(KernelGlobals kg,
 {
   osl_zero_albedo(layer_albedo);
 
-  if (osl_closure_priority_masked(sd, path_flag, weight, closure->ior, layer_albedo)) {
+  if (osl_closure_priority_masked(
+          sd, path_flag, weight, closure->refract ? closure->ior : 0.0f, layer_albedo))
+  {
     return;
   }
 
