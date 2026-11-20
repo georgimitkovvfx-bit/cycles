@@ -12,6 +12,9 @@
 #include "scene/geometry.h"
 #include "scene/object.h"
 #include "scene/scene.h"
+#include "scene/volume.h"
+
+#include <type_traits>
 #include "util/hash.h"
 
 #include <pxr/imaging/hd/materialBindingSchema.h>
@@ -137,6 +140,13 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
   const SceneLock lock(renderParam);
 
+  {
+    const HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+    _motionSteps = session->MotionSteps();
+    _shutterOpen = session->ShutterOpen();
+    _shutterClose = session->ShutterClose();
+  }
+
   const SdfPath &id = Base::GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
@@ -160,7 +170,14 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       usedShaders[0] = material->GetCyclesShader();
     }
     else {
-      usedShaders[0] = lock.scene->default_surface;
+      /* No material: a volume gets Cycles' default volume (Principled Volume, as Blender's USD importer gives
+       * it); the default surface has no volume closure, so the volume rendered as nothing. */
+      if constexpr (std::is_same_v<CyclesBase, Volume>) {
+        usedShaders[0] = lock.scene->default_volume;
+      }
+      else {
+        usedShaders[0] = lock.scene->default_surface;
+      }
     }
 
     for (Node *shader : usedShaders) {
@@ -210,6 +227,53 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       InitializeInstance(static_cast<int>(i));
       if (i == 0) {
         _instances[0]->set_pass_id(Base::GetPrimId() + 1);
+      }
+    }
+
+    /* Transform motion blur: the object's and its instancer's transforms at each motion step, when either moves
+     * within the shutter (Cycles: motion[center] is the frame's transform). */
+    bool moving = false;
+    auto stepMatrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix();
+    if (_motionSteps > 1) {
+      std::vector<float> times;
+      moving = (stepMatrixDs &&
+                stepMatrixDs->GetContributingSampleTimesForInterval(_shutterOpen, _shutterClose, &times)) ||
+               (instancer && instancer->IsMoving(_shutterOpen, _shutterClose));
+    }
+    if (moving) {
+      const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
+      std::vector<array<Transform>> motions(_instances.size(), array<Transform>(_motionSteps));
+      for (int step = 0; step < _motionSteps && moving; ++step) {
+        const float time = MotionTime(step);
+        const GfMatrix4d geomTransform = stepMatrixDs ? stepMatrixDs->GetTypedValue(time) : GfMatrix4d(1.0);
+        VtMatrix4dArray stepTransforms;
+        if (instancer) {
+          stepTransforms = instancer->ComputeInstanceTransforms(id, time);
+        }
+        else {
+          stepTransforms.push_back(GfMatrix4d(1.0));
+        }
+        if (stepTransforms.size() != _instances.size()) {
+          moving = false; /* the instance count changes within the shutter: no motion */
+          break;
+        }
+        for (size_t i = 0; i < _instances.size(); ++i) {
+          motions[i][step] = transform_scale(make_float3(metersPerUnit)) *
+                             convert_transform(geomTransform * stepTransforms[i]);
+        }
+      }
+      if (moving) {
+        for (size_t i = 0; i < _instances.size(); ++i) {
+          _instances[i]->set_motion(motions[i]);
+        }
+      }
+    }
+    if (!moving) {
+      for (Object *instance : _instances) {
+        if (!instance->get_motion().empty()) {
+          array<Transform> none;
+          instance->set_motion(none);
+        }
       }
     }
 

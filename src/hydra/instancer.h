@@ -25,9 +25,21 @@ class HdCyclesInstancer final : public PXR_NS::HdInstancer {
             PXR_NS::HdDirtyBits *dirtyBits) override;
 
   PXR_NS::VtMatrix4dArray ComputeInstanceTransforms(const PXR_NS::SdfPath &prototypeId);
+  /* At a shutter offset (frames): motion blur. Offset 0 uses the primvars read at sync. */
+  PXR_NS::VtMatrix4dArray ComputeInstanceTransforms(const PXR_NS::SdfPath &prototypeId, float time);
+  /* Whether this instancer or a parent instancer moves its instances within [open, close]. */
+  bool IsMoving(float open, float close);
 
  private:
   void SyncPrimvars();
+  struct Arrays {
+    PXR_NS::VtVec3fArray translate;
+    PXR_NS::VtVec4fArray rotate;
+    PXR_NS::VtVec3fArray scale;
+    PXR_NS::VtMatrix4dArray instanceTransform;
+  };
+  /* The instance primvars at a shutter offset. */
+  void ReadPrimvars(float time, Arrays &out);
 
   PXR_NS::VtVec3fArray _translate;
   PXR_NS::VtVec4fArray _rotate;

@@ -67,6 +67,37 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
+  /* Motion blur: the render camera's shutter (frames, relative to the current frame), set when the camera syncs
+   * (before the rprims); `cycles:motion_blur` can turn it off. On and open: 3 motion steps, evenly over the shutter
+   * (Cycles' layout), else none. */
+  void SetShutter(const float open, const float close)
+  {
+    _shutterOpen = open;
+    _shutterClose = close;
+  }
+  void SetMotionBlurAllowed(const bool allowed)
+  {
+    _motionBlurAllowed = allowed;
+  }
+  int MotionSteps() const
+  {
+    return (_motionBlurAllowed && _shutterClose > _shutterOpen) ? 3 : 0;
+  }
+  float ShutterOpen() const
+  {
+    return _shutterOpen;
+  }
+  float ShutterClose() const
+  {
+    return _shutterClose;
+  }
+  /* Shutter offset (frames) of a time-ordered motion step. */
+  float MotionTime(const int step) const
+  {
+    const int steps = MotionSteps();
+    return steps > 1 ? _shutterOpen + (_shutterClose - _shutterOpen) * float(step) / float(steps - 1) : 0.0f;
+  }
+
   CCL_NS::Session *session;
   bool keep_nodes;
 
@@ -75,6 +106,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   double _stageMetersPerUnit = 0.01;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
+  float _shutterOpen = 0.0f;
+  float _shutterClose = 0.0f;
+  bool _motionBlurAllowed = true;
   int _transparentBackground = -1;
   bool _backgroundDirty = false; /* the setting changed: update the background once */
 };

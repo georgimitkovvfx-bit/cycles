@@ -7,6 +7,9 @@
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "scene/camera.h"
+#include "scene/integrator.h"
+#include "scene/scene.h"
+#include "session/session.h"
 
 #include <pxr/base/gf/frustum.h>
 #include <pxr/imaging/hd/cameraSchema.h>
@@ -52,7 +55,7 @@ HdDirtyBits HdCyclesCamera::GetInitialDirtyBitsMask() const
 }
 
 void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
-                          HdRenderParam * /*renderParam*/,
+                          HdRenderParam *renderParam,
                           HdDirtyBits *dirtyBits)
 {
   if (*dirtyBits == DirtyBits::Clean) {
@@ -77,9 +80,22 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
     shutterClose = float(ds->GetTypedValue(0.0f));
   }
 
+  /* Cameras sync before rprims: the geometry reads the shutter from the session (motion steps). Only an open shutter
+   * sets it: a host's own camera (Blender's free camera) has none and must not close the stage camera's. */
+  HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+  if (session && shutterClose > shutterOpen) {
+    session->SetShutter(shutterOpen, shutterClose);
+  }
+
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     HdXformSchema xformSchema = HdXformSchema::GetFromParent(primDs);
     if (auto matrixDs = xformSchema.GetMatrix()) {
+      /* Cycles expects motion transforms evenly spaced over the shutter. */
+      _motionTransforms.clear();
+      const int steps = session ? session->MotionSteps() : 0;
+      for (int step = 0; step < steps; ++step) {
+        _motionTransforms.push_back(matrixDs->GetTypedValue(session->MotionTime(step)));
+      }
       SampleTyped<GfMatrix4d, 2>(matrixDs, shutterOpen, shutterClose, &_transformSamples);
       bool transform_found = false;
       for (size_t i = 0; i < _transformSamples.count; ++i) {
@@ -182,11 +198,23 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam, Camera *cam
 
   const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
 
-  array<Transform> motion(_transformSamples.count);
-  for (size_t i = 0; i < _transformSamples.count; ++i) {
-    motion[i] = convert_camera_transform(_transformSamples.values[i], metersPerUnit);
+  const HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+  const bool motionBlur = session->MotionSteps() > 1;
+  if (motionBlur && _motionTransforms.size() > 1) {
+    array<Transform> motion(_motionTransforms.size());
+    for (size_t i = 0; i < _motionTransforms.size(); ++i) {
+      motion[i] = convert_camera_transform(_motionTransforms[i], metersPerUnit);
+    }
+    cam->set_motion(motion);
   }
-  cam->set_motion(motion);
+  else {
+    array<Transform> motion(_transformSamples.count);
+    for (size_t i = 0; i < _transformSamples.count; ++i) {
+      motion[i] = convert_camera_transform(_transformSamples.values[i], metersPerUnit);
+    }
+    cam->set_motion(motion);
+  }
+
 }
 
 void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
@@ -194,6 +222,21 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
                                          CameraUtilConformWindowPolicy windowPolicy,
                                          Camera *cam)
 {
+  /* Motion blur (every camera, also a host's own): the session's shutter (frames) and where it sits relative to the
+   * frame. Cycles knows start, centre and end; an asymmetric shutter that spans the frame counts as centred. */
+  {
+    const HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+    const bool motionBlur = session->MotionSteps() > 1;
+    if (motionBlur) {
+      const float open = session->ShutterOpen(), close = session->ShutterClose();
+      cam->set_shuttertime(close - open);
+      cam->set_motion_position(open >= 0.0f ? MOTION_POSITION_START :
+                               close <= 0.0f ? MOTION_POSITION_END :
+                                               MOTION_POSITION_CENTER);
+    }
+    session->session->scene->integrator->set_motion_blur(motionBlur);
+  }
+
   const float width = cam->get_full_width();
   const float height = cam->get_full_height();
 

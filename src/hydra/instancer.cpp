@@ -38,61 +38,128 @@ void HdCyclesInstancer::Sync(HdSceneDelegate *sceneDelegate,
 
 void HdCyclesInstancer::SyncPrimvars()
 {
+  Arrays arrays;
+  ReadPrimvars(0.0f, arrays);
+  _translate = std::move(arrays.translate);
+  _rotate = std::move(arrays.rotate);
+  _scale = std::move(arrays.scale);
+  _instanceTransform = std::move(arrays.instanceTransform);
+
+  GetDelegate()->GetRenderIndex().GetChangeTracker().MarkInstancerClean(GetId());
+}
+
+void HdCyclesInstancer::ReadPrimvars(const float time, Arrays &out)
+{
   HdSceneDelegate *const sceneDelegate = GetDelegate();
   const SdfPath &id = GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
   HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
 
-  auto read_array_primvar = [&](const TfToken &name, auto &out) {
-    using T = std::remove_reference_t<decltype(out)>;
+  auto read_array_primvar = [&](const TfToken &name, auto &result) {
+    using T = std::remove_reference_t<decltype(result)>;
     if (HdPrimvarSchema pv = primvars.GetPrimvar(name)) {
       if (auto valueDs = pv.GetPrimvarValue()) {
-        const VtValue v = valueDs->GetValue(0.0f);
+        const VtValue v = valueDs->GetValue(time);
         if (v.IsHolding<T>()) {
-          out = v.UncheckedGet<T>();
+          result = v.UncheckedGet<T>();
         }
       }
     }
   };
 
-  read_array_primvar(HdInstancerTokens->instanceTranslations, _translate);
-  read_array_primvar(HdInstancerTokens->instanceScales, _scale);
-  read_array_primvar(HdInstancerTokens->instanceTransforms, _instanceTransform);
+  read_array_primvar(HdInstancerTokens->instanceTranslations, out.translate);
+  read_array_primvar(HdInstancerTokens->instanceScales, out.scale);
+  read_array_primvar(HdInstancerTokens->instanceTransforms, out.instanceTransform);
 
   /* Accept different array types for quaternions. */
   if (HdPrimvarSchema pv = primvars.GetPrimvar(HdInstancerTokens->instanceRotations)) {
     if (auto valueDs = pv.GetPrimvarValue()) {
-      const VtValue v = valueDs->GetValue(0.0f);
+      const VtValue v = valueDs->GetValue(time);
       if (v.IsHolding<VtVec4fArray>()) {
-        _rotate = v.UncheckedGet<VtVec4fArray>();
+        out.rotate = v.UncheckedGet<VtVec4fArray>();
       }
       else if (v.IsHolding<VtQuatfArray>()) {
         const VtQuatfArray &src = v.UncheckedGet<VtQuatfArray>();
-        _rotate.clear();
-        _rotate.reserve(src.size());
+        out.rotate.clear();
+        out.rotate.reserve(src.size());
         for (const GfQuatf &q : src) {
           const GfVec3f &im = q.GetImaginary();
-          _rotate.push_back(GfVec4f(q.GetReal(), im[0], im[1], im[2]));
+          out.rotate.push_back(GfVec4f(q.GetReal(), im[0], im[1], im[2]));
         }
       }
       else if (v.IsHolding<VtQuathArray>()) {
         const VtQuathArray &src = v.UncheckedGet<VtQuathArray>();
-        _rotate.clear();
-        _rotate.reserve(src.size());
+        out.rotate.clear();
+        out.rotate.reserve(src.size());
         for (const GfQuath &q : src) {
           const GfVec3h &im = q.GetImaginary();
-          _rotate.push_back(GfVec4f(q.GetReal(), im[0], im[1], im[2]));
+          out.rotate.push_back(GfVec4f(q.GetReal(), im[0], im[1], im[2]));
         }
       }
     }
   }
+}
 
-  sceneDelegate->GetRenderIndex().GetChangeTracker().MarkInstancerClean(id);
+bool HdCyclesInstancer::IsMoving(const float open, const float close)
+{
+  HdSceneDelegate *const sceneDelegate = GetDelegate();
+  const HdSceneIndexPrim prim = GetPrim(sceneDelegate, GetId());
+  std::vector<float> times;
+  if (auto matrixDs = HdXformSchema::GetFromParent(prim.dataSource).GetMatrix()) {
+    if (matrixDs->GetContributingSampleTimesForInterval(open, close, &times)) {
+      return true;
+    }
+  }
+  HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
+  for (const TfToken &name : {HdInstancerTokens->instanceTranslations,
+                              HdInstancerTokens->instanceRotations,
+                              HdInstancerTokens->instanceScales,
+                              HdInstancerTokens->instanceTransforms})
+  {
+    if (HdPrimvarSchema pv = primvars.GetPrimvar(name)) {
+      if (auto valueDs = pv.GetPrimvarValue()) {
+        if (valueDs->GetContributingSampleTimesForInterval(open, close, &times)) {
+          return true;
+        }
+      }
+    }
+  }
+  SdfPath parentId;
+  if (auto pathsDs = HdInstancedBySchema::GetFromParent(prim.dataSource).GetPaths()) {
+    const VtArray<SdfPath> parentPaths = pathsDs->GetTypedValue(0.0f);
+    if (!parentPaths.empty()) {
+      parentId = parentPaths.front();
+    }
+  }
+  if (parentId.IsEmpty()) {
+    parentId = GetParentId();
+  }
+  if (!parentId.IsEmpty()) {
+    if (auto *parent = static_cast<HdCyclesInstancer *>(sceneDelegate->GetRenderIndex().GetInstancer(parentId)))
+    {
+      return parent->IsMoving(open, close);
+    }
+  }
+  return false;
 }
 
 VtMatrix4dArray HdCyclesInstancer::ComputeInstanceTransforms(const SdfPath &prototypeId)
 {
+  return ComputeInstanceTransforms(prototypeId, 0.0f);
+}
+
+VtMatrix4dArray HdCyclesInstancer::ComputeInstanceTransforms(const SdfPath &prototypeId, const float time)
+{
   HdSceneDelegate *const sceneDelegate = GetDelegate();
+  Arrays sampled;
+  if (time != 0.0f) {
+    ReadPrimvars(time, sampled);
+  }
+  const VtVec3fArray &_translate = time != 0.0f ? sampled.translate : this->_translate;
+  const VtVec4fArray &_rotate = time != 0.0f ? sampled.rotate : this->_rotate;
+  const VtVec3fArray &_scale = time != 0.0f ? sampled.scale : this->_scale;
+  const VtMatrix4dArray &_instanceTransform = time != 0.0f ? sampled.instanceTransform :
+                                                             this->_instanceTransform;
   const SdfPath &id = GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
 
@@ -103,7 +170,7 @@ VtMatrix4dArray HdCyclesInstancer::ComputeInstanceTransforms(const SdfPath &prot
 
   GfMatrix4d instanceTransform(1.0);
   if (auto matrixDs = HdXformSchema::GetFromParent(prim.dataSource).GetMatrix()) {
-    instanceTransform = matrixDs->GetTypedValue(0.0f);
+    instanceTransform = matrixDs->GetTypedValue(time);
   }
 
   VtMatrix4dArray transforms;
@@ -160,7 +227,7 @@ VtMatrix4dArray HdCyclesInstancer::ComputeInstanceTransforms(const SdfPath &prot
     auto *const parentInstancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(parentId));
     if (parentInstancer) {
-      for (const GfMatrix4d &parentTransform : parentInstancer->ComputeInstanceTransforms(id)) {
+      for (const GfMatrix4d &parentTransform : parentInstancer->ComputeInstanceTransforms(id, time)) {
         for (const GfMatrix4d &localTransform : transforms) {
           resultTransforms.push_back(localTransform * parentTransform);  /* child, then parent */
         }

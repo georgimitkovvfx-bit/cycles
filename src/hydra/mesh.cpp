@@ -181,6 +181,49 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
   std::copy_n(
       reinterpret_cast<const packed_float3 *>(points.data()), _topology.GetNumPoints(), verts);
   _geom->tag_position_modified();
+
+  /* Deformation motion blur: the points at each motion step, when they change within the shutter (animated points,
+   * or velocities resolved by the scene index). Cycles keeps the centre step in the attribute and the others as its
+   * motion steps. Subdivision meshes are not deformed this way. */
+  bool deforming = false;
+  HdSampledDataSourceHandle pointsDs;
+  if (_motionSteps > 1 && !subdivision) {
+    if (HdPrimvarSchema pv = primvars.GetPrimvar(HdTokens->points)) {
+      pointsDs = pv.GetPrimvarValue();
+    }
+    std::vector<float> times;
+    deforming = pointsDs &&
+                pointsDs->GetContributingSampleTimesForInterval(_shutterOpen, _shutterClose, &times);
+  }
+  if (deforming) {
+    const size_t numPoints = size_t(_topology.GetNumPoints());
+    _geom->set_motion_steps(_motionSteps);
+    if (!attr_P->has_motion()) {
+      attr_P->add_motion(_geom);
+    }
+    const int center = (_motionSteps - 1) / 2;
+    for (int step = 0; step < _motionSteps; ++step) {
+      if (step == center) {
+        continue;
+      }
+      const VtValue stepValue = pointsDs->GetValue(MotionTime(step));
+      packed_float3 *stepVerts = attr_P->data_for_write<packed_float3>(
+          attr_P->time_step_to_attr_step(step, _motionSteps));
+      if (stepValue.IsHolding<VtVec3fArray>() && stepValue.UncheckedGet<VtVec3fArray>().size() >= numPoints) {
+        std::copy_n(reinterpret_cast<const packed_float3 *>(stepValue.UncheckedGet<VtVec3fArray>().data()),
+                    numPoints,
+                    stepVerts);
+      }
+      else {
+        std::copy_n(verts, numPoints, stepVerts); /* topology changes within the shutter: no deformation */
+      }
+    }
+    _geom->set_use_motion_blur(true);
+  }
+  else if (attr_P->has_motion()) {
+    attr_P->remove_motion();
+    _geom->set_use_motion_blur(false);
+  }
 }
 
 void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)

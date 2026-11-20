@@ -476,6 +476,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
       }
     }
     /* Blender's Film › Transparent: the world lights the scene but the camera does not see it. */
+    else if (keyString == "cycles:motion_blur") {
+      /* The stage's render settings (USD's disableMotionBlur, Blender's Render › Motion Blur). */
+      _renderParam->SetMotionBlurAllowed(VtValue::Cast<bool>(value).GetWithDefault(true));
+      ++_settingsVersion;
+    }
     else if (keyString == "cycles:background:transparent") {
       _renderParam->SetTransparentBackground(VtValue::Cast<bool>(value).GetWithDefault(false) ? 1 : 0);
       ++_settingsVersion;

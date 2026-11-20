@@ -7,6 +7,8 @@
 
 #include "hydra/config.h"
 
+#include <vector>
+
 #include <pxr/base/gf/camera.h>
 #include <pxr/imaging/hd/camera.h>
 #include <pxr/imaging/hd/timeSampleArray.h>
@@ -41,6 +43,7 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
  private:
   PXR_NS::GfCamera _data;
   PXR_NS::HdTimeSampleArray<PXR_NS::GfMatrix4d, 2> _transformSamples;
+  std::vector<PXR_NS::GfMatrix4d> _motionTransforms; /* evenly over the shutter, when motion blur is on */
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

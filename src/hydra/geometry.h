@@ -34,6 +34,16 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
                         bool &rebuild) = 0;
 
   CyclesBase *_geom = nullptr;
+  /* Motion blur for this sync (HdCyclesSession): steps evenly over the shutter, 0 = none. */
+  int _motionSteps = 0;
+  float _shutterOpen = 0.0f;
+  float _shutterClose = 0.0f;
+  float MotionTime(const int step) const
+  {
+    return _motionSteps > 1 ? _shutterOpen + (_shutterClose - _shutterOpen) * float(step) /
+                                                 float(_motionSteps - 1) :
+                              0.0f;
+  }
   std::vector<CCL_NS::Object *> _instances;
 
  private:
