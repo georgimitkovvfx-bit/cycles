@@ -80,7 +80,7 @@ render session, and Houdini restarts the viewport render when they change (they 
 
 | Setting | USD attribute |
 |---|---|
-| Device | `cycles:device` |
+| Device, GPU Devices, Use CPU Too | `cycles:device`, `cycles:gpu_devices`, `cycles:use_cpu_too` |
 | Threads | `cycles:threads` |
 | Open Shading Language | `cycles:shading_system` |
 | Start at Low Resolution | `cycles:use_resolution_divider` |
@@ -110,7 +110,14 @@ well.
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Device | `cycles:device` | Automatic (Best GPU) | Device to render with. Automatic uses the best available GPU (OptiX, then CUDA, HIP, oneAPI, Metal) and falls back to the CPU. Choices: Automatic (Best GPU) (`AUTO`), GPU - OptiX (`OPTIX`), GPU - CUDA (`CUDA`), GPU - HIP (`HIP`), GPU - oneAPI (`ONEAPI`), CPU (`CPU`). Also in the viewport display options. **Restarts the render.** |
+| GPU Devices | `cycles:gpu_devices` | (empty) | GPUs of the chosen Device type to render with, like the device checkboxes of Blender's preferences: comma separated indices starting at 0 (`0,2`), or parts of their names or PCI bus ids (`RTX 4090`, `2d:00`). Empty or `*` uses all of them. When no GPU matches, all GPUs are used and a warning is printed (also in the husk log). Disabled when Device is CPU. Also in the viewport display options. **Restarts the render.** |
+| Use CPU Too | `cycles:use_cpu_too` | Off | Render with the CPU together with the GPUs, like enabling the CPU in Blender's Cycles Render Devices. Like in Blender, only final (husk) renders use it, and one CPU thread is kept free for each GPU; the viewport renders on the GPUs only. Disabled when Device is CPU. **Restarts the render.** |
 | Open Shading Language | `cycles:shading_system` | Off | Use Open Shading Language. On the GPU only OptiX supports it. Also in the viewport display options. **Restarts the render.** |
+
+The device actually used is shown in the viewport's render stats and in husk's render stats
+(`cyclesDevice`): a GPU name, or the GPUs and the CPU joined by `+` with Use CPU Too. A farm
+machine with several GPUs can run one husk job per GPU with GPU Devices `0`, `1`, ... GPU Devices
+and Use CPU Too were checked in husk renders; changing them in a running viewport is *untested*.
 
 ### Sampling > Render
 
@@ -266,7 +273,7 @@ The **Motion Blur** toggle in the panel header turns the panel on; the other set
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Motion Blur | `cycles:integrator:motion_blur` | Off | Render motion blur over the shutter of the camera (Shutter Open and Close on the Camera LOP, in frames), from animated transforms, points and instances, velocities and accelerations of points and instances, and velocity fields of volumes (vel, v or velocity). The Vector pass is empty with motion blur, like in Blender. Also in the viewport display options. |
-| Motion Steps | `cycles:motion_steps` | 1 | Accuracy of motion blur of transforms, points and instances: more steps use more memory (2^steps + 1 motion samples over the shutter, like Blender's object motion steps). |
+| Motion Steps | `cycles:motion_steps` | 1 | Accuracy of motion blur of transforms, points and instances: more steps use more memory (2^steps + 1 motion samples over the shutter, like Blender's object motion steps). Objects can have their own transform and deformation samples instead (Render Geometry Settings LOP, see [motion-blur.md](motion-blur.md#transform-and-deformation-samples)). |
 
 ### Film
 
@@ -305,6 +312,19 @@ The **Transparent** toggle in the panel header turns the panel on; the other set
 | Depth | `cycles:film:mist_depth` | 100 | Distance over which the mist effect fades in. |
 | Falloff | `cycles:film:mist_falloff` | 1 | Type of transition used to fade mist (Blender: 1 linear, 2 quadratic, 0.5 inverse quadratic). |
 
+### Override
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Material Override | `cycles:material_override` | (empty) | Renders every surface with one material, like Blender's View Layer Material Override or Karma's override material: `clay` for a grey Diffuse BSDF (Blender's default diffuse color), or the path of a material prim used instead of each whole material. Empty renders the materials. |
+
+`clay` replaces only the surface of each material: displacement and volumes are kept, so shapes
+and volumes match the beauty render. With a material path, every material renders as that whole
+material, like in Blender. Emission is overridden too, like in Blender. Lights, dome light world
+materials and materials without a surface (volume-only materials) keep theirs. Changing the
+setting, or editing the override material, rebuilds the materials of the running render without
+a restart. `clay` was checked in renders (CPU and OptiX); a material path is *untested*.
+
 ### Performance > Threads
 
 | Setting | USD attribute | Default | Description |
@@ -341,6 +361,20 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
 | Auto Generate | `cycles:auto_texture_cache` | Off | Generate missing cache files when rendering. **Restarts the render.** |
 | Cache Directory | `cycles:texture_cache_path` | (empty) | Directory of the cache files, absolute or relative to each image. Empty uses a blender_tx folder next to each image. **Restarts the render.** |
 
+### Performance > Farm
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Abort Without GPU | `cycles:abort_no_gpu` | Off | Fail the husk render when it would run on the CPU because no GPU of the chosen Device works (also when Device is CPU), instead of silently rendering on the CPU. With Use CPU Too the render still counts as a GPU render. |
+| Abort on Missing Textures | `cycles:abort_missing_texture` | Off | Fail the husk render when an image texture, environment or light texture file (or a UDIM tile) of the scene does not exist, instead of rendering it magenta. Textures of materials that no object uses are not checked. |
+
+When a farm abort applies, husk stops with `Delegate fatal error (1) detected` and exit code 1, and
+writes no image, like Karma's **Abort on Missing Texture** and **Abort if No GPU Device**. The
+reason is printed before it, at the default husk verbosity, for example
+`ERROR: Cycles render aborted: missing texture D:/tex/wood.exr`. Karma's own
+`karma:global:abortmissingtexture` and `karma:global:abortnogpudevice` work too (see
+[Karma render settings](#karma-render-settings)).
+
 ### Notes on the reference
 
 - **Path guiding:** the Path Guiding panel is present, but the shareable build is made without path
@@ -371,9 +405,9 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the UV map, at the render resolution. Empty renders the camera view. |
-| Instance | `cycles:bake_instance` | 0 | Instance of an instanced Bake Object to bake: its instance index in the point instancer (the `instanceId` AOV). |
-| UV Map | `cycles:bake_uv_map` | (empty) | UV primvar the image maps, like Blender's active UV map (e.g. `uv2`); the mesh exports it for the bake even when no shader reads it. Empty uses the default UV map (`st`, `uv`, then the first texture coordinate primvar). Tangent space normals use per triangle tangents for maps other than the default one. |
-| Selected to Active | `cycles:bake_use_selected_to_active` | off | Bakes the shading of the Source prims onto the Bake Object, like Blender's Selected to Active: a ray from each pixel's point of the Bake Object goes inwards along its normal (smooth faces: the interpolated vertex normal) and the Source surface it hits is shaded. |
+| Instance | `cycles:bake_instance` | 0 | Instance of an instanced Bake Object to bake: its instance index in the point instancer (the `instanceId` AOV). *Untested.* |
+| UV Map | `cycles:bake_uv_map` | (empty) | UV primvar the image maps, like Blender's active UV map (e.g. `uv2`); the mesh exports it for the bake even when no shader reads it. Empty uses the default UV map (`st`, `uv`, then the first texture coordinate primvar). Tangent space normals use per triangle tangents for maps other than the default one. *Untested.* |
+| Selected to Active | `cycles:bake_use_selected_to_active` | off | Bakes the shading of the Source prims onto the Bake Object, like Blender's Selected to Active: a ray from each pixel's point of the Bake Object goes inwards along its normal (smooth faces: the interpolated vertex normal) and the Source surface it hits is shaded. *Untested.* |
 | Source | `cycles:bake_source` | (empty) | Prims baked from (Blender's selected objects): prim paths with the meshes below them, or USD collections (`/prim.collection:name`), separated by spaces. The Bake Object itself is skipped. |
 | Cage Object | `cycles:bake_cage_object` | (empty) | Mesh the rays start from, with the same triangles as the Bake Object; rays go from the cage point to the Bake Object point. Empty uses the Extrusion. |
 | Extrusion | `cycles:bake_cage_extrusion` | 0 | Inflates the Bake Object along its normals by this distance (world units) for the ray starts, so Source surfaces outside it are hit. |
@@ -390,6 +424,9 @@ Glossy Color give albedo maps, Normal gives normals (see Normal Space), Emit, AO
 and light groups work too. Pixels outside the UV islands have zero alpha. Render it with husk or
 the USD Render ROP as usual (the camera is still needed by the render settings but not used).
 
+Instance, UV Map and Selected to Active (a sub-panel of the Bake panel with a header toggle, like
+Blender's) are *untested*: they are built, but no bake has been rendered with them yet.
+
 Selected to Active casts the rays on the CPU (Embree) when the render starts, also for GPU renders. Its pixels are not anti-aliased (no ray differentials, like Blender's). The Bake Object stays in the scene: hide it from shadow and indirect rays (Cycles object visibility) when it encloses the Source. Instanced prims under a Source path are matched by their Hydra prim path.
 
 ## Settings without a UI
@@ -401,7 +438,40 @@ The delegate reads a few more settings that have no parameter in the generated U
 | `cycles:sample_offset` | int | Sample to start from; a value above 0 renders a subset of the samples, from that sample on |
 | `cycles:integrator:<socket>`, `cycles:film:<socket>`, `cycles:background:<socket>` | any | Every socket of Cycles' Integrator, Film and Background nodes can be set by its Cycles name, also those that are not in the UI |
 | `disableMotionBlur` | bool | USD's render settings attribute: turns motion blur off for the render |
+| `instantaneousShutter` | bool | USD's older name of `disableMotionBlur`: also turns motion blur off. *Untested* |
+| `disableDepthOfField` | bool | USD's render settings attribute: renders every camera without depth of field (restarts the render when it changes). *Untested* |
 | `shutter:open`, `shutter:close` | double | Shutter interval in frames, relative to the current frame. The Houdini viewport and `husk` pass the camera's shutter this way; without these settings the first camera with an open shutter is used |
 
 Houdini also passes `houdini:viewport`, `houdini:fps` and the stage's `metersPerUnit` to the
 delegate itself; there is nothing to set for these.
+
+## Karma render settings
+
+A scene set up for Karma (a Karma Render Settings LOP, Karma's tab of the Render Geometry
+Settings LOP, Karma light properties) renders with Cycles close to the Karma setup: these Karma
+settings set their Cycles equivalent while the Cycles setting is not authored. An authored Cycles
+setting always wins, also when it comes later in the network than the Karma one, and removing it
+brings the Karma value back. Without this, Karma's diffuse limit of 1 against Cycles' 7 alone
+made plain lighting differ.
+
+| Karma setting | USD attribute | Cycles setting it sets |
+|---|---|---|
+| Path Traced Samples | `karma:global:pathtracedsamples` | Max Samples |
+| Diffuse, Reflection, Refraction, Volume Limit | `karma:object:diffuselimit`, `reflectlimit`, `refractlimit`, `volumelimit` (on the render settings) | Max Bounces > Diffuse, Glossy, Transmission, Volume; Total is their sum (Karma has no total limit) |
+| Color Limit (indirect) | `karma:global:colorlimit`, or `colorlimitindirect` when `colorlimitindlinked` is off | Clamping > Indirect Light (the direct clamp is left alone: Cycles' direct clamp also clamps emission and the background) |
+| Denoiser image filter | `karma:global:imagefilter` | Denoise on or off, and the Denoiser for OIDN or OptiX |
+| Dicing Quality Scale | `karma:global:dicingqualityscale` | Dicing Rate Render (inverse: quality 2 is half the rate) |
+| Offscreen Quality | `karma:global:offscreenquality` | Offscreen Scale (inverse) |
+| Dicing Camera | `karma:global:dicingcamera` | Dicing Camera |
+| Light Sampling Mode | `karma:global:light_sampling_mode` | Light Tree (off for Uniform) |
+| Random Seed | `karma:global:randomseed` | Seed |
+| Abort on Missing Texture, Abort if No GPU Device | `karma:global:abortmissingtexture`, `abortnogpudevice` | Abort on Missing Textures, Abort Without GPU |
+| Enable Motion Blur | `karma:global:enablemblur` | `disableMotionBlur` (inverse). Karma's LOP already writes `disableMotionBlur`; this covers stages that author the Karma attribute. *Untested* |
+| Enable Depth of Field | `karma:global:enable_dof` | `disableDepthOfField` (inverse). *Untested* |
+
+Karma's object and light settings that are read the same way are listed in
+[objects.md](objects.md#karma-object-settings) and [lights.md](lights.md#karma-light-settings).
+The rows without a mark were checked against the same Cycles settings authored directly (OptiX
+and CPU; the light sampling mode and the aborts on the CPU only), and a default Karma Render
+Settings LOP renders with Karma's 128 samples. Other Karma settings (pixel filter, ray bias,
+Karma XPU options) are not read.

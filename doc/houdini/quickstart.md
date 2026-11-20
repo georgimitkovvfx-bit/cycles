@@ -100,10 +100,15 @@ supported GPU is found. To change it:
   husk -R Cycles scene.usd
   ```
 
-If the chosen device is not available, Cycles silently renders on the CPU. To see which device was
-used, run `husk` with the environment variable `CYCLES_LOGGING=1`: the log prints a line starting
-with `Path tracing on:` followed by the device name. GPU and CPU renders of the same scene match;
-only the noise pattern differs.
+If the chosen device is not available, Cycles silently renders on the CPU; turn on **Abort
+Without GPU** (Performance > Farm) to make husk fail instead. The device used is shown in the
+render stats (`cyclesDevice`), or run `husk` with the environment variable `CYCLES_LOGGING=1`: the
+log prints a line starting with `Path tracing on:` followed by the device name. GPU and CPU
+renders of the same scene match; only the noise pattern differs.
+
+With several GPUs, **GPU Devices** (Device panel) picks which ones render, and **Use CPU Too**
+adds the CPU to husk renders, like Blender's Cycles Render Devices preferences. See
+[render-settings.md](render-settings.md#device).
 
 Changing the device restarts the render.
 

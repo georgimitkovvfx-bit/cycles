@@ -15,19 +15,22 @@ or change it will find the internals in [developers.md](developers.md).
 | Area | What is supported |
 |---|---|
 | Rendering | Solaris viewport (free view and through a camera), `husk`, USD Render ROP, TOPs (USD Render Scene, USD Render Files, ROP Fetch) |
-| Devices | NVIDIA GPUs through OptiX or CUDA, chosen automatically, and the CPU. AMD (HIP) and Intel (oneAPI) GPUs are not enabled |
+| Devices | NVIDIA GPUs through OptiX or CUDA, chosen automatically, and the CPU; a choice of GPUs and **Use CPU Too** for husk. AMD (HIP) and Intel (oneAPI) GPUs are not enabled |
 | Denoising | OpenImageDenoise (GPU or CPU) and the OptiX denoiser; DLSS Ray Reconstruction for the viewport in builds made with the DLSS SDK |
 | Shaders | All user-facing Cycles shader nodes (99 nodes) as VOP nodes inside a **USD Cycles Material Builder**, laid out like Blender's shader editor |
 | Other materials | Karma and MaterialX materials (Standard Surface, OpenPBR, glTF PBR, about 100 MaterialX nodes, MaterialX volumes) and UsdPreviewSurface are translated to Cycles; Houdini `.rat` and Copernicus (`op:`) textures |
 | OSL | Open Shading Language on the CPU and with OptiX, a **Cycles Script** node for `.osl`/`.oso` files, and Houdini's OSL Generic Shader Builder |
-| Lights | USD sphere, rect, disk, distant and dome lights, matching Karma's intensities, and cylinder lights as mesh lights; light and shadow linking; per-light Cycles settings and light groups |
-| Cameras | USD perspective and orthographic cameras with depth of field and exposure; Cycles panoramic cameras (equirectangular, fisheye, mirror ball, cubemap face, central cylindrical), custom OSL lenses, aperture blades and rolling shutter |
-| Objects | Meshes (with adaptive subdivision and creases), curves of every USD basis, points, Gaussian splats, volumes, point instancers and native instances, implicit USD shapes; per-object ray visibility, holdout, shadow catcher and more (Karma's render visibility and holdout mode work too) |
+| Lights | USD sphere, rect, disk, distant and dome lights, matching Karma's intensities, and cylinder lights as mesh lights; point-instanced lights; geometry lights (Geometry Light LOP, *untested*); light and shadow linking; per-light Cycles settings and light groups |
+| Cameras | USD perspective and orthographic cameras with depth of field and exposure; Cycles panoramic cameras (equirectangular, fisheye, mirror ball, cubemap face, central cylindrical), custom OSL lenses, aperture blades, rolling shutter and shutter curve |
+| Objects | Meshes (with adaptive subdivision and creases), curves of every USD basis, points, Gaussian splats, volumes, point instancers and native instances, implicit USD shapes, TetMesh and NURBS (*untested*); per-object ray visibility, holdout, shadow catcher and more (Karma's render visibility, holdout mode and other object settings work too) |
 | Volumes | VDB files, `.bgeo` volumes, and VDB or native Houdini volumes made in SOPs |
-| AOVs | Blender's view layer passes, Karma's common light path expressions, Cryptomatte, light groups, shader AOVs, primvar AOVs, split image per render var |
-| Motion blur | Transforms, deforming meshes, curves, points, instancers, volumes with velocity fields and the camera |
-| Render settings | A **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP and Cycles options in the viewport's display options, all laid out like Blender's render properties; **Cycles (Setup)** and **Cycles Bake (Setup)** Tab tools |
-| Baking | Texture baking like Blender's (any render var, margin, tangent space normal maps) |
+| AOVs | Blender's view layer passes, Karma's common light path expressions, Cryptomatte, light groups (also one per light in one click), shader AOVs, primvar AOVs, split image per render var; USD render passes (`husk --pass`) |
+| Motion blur | Transforms, deforming meshes, curves (also their widths), points, instancers, volumes with velocity fields and the camera; Karma-style transform and deformation samples and velocity blur modes, shutter curve and zoom blur (*untested*) |
+| Render settings | A **Cycles Render Settings LOP**, a Cycles tab on the stock Render Settings LOP and Cycles options in the viewport's display options, all laid out like Blender's render properties; **Cycles (Setup)** and **Cycles Bake (Setup)** Tab tools; material override (clay renders), farm aborts, Karma render settings used as fallbacks |
+| Baking | Texture baking like Blender's (any render var, margin, tangent space normal maps); UV map, instance and Selected to Active (*untested*) |
+
+Features marked *untested* are built into this version but have not been checked in a render
+yet. They are expected to work as described; report what you find.
 
 ## Pages
 

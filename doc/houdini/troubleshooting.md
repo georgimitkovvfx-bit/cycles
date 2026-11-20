@@ -54,6 +54,9 @@ packages; this build's registration fixes it.
   (GTX 10 series, AMD, Intel) render on the CPU. HIP and oneAPI devices are not enabled in this
   build; choosing them falls back to the CPU.
 - A device chosen explicitly that is not available also falls back to the CPU.
+- **GPU Devices** names no GPU of this machine: all GPUs are used, and husk prints
+  `WARNING: No GPU matches cycles:gpu_devices ...`.
+- On a farm, turn on **Abort Without GPU** (Performance > Farm) so such jobs fail instead.
 
 ### Changing a setting does nothing in the viewport
 
@@ -111,6 +114,18 @@ license error, run the Python Shell version inside Houdini instead.
 
 Use **Reload Textures** in the viewport's renderer menu, or edit the material.
 
+### A husk job fails with "Delegate fatal error (1) detected"
+
+A farm abort applied (Performance > Farm, or Karma's abort settings on a Karma Render Settings
+LOP): the line before it, `ERROR: Cycles render aborted: ...`, names the missing texture or says
+that no GPU works. See [render-settings.md](render-settings.md#performance--farm).
+
+### A scene set up for Karma renders differently
+
+Cycles reads Karma's common render, object and light settings when the Cycles ones are not
+authored (see [render-settings.md](render-settings.md#karma-render-settings)). An authored Cycles
+setting wins over the Karma one, also from an older Cycles Render Settings LOP in the network.
+
 ## Known issues
 
 These are the open limits of the current version that affect users.
@@ -118,6 +133,9 @@ These are the open limits of the current version that affect users.
 **Lights and world**
 
 - Cylinder lights are mesh lights: shadow enable, shaping (IES, cone) and textures do not apply to them.
+- Geometry lights (*untested*): with Material Glow Tints Light or Independent, the light's
+  Intensity and Color are not applied; curves and points are not light sampled. Instanced lights
+  are not motion blurred.
 - Dome lights with a Z pole axis (`poleAxis` of DomeLight_1) are not supported.
 - At most 64 light linking and 64 shadow linking sets; point instances use their prototype's links.
 
@@ -129,8 +147,8 @@ These are the open limits of the current version that affect users.
 - MaterialX: Cycles' noise instead of MaterialX's noise patterns, approximated OpenPBR coat, layering
   as an add, no matrix nodes, hex tiling, some compositing nodes or volume materials. Editing a
   parameter rebuilds the whole shader.
-- Copernicus (`op:`) textures update after a material edit or Reload Textures, not when the COP
-  network changes; husk renders of USD files cannot read them.
+- Copernicus (`op:`) textures follow COP changes in the viewport (*untested*); husk renders of USD
+  files cannot read them.
 - Ramps: Houdini's monotone cubic keys approximate Blender's curve handles; Min X and Max X stay
   visible. Animated angles in hip files saved before angles were shown in degrees stay in radians.
   The Raycast node has 4 attribute slots.
@@ -145,15 +163,17 @@ These are the open limits of the current version that affect users.
 
 **Geometry**
 
-- Matrix, string and int64 primvars are not exported. Per-object settings are not read per
-  instance.
-- Gaussian splats: only their positions are motion blurred; spherical harmonics above degree 3 are
-  ignored.
+- Matrix, string and int64 primvars are not exported. Per-object settings on native instances
+  work; per-point ones on point instancers and nested instancers are untested.
+- Gaussian splats: spherical harmonics are not motion blurred, and degrees above 3 are ignored.
+- Render passes: natively instanced geometry ignores the visibility and matte collections.
 
 **Motion blur**
 
-- Curve and point widths do not blur; instancers that change their instance count within the
-  shutter get no motion; animated focal length gives no zoom in the Vector pass.
+- Point widths do not blur; instancers that change their instance count within the shutter get
+  no motion; Karma's Linear Blur style is not supported; zoom blur ignores an animated aperture.
+- Transform and deformation samples, velocity blur modes, the shutter curve and zoom blur are
+  *untested*.
 
 **AOVs**
 

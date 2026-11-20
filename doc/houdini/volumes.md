@@ -18,7 +18,9 @@ their grids from Houdini, so no files need to be written first.
 ## Shading volumes
 
 A volume without a material renders with Cycles' default volume shader, which shows the `density`
-field as grey smoke, like Karma does.
+field as grey smoke, like Karma does. A volume shader that reads no field (a constant absorption
+or emission) fills the bounds of the density field (or of the first field), like Karma fills the
+field's extent.
 
 To shade a volume, assign a material with a volume shader:
 
@@ -90,7 +92,9 @@ be hidden from volume scattering with their own **Volume Scatter** toggle.
 
 With Motion Blur on, volumes with a velocity field blur along the velocity over the camera shutter.
 Velocities are in units per second, as Houdini writes them, and the frame rate comes from Houdini.
-The velocity field is only loaded while motion blur is on. See [motion-blur.md](motion-blur.md).
+The velocity field is only loaded while motion blur is on. Velocity blur is a deformation: it
+follows the object's Deformation Samples, and Deformation Samples 1 turns it off (*untested*). See
+[motion-blur.md](motion-blur.md).
 
 ## Limits
 

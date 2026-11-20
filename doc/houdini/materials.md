@@ -68,7 +68,8 @@ Transparent BSDF. The others refract with the IOR relative to the medium on the 
 (water to glass: 1.5 / 1.33), so there is no dark ring of total internal reflection at the
 interfaces. Like Blender's proposed Volume Stack Priority (PR #118478). Limits: the camera must
 start outside the media, at most 3 nested media are tracked, volume absorption of a masked
-medium still applies where media overlap, and shadow rays ignore priorities.
+medium still applies where media overlap, and shadow rays ignore priorities. Nested dielectrics
+are *untested*.
 
 Karma's per-object **Dielectric Priority** (`primvars:karma:object:dielectricpriority`, 0 is the
 highest) is not read: Cycles' priority belongs to the material, and one material can be bound to
@@ -149,8 +150,10 @@ other file. Delete that folder to free the space.
   read all tiles found next to the file.
 - **Missing files** render with the node's missing color.
 - **Copernicus and COP images** (`op:` paths, in the Houdini session): converted with Houdini's
-  image library into the same cache folder as `.rat` files each time the material (or light) is
-  synced. A changed COP network shows after a material edit or **Reload Textures**.
+  image library into the same cache folder as `.rat` files, and converted again only when the COP
+  cooks a different image. When the COP network changes (or the frame changes, for a time
+  dependent COP), Houdini tells the render and the images update without a material edit, like
+  with Karma (*untested* in the viewport). **Reload Textures** converts them again too.
 - **Texture cache and size limit:** see [rendering.md](rendering.md#texture-cache).
 - **Changed files:** a texture file that changes on disk is reloaded the next time the material is
   edited. To reload without editing anything, use **Reload Textures** in the viewport's renderer
@@ -178,7 +181,17 @@ The delegate expands the node into standard nodes: Steps + 1 copies of the nodes
 each reading the texture coordinates of one layer. In those copies, the inputs that read UVs
 (unlinked texture Vector inputs, links from a Texture Coordinate or UV Map UV output, or from the
 same output as the node's own Vector input) read the shifted coordinates; procedural textures on
-Generated or Object coordinates are not shifted. The silhouette of the mesh does not change.
+Generated or Object coordinates are not shifted. The silhouette of the mesh does not change. The
+Parallax Occlusion node is *untested*.
+
+### Geometry node: Pointiness and Random Per Island
+
+The **Geometry** node's **Pointiness** (convex edges bright, concave dark, for edge wear and dirt
+masks) and **Random Per Island** (a random value per connected part of a mesh) work on meshes like
+in Blender. They are computed only when a shader uses them, and again when the points move or the
+topology changes. Subdivision meshes get them on the control mesh, interpolated by the
+subdivision, like Blender. Pointiness matches Blender's on the same mesh; Random Per Island has the
+same islands as Blender, but different values per island.
 
 ### AOV Output node
 
@@ -256,11 +269,24 @@ it into a Cycles shader graph.
 - `chiang_hair_bsdf`: the TT and TRT roughness follow the R roughness with the default scales (0.5
   and 2), and the average of the three lobe tints weights the whole BSDF. Karma XPU does not render
   this BSDF; Karma CPU does.
+- **Karma Hair** (`kma_hair`): Base darkens the dye, Thickness Scale scales the absorption,
+  Diffuse mixes in a Diffuse BSDF of Diffuse Color, and Tint weights the whole hair by its average
+  (Cycles closures have one scalar weight, so a strongly colored Tint only darkens). These four
+  apply when they are values; linked, they keep their authored value. MaterialX nodes linked into
+  other Karma Hair inputs (for example an image into Base Color) are translated like in a MaterialX
+  material. Roughness Advanced is not supported (a warning says so): Cycles' TT and TRT roughness
+  scales are fixed at Karma's defaults.
 - Matrix nodes and hex tiling (`hextiledimage`, rendered as a plain image) are not supported. Unsupported nodes output zero and print a warning.
 - Editing any parameter of a MaterialX material rebuilds the whole Cycles shader.
 
 To see what the delegate receives, set the environment variable `HD_CYCLES_MTLX_DEBUG=1`; each
 MaterialX document is then printed to the console.
+
+## Material override
+
+To check the lighting with every material replaced, for example a clay render, set **Material
+Override** in the render settings (Override panel) to `clay` or to a material prim path. See
+[render-settings.md](render-settings.md#override).
 
 ## Materials and Cryptomatte
 

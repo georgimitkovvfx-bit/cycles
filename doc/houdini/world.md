@@ -32,10 +32,12 @@ Input): its Color is the dome light's texture times its Color, Intensity and Exp
 alone without a texture), oriented like the dome. Mix it with a sky, blur it, or show a different
 background to the camera with a Light Path node, while the dome's HDRI keeps lighting the scene.
 The Cycles tab's Exposure, Saturation and Rotation apply to the world material, not again to the
-Dome Texture. In a material that is not a world, the node is black.
+Dome Texture. In a material that is not a world, the node is black. The Dome Texture node is
+*untested*.
 
 The **Exposure**, **Saturation** and **Rotation** settings in the same World folder adjust the
-world quickly, for the dome's own texture or for its world material: see [lights.md](lights.md).
+world quickly, for the dome's own texture or for its world material: see [lights.md](lights.md#world)
+(*untested*).
 
 The dome light still decides everything that is about the light: ray visibility (Diffuse,
 Glossy, Transmission, Volume Scatter on its Cycles tab), Multiple Importance, Max Bounces, its
@@ -143,8 +145,8 @@ with a Sky Texture through a Background shader, like Blender's default sky setup
 | Date (Y M D), Local Time | 2026 6 21, 12 | Local clock time in hours (13.5 = 1:30 pm) |
 | UTC Offset | 2 | Time zone of the local time, daylight saving included |
 | North Offset | 0 | Rotates the compass around +Y |
-| Distant Light | Off | Also creates a Distant Light shining from the sun, with Sun Size as its angle; it follows the sun position parameters. It adds to the sun disc: turn Sun Disc off for a single sun (e.g. to light link the sun or use it in a light group) |
-| Light Path, Intensity, Color | `/lights/$OS_sun`, 1, white | The distant light. It does not follow a transform of the dome light or its Cycles Rotation |
+| Distant Light | Off | Also creates a Distant Light shining from the sun, with Sun Size as its angle; it follows the sun position parameters. It adds to the sun disc: turn Sun Disc off for a single sun (e.g. to light link the sun or use it in a light group). *Untested* |
+| Light Path, Intensity, Color | `/lights/${OS}_sun`, 1, white | The distant light. It does not follow a transform of the dome light or its Cycles Rotation |
 | **Fog** | | |
 | Fog | Off | Fills a box around the scene with a scattering volume, lit by the sky and sun through its sides |
 | Fog Path | `/fog/$OS` | The fog box (its material is `<path>_material`) |

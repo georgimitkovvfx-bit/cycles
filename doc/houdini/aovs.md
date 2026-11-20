@@ -127,6 +127,19 @@ dome light, see [lights.md](lights.md#light-group)) or of the Render Geometry Se
 (emissive objects, see [objects.md](objects.md#shading--light-group)), then add the same name
 here. Lights and objects without a light group are in none of these images.
 
+**Light Group per Light** (toggle above the list) sets up a light mix in one click, like V-Ray's
+or Corona's LightMix: every light without a Light Group gets its own group named after the light
+prim, dome lights go into `Environment`, and every other object without a group (the emissive
+ones are the ones that matter) into `Rest`, with a `Combined_<name>` render var for each group.
+Lights and objects that already have a group keep it, and lights with a group get its render var.
+The groups of all lights then add up to the beauty. Notes:
+
+- Only lights above the Cycles Render Settings LOP in the network are found.
+- Lights inside instanceable prims are found; those without a group cannot get one (instance
+  proxies cannot be edited) and a warning names them. Their light is in no group.
+- Lights with the same name under different parents share one group; a warning names them.
+- The warnings show on the node inside the LOP (`aovs`), not on the LOP itself.
+
 Light group images are not denoised.
 
 ### Split Render Product by Render Var
@@ -135,6 +148,27 @@ With **Split Render Product by Render Var** on, the LOP creates one render produ
 named `renderproduct_<AOV>`, and each writes its own image: the Output Picture with `_<AOV>` added
 before the extension, for example `shot.0001_DiffDir.exr`. This works like the same option of the
 Karma Render Settings LOP.
+
+## Render passes
+
+USD **render pass** prims (`UsdRenderPass`, for example from Houdini's Render Pass LOP) work with
+Cycles: render one with `husk --pass <name>` or pick it in the viewport's Render Pass menu. Like
+for Karma, the pass's collections choose what renders:
+
+| Pass collection | Effect in Cycles |
+|---|---|
+| `prune` | The prims are removed from the render |
+| `renderVisibility` | Geometry and lights not in it are invisible |
+| `cameraVisibility` | Geometry not in it is hidden from the camera (Camera ray visibility off), but still casts shadows and shows in reflections |
+| `matte` | Geometry in it is a holdout (zero alpha), like Karma's matte objects |
+
+The pass's `renderSource` gives the render settings, as husk always does. Collections with
+`includeRoot`, include and exclude lists or membership expressions work. Checked with `husk --pass`
+on OptiX and the CPU; the viewport's Render Pass menu is *untested*.
+
+Limits: geometry inside instanceable prims (native instances) ignores the visibility, camera
+visibility and matte collections; it is neither hidden nor matted per instance. Point instancer
+prototypes match by their prototype path.
 
 ## Authoring render vars yourself
 

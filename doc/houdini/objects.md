@@ -13,6 +13,8 @@ shaders can read, instancing, implicit shapes, curves, points and subdivision.
 | ParticleField3DGaussianSplat | Gaussian splats (see [Gaussian splats](#gaussian-splats)) |
 | Volume | Volume (see [volumes.md](volumes.md)) |
 | Sphere, Cube, Cone, Cylinder, Capsule, Plane | Implicit shapes, converted to meshes |
+| TetMesh | A mesh of its surface triangles (*untested*) |
+| NurbsCurves, NurbsPatch | Curves and meshes approximating the NURBS, made by Hydra like for Houdini GL (Storm) (*untested*) |
 | PointInstancer, native instances | Cycles instances |
 
 Cycles renders the default and render purposes by default (proxy and guide prims are left out);
@@ -37,12 +39,17 @@ The tables are generated from the same layout as the UI.
 
 ### Motion Blur
 
-The **Motion Blur** toggle in the panel header turns the panel on; Steps only applies when it is on.
+The **Motion Blur** toggle in the panel header turns the panel on; the other settings only apply
+when it is on. See [motion-blur.md](motion-blur.md#transform-and-deformation-samples) for how the
+sample settings work together.
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Motion Blur | `primvars:cycles:object:use_motion_blur` | On | Use motion blur for this object, when the Motion Blur render setting is on. Off, the object renders sharp at the shutter center and has no motion vectors |
 | Steps | `primvars:cycles:object:motion_steps` | 0 | Motion steps of this object: 2^steps + 1 motion samples over the shutter, for curved motion. 0 uses the Motion Steps render setting |
+| Transform Samples | `primvars:cycles:object:transform_samples` | 0 | Number of samples of the transform over the shutter, like Karma's Transform Time Samples. 1 is no transform blur, 0 uses the motion steps. Even numbers are rounded up to the next odd one, so that one sample is at the frame. *Untested* |
+| Deformation Samples | `primvars:cycles:object:deform_samples` | 0 | Number of samples of the points over the shutter, like Karma's Geometry Time Samples. 1 is no deformation blur, 0 uses the motion steps. *Untested* |
+| Samples from Stage | `primvars:cycles:object:samples_from_stage` | Off | Take the number of transform and deformation samples from the time samples of the stage inside the shutter, like Karma's Motion Samples from Stage. Off by default, unlike in Karma, so existing scenes keep their motion steps. *Untested* |
 
 ### Visibility > Ray Visibility
 
@@ -120,8 +127,31 @@ The **Adaptive Subdivision** toggle in the panel header turns the panel on. See
 |---|---|---|---|
 | Step Size | `primvars:cycles:object:volume_step_size` | 0 | Distance between volume samples in object space, with Biased volume rendering. 0 computes it from the voxel size. See [volumes.md](volumes.md#volume-settings) |
 
-**Limit:** per-object settings are read per prim, not per instance. All instances of a point
-instancer prototype share the prototype's settings.
+**Instances:** a setting authored on an instanceable prim (or a parent of it) applies to the
+geometry of that native instance, for example a Light Group or Holdout set with a Render Geometry
+Settings LOP on an instanced asset. UsdImaging moves such settings onto the instancer, and the
+delegate applies them per instance where the prototype has no setting of its own (the
+prototype's value wins, like for shader primvars). This was checked for native instances;
+per-point `primvars:cycles:object:*` primvars of point instancers take the same path but are
+*untested*, as are nested instancers.
+
+### Karma object settings
+
+Karma's settings on the Render Geometry Settings LOP (its Karma tab) are read while the Cycles
+setting of the same object is not authored:
+
+| Karma setting | USD attribute | Cycles setting |
+|---|---|---|
+| Render Visibility | `primvars:karma:object:rendervisibility` | Ray Visibility (above) |
+| Holdout Mode | `primvars:karma:object:holdoutmode` | Holdout (Matte) or Shadow Catcher (Background) |
+| Enable Motion Blur | `primvars:karma:object:mblur` | Motion Blur. *Untested* |
+| Dicing Quality | `primvars:karma:object:dicingquality` | Dicing Scale (inverse: quality 2 dices twice as finely; approximate). *Untested* |
+| Transform Time Samples, Geometry Time Samples, Motion Samples from Stage | `primvars:karma:object:xformsamples`, `geosamples`, `samplesfromstage` | Transform Samples, Deformation Samples, Samples from Stage. *Untested* |
+| Velocity Blur, Instance Velocity Blur | `primvars:karma:object:vblur`, `instance_vblur` | How velocities blur, see [motion-blur.md](motion-blur.md#velocity-blur-modes). *Untested* |
+| Instance Time Samples | `primvars:karma:object:instance_samples` (on a point instancer) | Motion samples of the instances. *Untested* |
+
+Karma's Linear Blur motion style has no Cycles equivalent: Cycles always blurs transforms with
+rotation.
 
 ## Primvars in shaders
 
@@ -206,8 +236,11 @@ Gaussian Splats SOP or a PLY file) render as Cycles Gaussian splats: `positions`
 (`radiance:sphericalHarmonicsCoefficients`, degree 0 to 3; higher degrees are cut at 3). Without
 coefficients a splat is mid grey (USD's DC signal of 0.5). Cycles stores the degree 1 to 3
 coefficients in 8 bits, clamped to [-1, 1]. Splats without a material use Cycles' default splat
-shader (the splat's view-dependent radiance as emission); a bound material replaces it. Animated splat
-positions (time samples) are motion blurred.
+shader (the splat's view-dependent radiance as emission); a bound material replaces it.
+
+With motion blur, animated splat positions blur, and so do animated scales, orientations and
+opacities (time samples, like in Karma; *untested*). They follow the Deformation Samples of the
+object. The spherical harmonics are taken at the frame.
 
 ## Subdivision
 

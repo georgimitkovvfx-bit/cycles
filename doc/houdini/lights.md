@@ -16,9 +16,42 @@ light source too.
 | Dome light | World background light | `texture:file` as a latitude-longitude environment map |
 | Cylinder light | Mesh light | Cycles has no cylinder light: the side of the cylinder (along X, `radius`, `length`) is an emissive tube with the light's radiance, like USD's cylinder light (no light from the caps). Supports color, intensity, exposure, normalize, light linking, the Cycles tab's ray visibility, light group and Multiple Importance; no shadow, spread, IES or texture settings |
 
-Mesh lights (the UsdLux mesh light API) and USD portal lights (`PortalLight`) are not supported;
-use an emissive material on the geometry instead, and a rect light with the Cycles **Portal**
-setting (below) as a portal.
+USD portal lights (`PortalLight`) are not supported; use a rect light with the Cycles **Portal**
+setting (below) as a portal. Geometry lights (mesh lights) are described
+[below](#geometry-lights).
+
+## Instanced lights
+
+Lights that are prototypes of a point instancer (an Instancer LOP whose prototype is a light, or
+an Xform holding one) or that are inside native instances render as one light per instance, at
+the light's transform times the instance's, like in Karma. The instances share the light's
+settings: ray visibility, light group and light linking. Scaled instances of sphere lights and of
+normalized lights get a light of their own, so their size and brightness follow the scale.
+
+Limits: instanced lights are not motion blurred, and normalized cylinder lights do not follow a
+per-instance scale.
+
+## Geometry lights
+
+Houdini's **Geometry Light** LOP (UsdLux `MeshLightAPI` or `LightAPI` on a mesh, curves or points
+prim) makes the geometry itself a light, like an emissive mesh in Blender. Cycles renders it as a
+mesh light (*untested*):
+
+- **Material Sync Mode** No Material Response (the default of the Geometry Light LOP), or no bound
+  material: the light's Color x Intensity x 2^Exposure (and color temperature) is the emission of
+  the surface, replacing its material. **Normalize** divides it by the surface area.
+- Material Glow Tints Light (the `MeshLightAPI` default) or Independent: the bound material is
+  kept, and its emission lights the scene. The light's Intensity and Color are not applied then
+  (exact for the defaults 1 and white).
+- Light and shadow linking of the geometry light work like for other lights, and its Cycles tab's
+  **Multiple Importance** and **Light Group** apply. A scene with only geometry lights gets no grey
+  default world.
+- Visibility to camera and other rays is the geometry's own (Render Geometry Settings LOP).
+
+Limits: emission is two-sided; curves and points emit but are not normalized, and Cycles only
+finds their light when rays hit them (no light sampling); volumes with `VolumeLightAPI` keep their
+own shader. Diffuse and specular multipliers, Karma's light contributions and shadow color do not
+apply to geometry lights. Normalized instances all use the area of the first instance.
 
 ## Intensity
 
@@ -37,9 +70,9 @@ The delegate converts the USD light attributes so that lights match Karma, both 
   `specular` of 0 turns off the light's diffuse or glossy contribution (like the ray visibility
   settings below); other values are ignored.
 
-Not read: shadow color, IES angle scale and normalization,
-and Karma-specific light attributes (`karma:light:*`). Use the Cycles ray visibility settings below
-for per-ray-type control.
+Not read: shadow color, IES angle scale and normalization, and most Karma-specific light
+attributes (see [Karma light settings](#karma-light-settings)). Use the Cycles ray visibility
+settings below for per-ray-type control.
 
 ## Cycles light settings
 
@@ -73,11 +106,21 @@ Angle and Cone Softness, Cast Shadow is Shadow > Enable.
 | Transmission | `inputs:cycles:light:visible_transmission` | On | Light contribution to transmission |
 | Volume Scatter | `inputs:cycles:light:visible_volume_scatter` | On | Light contribution to volume scattering |
 
+### Karma light settings
+
+These Karma light properties (Karma tab of the Light LOP) are used while the Cycles setting is not
+authored, like Karma's Render Light Geometry for Camera:
+
+| Karma setting | USD attribute | Cycles setting |
+|---|---|---|
+| Contributions | `inputs:karma:light:contribs` | Diffuse, Glossy (`reflect` and `coat`), Transmission (`refract`), Volume Scatter ray visibility; `sss` has no Cycles ray type. *Untested* |
+| Spread | `inputs:karma:light:spread` | Spread: Karma's 0 (parallel) to 1 (diffuse) as 0 to 180 degrees, linearly (approximate between the ends). *Untested* |
+
 ### Light Group
 
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
-| Light Group | `inputs:cycles:light:lightgroup` | (empty) | Light group the light belongs to. Render it with a light group pass on the Cycles Render Settings LOP, see [aovs.md](aovs.md#light-groups) |
+| Light Group | `inputs:cycles:light:lightgroup` | (empty) | Light group the light belongs to. Render it with a light group pass on the Cycles Render Settings LOP, see [aovs.md](aovs.md#light-groups); **Light Group per Light** there gives every light without a group its own |
 
 A dome light's light group also applies to the world background, so the environment lighting ends
 up in that group's pass.
@@ -91,6 +134,8 @@ up in that group's pass.
 | Exposure | `inputs:cycles:light:world_exposure` | 0 | Dome lights only: brightens or darkens the world in stops, the dome's own color and texture or its World Material (the strength of its Background shaders), on top of the light's Intensity and Exposure |
 | Saturation | `inputs:cycles:light:world_saturation` | 1 | Dome lights only: saturation of the world (0 gray, 2 doubled), the dome's color or the color of the Background shaders of its World Material |
 | Rotation | `inputs:cycles:light:world_rotation` | 0 | Dome lights only: turns the world around the light's +Y (its pole) in degrees, counterclockwise seen from above, on top of the light's transform (its texture, or the sky and environment textures of its World Material) |
+
+Exposure, Saturation and Rotation are *untested*.
 
 ## Light and shadow linking
 

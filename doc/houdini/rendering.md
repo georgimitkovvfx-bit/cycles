@@ -37,6 +37,20 @@ Environment variables that help with `husk`:
 **Threads:** the **Threads** setting (`cycles:threads`, Performance panel) limits the CPU threads
 of a `husk` render; 0 uses all cores.
 
+**Render passes:** `husk --pass <name>` renders a USD render pass with its prune, visibility and
+matte collections, see [aovs.md](aovs.md#render-passes).
+
+**Farm machines:**
+
+- **GPU Devices** (Device panel) picks the GPUs of a husk job, for example one job per GPU on a
+  multi-GPU machine; **Use CPU Too** adds the CPU to a husk render. See
+  [render-settings.md](render-settings.md#device).
+- **Abort Without GPU** and **Abort on Missing Textures** (Performance > Farm) fail the job with
+  exit code 1 instead of rendering on the CPU or with magenta textures. The reason is printed in
+  the husk log. See [render-settings.md](render-settings.md#performance--farm).
+- Scenes set up for Karma keep its samples, bounce limits, denoiser and aborts, see
+  [render-settings.md](render-settings.md#karma-render-settings).
+
 **Large images** are rendered in tiles, like in Blender: Cycles writes finished tiles to temporary
 files in the system's temporary folder and assembles the image at the end. Make sure that folder
 has space for very large renders.
@@ -116,6 +130,14 @@ All texture cache settings and the size limit restart the render when changed.
 **Changed texture files** are reloaded on the next material edit, or immediately with **Reload
 Textures** in the viewport's renderer menu (for example after overwriting a texture from another
 application).
+
+## Render stats
+
+The viewport's render stats overlay (and husk's render stats) shows the Cycles version, the
+samples done and the total, the estimated remaining time and the device used (the GPU name, or
+the device names joined by ` + ` with Use CPU Too). With Sample Subset on, the total is the
+subset's sample count. The husk stats (`cyclesSamples`, `cyclesDevice`) were checked; the viewport
+overlay is *untested* in the GUI.
 
 ## Performance and responsiveness
 

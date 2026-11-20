@@ -11,7 +11,8 @@ blur and exposure. Blender's extra camera settings are on the **Cycles** tab of 
 | Projection | `projection` | Perspective or orthographic camera (replaced by a Panorama Type, below) |
 | Focal Length, Horizontal/Vertical Aperture and Offset | `focalLength`, `horizontalAperture`, ... | Field of view and view window, conformed to the image like Karma |
 | Clipping Range | `clippingRange` | Near and far clipping |
-| F-Stop, Focus Distance | `fStop`, `focusDistance` | Depth of field: aperture size = focal length / (2 F-Stop). F-Stop 0 turns it off |
+| F-Stop, Focus Distance | `fStop`, `focusDistance` | Depth of field: aperture size = focal length / (2 F-Stop). F-Stop 0 turns it off, and so does the render setting `disableDepthOfField` (or Karma's `karma:global:enable_dof` off) for every camera (*untested*) |
+| Focal Length, animated | `focalLength` time samples | Zoom blur with motion blur on, and zoom vectors in the Vector pass, like Blender's animated lens. Perspective cameras only (*untested*) |
 | Shutter Open, Shutter Close | `shutter:open`, `shutter:close` | Motion blur shutter, see [motion-blur.md](motion-blur.md) |
 | Exposure (and Exposure Time, ISO, F-Stop, Responsivity) | `exposure`, `exposure:time`, `exposure:iso`, `exposure:fStop`, `exposure:responsivity` | Image brightness: 2^exposure x time x ISO / 100 / fStop^2 x responsivity, multiplied with the film Exposure render setting, like Karma |
 
@@ -56,6 +57,15 @@ overlay (frustum, guides) still draws the perspective projection.
 | Rotation | `cycles:camera:blades_rotation` | 0 | Rotation of the blades |
 | Ratio | `cycles:camera:aperture_ratio` | 1 | Distortion to simulate an anamorphic lens bokeh |
 
+### Motion Blur
+
+| Setting | USD attribute | Default | Description |
+|---|---|---|---|
+| Shutter Curve | `cycles:camera:shutter_curve` | Constant | Weight of the motion blur samples over the shutter, from Shutter Open (left) to Shutter Close (right), like Blender's Shutter Curve. A Houdini float ramp. *Untested* |
+
+The ramp's spline bases are evaluated as Catmull-Rom; Constant and Linear keys are exact. A camera
+without a curve uses Cycles' constant shutter.
+
 ### Motion Blur > Rolling Shutter
 
 | Setting | USD attribute | Default | Description |
@@ -67,7 +77,7 @@ overlay (frustum, guides) still draws the perspective projection.
 
 - Changing a Cycles camera setting while the viewport renders does not update the render yet:
   restart the render (viewport display options, or toggle the renderer) to see it.
-- Stereo cameras and Blender's shutter curve are not exposed. The dicing camera is a render setting
+- Stereo cameras are not exposed. The dicing camera is a render setting
   (Subdivision > Dicing Camera, see [render-settings.md](render-settings.md)).
 - Lens distortion and split diopter (USD 26 camera schemas) are ignored.
 - In the free viewport camera (not looking through a camera prim) the Cycles settings and the
