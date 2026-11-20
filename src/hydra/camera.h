@@ -101,6 +101,10 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
   float _exposureScale = 1.0f;
   PXR_NS::GfCamera _data;
   PXR_NS::HdTimeSampleArray<PXR_NS::GfMatrix4d, 2> _transformSamples;
+  /* Zoom over the motion steps: the focal length at the center step over the one at the first
+   * and last step. */
+  float _zoomPre = 1.0f;
+  float _zoomPost = 1.0f;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

@@ -303,6 +303,23 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
     session->RequestResync(false, true);
   }
 
+  /* Zoom blur, and zoom in the motion pass: the focal length at the first and last motion step
+   * (the shutter ends, or the previous and next frame). shortcut: an animated aperture is not
+   * blurred, sample it too when that is needed. */
+  _zoomPre = _zoomPost = 1.0f;
+  if (auto ds = cameraSchema.GetFocalLength()) {
+    const std::vector<float> times = session->GetMotionTimes(shutterOpen, shutterClose);
+    const float focalLength = ds->GetTypedValue(0.0f);
+    if (times.size() > 1 && focalLength > 0.0f) {
+      const float pre = ds->GetTypedValue(times.front());
+      const float post = ds->GetTypedValue(times.back());
+      if (pre > 0.0f && post > 0.0f) {
+        _zoomPre = focalLength / pre;
+        _zoomPost = focalLength / post;
+      }
+    }
+  }
+
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     HdXformSchema xformSchema = HdXformSchema::GetFromParent(primDs);
     if (auto matrixDs = xformSchema.GetMatrix()) {
@@ -472,6 +489,16 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   }
   cam->set_motion(motion);
 
+  /* The projection at the first and last motion step: the Cycles field of view is the vertical
+   * one, its tangent scales with the inverse focal length. */
+  if (cam->get_camera_type() == CAMERA_PERSPECTIVE) {
+    const float tanHalfFov = tanf(cam->get_fov() * 0.5f);
+    cam->set_fov_pre(2.0f * atanf(tanHalfFov * _zoomPre));
+    cam->set_fov_post(2.0f * atanf(tanHalfFov * _zoomPost));
+  }
+  cam->set_use_perspective_motion(cam->get_fov_pre() != cam->get_fov() ||
+                                  cam->get_fov_post() != cam->get_fov());
+
   // Motion steps are evenly spaced over the camera shutter (in frames)
   if (_shutterClose > _shutterOpen) {
     cam->set_shuttertime(float(_shutterClose - _shutterOpen));
@@ -522,9 +549,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     focalLength = data.GetFocalLength() * GfCamera::FOCAL_LENGTH_UNIT;
 
     cam->set_fov(GfDegreesToRadians(data.GetFieldOfView(GfCamera::FOVVertical)));
-    /* The motion pass projects with these at the previous and next frame, their default zooms.
-     * shortcut: an animated focal length gives no zoom vectors, sample it at the motion times
-     * like the transform when that is needed. */
+    /* The motion pass projects with these at the previous and next frame, motion blur at the
+     * shutter ends: no zoom here, a camera prim sets its zoom after this. */
     cam->set_fov_pre(cam->get_fov());
     cam->set_fov_post(cam->get_fov());
   }
@@ -573,6 +599,7 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   // No camera prim: no motion blur, not the transforms and shutter of the camera rendered before
   array<Transform> motion;
   cam->set_motion(motion);
+  cam->set_use_perspective_motion(false);
   cam->set_shuttertime(1.0f);
   cam->set_motion_position(MOTION_POSITION_CENTER);
   cam->set_motion_time_offset(FLT_MAX);
