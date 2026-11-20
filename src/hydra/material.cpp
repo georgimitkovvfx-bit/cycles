@@ -943,6 +943,7 @@ static void ApplyMaterialSettings(Shader *shader,
                                   const bool cyclesNetwork)
 {
   static const char *const settings[] = {"pass_id",
+                                         "volume_stack_priority",
                                          "displacement_method",
                                          "emission_sampling_method",
                                          "use_transparent_shadow",

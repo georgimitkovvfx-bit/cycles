@@ -45,6 +45,7 @@ Displacement and Bump for their displacement output, so it displaces the surface
 | Setting | USD attribute | Default | Description |
 |---|---|---|---|
 | Pass Index | `config:cycles:pass_id` | 0 | Index number for the Material Index render pass (render var with source name `material_id`) |
+| Volume Stack Priority | `config:cycles:volume_stack_priority` | 0 | Nested dielectrics (see below). 0 disables it |
 | Surface > Displacement | `config:cycles:displacement_method` | Bump Only | How the displacement output is used: Bump Only (`bump`), Displacement Only (`true`, true displacement of the surface) or Displacement and Bump (`both`, true displacement with bump mapping for the finer details) |
 | Surface > Emission Sampling | `config:cycles:emission_sampling_method` | Auto | Sampling strategy for emissive surfaces: None, Auto, Front, Back, Front and Back |
 | Surface > Transparent Shadows | `config:cycles:use_transparent_shadow` | On | Use transparent shadows for this material if it contains a Transparent BSDF. Turning it off renders faster but shadows are not accurate |
@@ -55,6 +56,23 @@ Displacement and Bump for their displacement output, so it displaces the surface
 
 Builders created with older versions have no Settings tab: right-click the builder (or several
 selected builders) and choose **Add Cycles Material Settings**.
+
+### Nested dielectrics
+
+Water in a glass with ice cubes is modeled with overlapping surfaces: the water surface goes a
+little into the glass wall, and the ice cubes go a little out of the water. Give the materials a
+**Volume Stack Priority**, higher for the medium that wins where they overlap, for example glass
+3, ice 2, water 1. Inside a medium of higher priority, the Glass, Refraction and Principled BSDFs
+(and the MaterialX and OSL dielectric closures) of a lower priority material are skipped like a
+Transparent BSDF. The others refract with the IOR relative to the medium on the other side
+(water to glass: 1.5 / 1.33), so there is no dark ring of total internal reflection at the
+interfaces. Like Blender's proposed Volume Stack Priority (PR #118478). Limits: the camera must
+start outside the media, at most 3 nested media are tracked, volume absorption of a masked
+medium still applies where media overlap, and shadow rays ignore priorities.
+
+Karma's per-object **Dielectric Priority** (`primvars:karma:object:dielectricpriority`, 0 is the
+highest) is not read: Cycles' priority belongs to the material, and one material can be bound to
+objects of different Karma priorities. Set the Volume Stack Priority on the materials instead.
 
 True displacement subdivides nothing by itself: Cycles displaces the vertices the mesh has. Turn
 on **Adaptive Subdivision** for the object (Render Geometry Settings LOP, Cycles tab) so Cycles

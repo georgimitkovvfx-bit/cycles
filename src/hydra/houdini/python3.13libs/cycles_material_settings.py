@@ -71,6 +71,14 @@ def settings_folder():
         "cycles_pass_id", "Pass Index", 1, default_value=(0,), min=0, max=100, min_is_strict=True,
         help="Index number for the Material Index render pass.",
         tags={"cycles_material_setting": "pass_id"}))
+    settings.addParmTemplate(hou.IntParmTemplate(
+        "cycles_volume_stack_priority", "Volume Stack Priority", 1, default_value=(0,), min=0,
+        max=10, min_is_strict=True,
+        help="Nested dielectrics, like water in a glass with ice cubes modeled with overlapping "
+             "surfaces: inside a medium of higher priority, the glass, refraction and Principled "
+             "BSDFs of this material are skipped, and the others refract with the IOR relative "
+             "to the medium on the other side (e.g. glass 3, ice 2, water 1). 0 disables it.",
+        tags={"cycles_material_setting": "volume_stack_priority"}))
     settings.addParmTemplate(surface)
     settings.addParmTemplate(volume)
     return settings
