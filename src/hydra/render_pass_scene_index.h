@@ -9,7 +9,10 @@
 #include <pxr/imaging/hd/collectionExpressionEvaluator.h>
 #include <pxr/imaging/hd/filteringSceneIndex.h>
 
+#include <cstdint>
 #include <optional>
+#include <shared_mutex>
+#include <unordered_map>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -45,6 +48,13 @@ class HdCyclesRenderPassSceneIndex final : public HdSingleInputFilteringSceneInd
   /* Reads the active pass and its collections again, and dirties all geometry and lights when
    * they changed. */
   void UpdatePass();
+
+  /* Collection membership bits of a prim, evaluated once per path until the scene or the pass
+   * changes (GetPrim is called many times per prim and sync, from several threads). */
+  uint8_t GetMembership(const SdfPath &primPath) const;
+  void ClearMembership();
+  mutable std::shared_mutex _membershipMutex;
+  mutable std::unordered_map<SdfPath, uint8_t, SdfPath::Hash> _membership;
 
   SdfPath _passPath;
   Collection _renderVisibility;
