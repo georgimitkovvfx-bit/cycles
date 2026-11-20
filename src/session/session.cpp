@@ -315,10 +315,23 @@ RenderWork Session::run_update_for_next_iteration()
   thread_scoped_lock scene_lock(scene->mutex);
 
   /* Perform delayed reset if requested. */
-  const bool reset_buffers = delayed_reset_buffer_params();
+  bool reset_buffers = delayed_reset_buffer_params();
 
   /* Update scene */
   const bool reset_scene = update_scene(delayed_reset_.do_reset);
+
+  /* The kernels address the render buffers with the passes of the scene. These can change
+   * without a reset of the buffers: the host changed a setting that adds passes (like denoising)
+   * and resets later, or reset while the scene mutex was unlocked to load kernels, after the
+   * check above. Never render into buffers allocated for other passes. */
+  if (!reset_buffers && buffer_params_.pass_stride != -1) {
+    BufferParams scene_buffer_params = buffer_params_;
+    scene_buffer_params.update_passes(scene->passes);
+    if (scene_buffer_params.passes != buffer_params_.passes) {
+      tile_manager_.reset_scheduling(buffer_params_, get_effective_tile_size());
+      reset_buffers = true;
+    }
+  }
 
   /* Update buffers for new parameters. After scene update which influences the passes used. */
   bool have_tiles = true;
