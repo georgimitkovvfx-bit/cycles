@@ -5,6 +5,7 @@
 
 #include "hydra/plugin.h"
 #include "hydra/implicit_mesh.h"
+#include "hydra/mesh_light.h"
 #include "hydra/render_delegate.h"
 #include "hydra/render_pass_scene_index.h"
 #include "hydra/resync_scene_index.h"
@@ -131,6 +132,18 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
          const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
         return HD_CYCLES_NS::HdCyclesRenderPassSceneIndex::New(
             HdsiRenderPassPruneSceneIndex::New(inputScene));
+      },
+      nullptr,
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
+
+  /* Light prims for the geometry lights, so the light linking below computes their links. */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HD_CYCLES_NS::HdCyclesGeometryLightSceneIndex::New(inputScene);
       },
       nullptr,
       0,

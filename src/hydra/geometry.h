@@ -7,6 +7,7 @@
 
 #include "hydra/config.h"
 #include "hydra/instancer.h"
+#include "hydra/mesh_light.h"
 
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/rprim.h>
@@ -99,6 +100,9 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
 
   // Per-instance "cycles:object:<setting>" primvars of the instancer (Primvar::elements)
   std::vector<HdCyclesInstancer::Primvar> _instanceSettings;
+
+  // UsdLux LightAPI / MeshLightAPI on the prim (Houdini's Geometry Light LOP)
+  HdCyclesGeometryLight _light;
 
   // Per-object motion blur settings: 0 steps or samples use the Motion Steps render setting
   struct MotionSettings {

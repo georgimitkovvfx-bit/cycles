@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/resync_scene_index.h"
+#include "hydra/mesh_light.h"
 #include "hydra/util.h"
 
 #include <algorithm>
@@ -220,6 +221,17 @@ void HdCyclesResyncSceneIndex::_PrimsDirtied(
   std::optional<HdSceneIndexObserver::DirtiedPrimEntries> mapped;
   for (size_t i = 0; i < entries.size(); ++i) {
     const HdDataSourceLocatorSet &locators = entries[i].dirtyLocators;
+    /* Nor the light of geometry lights: dirty the material of the gprim for a change of its
+     * light or of its light links (HdCyclesGeometryLight). */
+    if (entries[i].primPath.GetNameToken() == GeometryLightChildName() &&
+        locators.Intersects(HdLightSchema::GetDefaultLocator()))
+    {
+      if (!mapped) {
+        mapped = entries;
+      }
+      mapped->emplace_back(entries[i].primPath.GetParentPath(),
+                           HdMaterialBindingsSchema::GetDefaultLocator());
+    }
     /* Nor material bindings of lights: dirty a dome light's parameters for a material bound to
      * it as the world (HdCyclesLight::Sync). */
     if (locators.Intersects(HdMaterialBindingsSchema::GetDefaultLocator()) &&

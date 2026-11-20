@@ -38,6 +38,7 @@ set(SRC_HD_CYCLES_HEADERS
   material.h
   mesh.h
   mesh_attributes.h
+  mesh_light.h
   node_util.h
   output_driver.h
   parallax_occlusion.h
@@ -67,6 +68,7 @@ set(SRC_HD_CYCLES
   light.cpp
   material.cpp
   mesh.cpp
+  mesh_light.cpp
   node_util.cpp
   output_driver.cpp
   parallax_occlusion.cpp

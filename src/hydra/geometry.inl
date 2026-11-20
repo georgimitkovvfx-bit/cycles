@@ -289,6 +289,14 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
    * motion steps freed. */
   rebuild |= _geom->motion_steps_is_modified() || _geom->use_motion_blur_is_modified();
 
+  _light.Sync(static_cast<HdCyclesSession *>(renderParam),
+              lock.scene,
+              sceneDelegate,
+              id,
+              primDs,
+              _geom,
+              _instances);
+
   if (_geom->is_modified() || rebuild) {
     _geom->tag_update(lock.scene, rebuild);
   }
@@ -688,6 +696,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(Base::GetId().GetString());
+  _light.Finalize(static_cast<HdCyclesSession *>(renderParam), keep_nodes);
 
   if (!keep_nodes) {
     HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
