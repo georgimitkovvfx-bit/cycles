@@ -14,6 +14,8 @@
 #include <pxr/imaging/hd/materialNodeParameterSchema.h>
 #include <pxr/imaging/hd/materialNodeSchema.h>
 
+#include <functional>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 class HdCyclesMaterial final : public PXR_NS::HdMaterial {
@@ -54,13 +56,20 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
                         PXR_NS::HdMaterialNodeParameterContainerSchema params,
                         const PXR_NS::SdfPath &nodePath);
 
-  void UpdateConnections(NodeDesc &nodeDesc,
-                         PXR_NS::HdMaterialNodeSchema nodeSchema,
-                         const PXR_NS::SdfPath &nodePath,
-                         CCL_NS::ShaderGraph *shaderGraph);
+  /* linkOther links an output of a node that has no Cycles node (MaterialX nodes). */
+  void UpdateConnections(
+      NodeDesc &nodeDesc,
+      PXR_NS::HdMaterialNodeSchema nodeSchema,
+      const PXR_NS::SdfPath &nodePath,
+      CCL_NS::ShaderGraph *shaderGraph,
+      const std::function<bool(
+          const PXR_NS::TfToken &, const PXR_NS::TfToken &, CCL_NS::ShaderInput *)> &linkOther);
 
-  unique_ptr<CCL_NS::ShaderGraph> BuildShaderGraph(PXR_NS::HdMaterialNetworkSchema network,
-                                                   CCL_NS::Scene *scene);
+  unique_ptr<CCL_NS::ShaderGraph> BuildShaderGraph(
+      const PXR_NS::SdfPath &materialId,
+      PXR_NS::HdMaterialNetworkSchema network,
+      const PXR_NS::HdContainerDataSourceHandle &primContainer,
+      CCL_NS::Scene *scene);
 
   CCL_NS::Shader *_shader = nullptr;
   /* Hash of this material's data when it was last synced as the material override. */

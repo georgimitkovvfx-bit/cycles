@@ -43,6 +43,7 @@ class Session;
 class SessionParams;
 class Shader;
 class ShaderGraph;
+class ShaderInput;
 class ShaderNode;
 class Volume;
 }  // namespace CCL_NS

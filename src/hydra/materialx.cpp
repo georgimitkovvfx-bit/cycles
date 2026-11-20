@@ -172,6 +172,14 @@ class Translator {
     return Eval(node, output, nullptr);
   }
 
+  /* Connect an output of a node in the document to an input, or set it as constant. */
+  bool LinkOutput(const mx::NodePtr &node, const std::string &output, ShaderInput *in)
+  {
+    const Val v = Eval(node, output, nullptr);
+    Link(v, in);
+    return v.kind != Kind::None;
+  }
+
  private:
   /* Expansion of a node defined by a node graph: interface inputs of the graph resolve to the
    * inputs of the node, in the scope of the node. */
@@ -1808,6 +1816,50 @@ mx::NodePtr FindTerminalNode(const mx::DocumentPtr &doc, const std::string &name
   return nullptr;
 }
 
+/* The MaterialX document of a terminal node and its upstream nodes, and the terminal's node in
+ * it. */
+mx::NodePtr CreateDocument(HdDataSourceMaterialNetworkInterface &networkInterface,
+                           const mx::DocumentPtr &libraries,
+                           const SdfPath &materialId,
+                           const TfToken &terminalNode,
+                           const TfToken &terminalName,
+                           mx::DocumentPtr &doc)
+{
+  static const bool debug = TfGetenvBool("HD_CYCLES_MTLX_DEBUG", false);
+  try {
+    doc = HdMtlxCreateMtlxDocumentFromHdMaterialNetworkInterface(
+        &networkInterface,
+        terminalNode,
+        networkInterface.GetNodeInputConnectionNames(terminalNode),
+        libraries);
+  }
+  catch (const mx::Exception &e) {
+    TF_WARN("Could not create a MaterialX document for %s: %s", materialId.GetText(), e.what());
+    return nullptr;
+  }
+  if (!doc) {
+    return nullptr;
+  }
+  if (debug) {
+    mx::XmlWriteOptions options;
+    options.writeXIncludeEnable = false;
+    options.elementPredicate = [](const mx::ConstElementPtr &element) {
+      return !element->hasSourceUri();
+    };
+    fprintf(stderr,
+            "[hdCycles] MaterialX document for %s %s:\n%s\n",
+            materialId.GetText(),
+            terminalName.GetText(),
+            mx::writeToXmlString(doc, &options).c_str());
+  }
+
+  const mx::NodePtr node = FindTerminalNode(doc, HdMtlxCreateNameFromPath(SdfPath(terminalNode)));
+  if (!node) {
+    TF_WARN("No MaterialX terminal node for %s %s", materialId.GetText(), terminalName.GetText());
+  }
+  return node;
+}
+
 }  // namespace
 
 const TfTokenVector &MaterialXRenderContexts()
@@ -1850,7 +1902,6 @@ unique_ptr<ShaderGraph> BuildMaterialXShaderGraph(const SdfPath &materialId,
 
   unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
   bool anyLinked = false;
-  static const bool debug = TfGetenvBool("HD_CYCLES_MTLX_DEBUG", false);
 
   for (const TfToken &terminalName : networkInterface.GetTerminalNames()) {
     const char *graphInput = terminalName == MaterialXTokens->surface      ? "Surface" :
@@ -1865,40 +1916,14 @@ unique_ptr<ShaderGraph> BuildMaterialXShaderGraph(const SdfPath &materialId,
     if (!connection.first) {
       continue;
     }
-    const TfToken &terminalNode = connection.second.upstreamNodeName;
-    const TfTokenVector connectionNames = networkInterface.GetNodeInputConnectionNames(
-        terminalNode);
-
     mx::DocumentPtr doc;
-    try {
-      doc = HdMtlxCreateMtlxDocumentFromHdMaterialNetworkInterface(
-          &networkInterface, terminalNode, connectionNames, libraries);
-    }
-    catch (const mx::Exception &e) {
-      TF_WARN("Could not create a MaterialX document for %s: %s", materialId.GetText(), e.what());
-      continue;
-    }
-    if (!doc) {
-      continue;
-    }
-    if (debug) {
-      mx::XmlWriteOptions options;
-      options.writeXIncludeEnable = false;
-      options.elementPredicate = [](const mx::ConstElementPtr &element) {
-        return !element->hasSourceUri();
-      };
-      fprintf(stderr,
-              "[hdCycles] MaterialX document for %s %s:\n%s\n",
-              materialId.GetText(),
-              terminalName.GetText(),
-              mx::writeToXmlString(doc, &options).c_str());
-    }
-
-    const mx::NodePtr node = FindTerminalNode(doc,
-                                              HdMtlxCreateNameFromPath(SdfPath(terminalNode)));
+    const mx::NodePtr node = CreateDocument(networkInterface,
+                                            libraries,
+                                            materialId,
+                                            connection.second.upstreamNodeName,
+                                            terminalName,
+                                            doc);
     if (!node) {
-      TF_WARN(
-          "No MaterialX terminal node for %s %s", materialId.GetText(), terminalName.GetText());
       continue;
     }
 
@@ -1914,6 +1939,30 @@ unique_ptr<ShaderGraph> BuildMaterialXShaderGraph(const SdfPath &materialId,
     return nullptr;
   }
   return graph;
+}
+
+bool LinkMaterialXNode(ShaderGraph *graph,
+                       const SdfPath &materialId,
+                       const HdMaterialNetworkSchema &network,
+                       const HdContainerDataSourceHandle &primContainer,
+                       const TfToken &nodeName,
+                       const TfToken &outputName,
+                       ShaderInput *input)
+{
+  const mx::DocumentPtr &libraries = HdMtlxStdLibraries();
+  if (!libraries) {
+    return false;
+  }
+  HdDataSourceMaterialNetworkInterface networkInterface(
+      materialId, network.GetContainer(), primContainer);
+  mx::DocumentPtr doc;
+  const mx::NodePtr node = CreateDocument(
+      networkInterface, libraries, materialId, nodeName, nodeName, doc);
+  if (!node) {
+    return false;
+  }
+  Translator translator(graph, doc, materialId);
+  return translator.LinkOutput(node, outputName.IsEmpty() ? "out" : outputName.GetString(), input);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

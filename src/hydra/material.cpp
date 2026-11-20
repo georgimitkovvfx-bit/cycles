@@ -44,6 +44,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <set>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -1207,7 +1208,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       else
 #endif
       {
-        graph = BuildShaderGraph(pathNetwork, lock.scene);
+        graph = BuildShaderGraph(path, pathNetwork, primDs, lock.scene);
       }
       if (!graph) {
         TF_WARN("Could not build a shader graph for %s.", path.GetText());
@@ -1388,10 +1389,12 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
   }
 }
 
-void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
-                                         HdMaterialNodeSchema nodeSchema,
-                                         const SdfPath &nodePath,
-                                         ShaderGraph *shaderGraph)
+void HdCyclesMaterial::UpdateConnections(
+    NodeDesc &nodeDesc,
+    HdMaterialNodeSchema nodeSchema,
+    const SdfPath &nodePath,
+    ShaderGraph *shaderGraph,
+    const std::function<bool(const TfToken &, const TfToken &, ShaderInput *)> &linkOther)
 {
   HdMaterialConnectionVectorContainerSchema conns = nodeSchema.GetInputConnections();
   for (const TfToken &dstSocketName : conns.GetNames()) {
@@ -1461,6 +1464,12 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
                                            TfToken();
 
     const auto srcNodeIt = _nodes.find(upstreamNodePath);
+    if (srcNodeIt == _nodes.end() && connSchema.GetUpstreamNodePath() &&
+        linkOther(
+            connSchema.GetUpstreamNodePath()->GetTypedValue(0.0f), upstreamOutputName, input))
+    {
+      continue;
+    }
     if (srcNodeIt == _nodes.end()) {
       TF_WARN("Ignoring connection from '%s.%s' to '%s.%s', node '%s' was not found",
               upstreamNodePath.GetText(),
@@ -1492,8 +1501,11 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
   }
 }
 
-unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSchema network,
-                                                           Scene *scene)
+unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(
+    const SdfPath &materialId,
+    HdMaterialNetworkSchema network,
+    const HdContainerDataSourceHandle &primContainer,
+    Scene *scene)
 {
   _nodes.clear();
 
@@ -1503,6 +1515,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
 
   /* Iterate all the nodes first and build a complete but unconnected graph with parameters set. */
   std::unordered_map<SdfPath, TfToken, SdfPath::Hash> nodeNames;
+  std::set<TfToken> materialXNodes;
   for (const TfToken &nodeName : nodes.GetNames()) {
     HdMaterialNodeSchema nodeSchema = nodes.Get(nodeName);
     const SdfPath nodePath = MaterialNodeNameToSdfPath(nodeName);
@@ -1521,6 +1534,12 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
                                           nodeSchema.GetNodeIdentifier()->GetTypedValue(0.0f) :
                                           TfToken();
       const std::string &nodeTypeId = nodeTypeIdToken.GetString();
+      /* MaterialX nodes in a network of other nodes (a kma_hair in a Karma Material Builder)
+       * are translated where they are linked. */
+      if (nodeTypeId.starts_with("ND_")) {
+        materialXNodes.insert(nodeName);
+        continue;
+      }
 
       ustring cyclesType(nodeTypeId);
       const bool isNativeNode = nodeTypeId.starts_with("cycles_") ||
@@ -1576,18 +1595,33 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     UpdateParameters(nodeDesc, nodeSchema.GetParameters(), nodePath);
   }
 
+  const auto linkMaterialX =
+      [&](const TfToken &upstreamNode, const TfToken &output, ShaderInput *input) {
+#ifdef WITH_HYDRA_MATERIALX
+        return materialXNodes.count(upstreamNode) &&
+               LinkMaterialXNode(
+                   graph.get(), materialId, network, primContainer, upstreamNode, output, input);
+#else
+        (void)upstreamNode, (void)output, (void)input, (void)primContainer, (void)materialId;
+        return false;
+#endif
+      };
+
   /* Now that all nodes have been constructed, iterate the network again and build up any
    * connections between nodes. */
   for (const TfToken &nodeName : nodes.GetNames()) {
     const SdfPath nodePath = MaterialNodeNameToSdfPath(nodeName);
 
     const auto nodeIt = _nodes.find(nodePath);
+    if (materialXNodes.count(nodeName)) {
+      continue;
+    }
     if (nodeIt == _nodes.end()) {
       TF_RUNTIME_ERROR("Could not find node '%s' to connect", nodePath.GetText());
       continue;
     }
 
-    UpdateConnections(nodeIt->second, nodes.Get(nodeName), nodePath, graph.get());
+    UpdateConnections(nodeIt->second, nodes.Get(nodeName), nodePath, graph.get(), linkMaterialX);
   }
 
   /* UsdPreviewSurface's displacement is a height along the normal, like MaterialX's displacement
