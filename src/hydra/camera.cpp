@@ -4,20 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/camera.h"
+#include "device/device.h"
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "scene/camera.h"
 #include "scene/scene.h"
 #include "session/session.h"
+#include "util/path.h"
 
 #include <pxr/base/gf/frustum.h>
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/cameraSchema.h>
+#include <pxr/imaging/hd/materialBindingSchema.h>
+#include <pxr/imaging/hd/materialBindingsSchema.h>
+#include <pxr/imaging/hd/materialNetworkSchema.h>
+#include <pxr/imaging/hd/materialNodeParameterSchema.h>
+#include <pxr/imaging/hd/materialNodeSchema.h>
+#include <pxr/imaging/hd/materialSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
+#include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hd/xformSchema.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/usdGeom/tokens.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <mutex>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -40,16 +54,13 @@ static Transform convert_camera_transform(const GfMatrix4d &matrix, const Camera
 
 namespace {
 
-/* Value of a Cycles camera setting, empty if not authored: the "primvars:cycles:camera:<setting>"
- * primvar the Camera LOP authors, or a "cycles:camera:<setting>" attribute (earlier builds; these
- * do not update a running render: UsdImaging dirties no camera locator for them). Attributes
+/* A "<ns>:<rest>" camera attribute outside the camera schema, empty if not authored: attributes
  * outside the camera schema are in its namespaced properties, by namespace. */
-VtValue GetCameraSetting(const HdContainerDataSourceHandle &primDs, const std::string &setting)
+VtValue GetCameraAttribute(const HdContainerDataSourceHandle &primDs,
+                           const std::string &ns,
+                           const std::string &rest)
 {
-  const TfToken name("cycles:camera:" + setting);
-  if (auto ds = HdPrimvarsSchema::GetFromParent(primDs).GetPrimvar(name).GetPrimvarValue()) {
-    return ds->GetValue(0.0f);
-  }
+  const TfToken name(ns + ":" + rest);
   const HdCameraSchema cameraSchema = HdCameraSchema::GetFromParent(primDs);
   if (const HdContainerDataSourceHandle cameraDs = cameraSchema.GetContainer()) {
     if (auto ds = HdSampledDataSource::Cast(cameraDs->Get(name))) {
@@ -58,18 +69,30 @@ VtValue GetCameraSetting(const HdContainerDataSourceHandle &primDs, const std::s
   }
   const HdSampledDataSourceContainerContainerSchema namespaces =
       cameraSchema.GetNamespacedProperties();
-  for (const TfToken &ns : {TfToken("cycles"), name}) {
-    const HdSampledDataSourceContainerSchema properties = namespaces.Get(ns);
+  for (const TfToken &nsName : {TfToken(ns), name}) {
+    const HdSampledDataSourceContainerSchema properties = namespaces.Get(nsName);
     if (!properties) {
       continue;
     }
-    for (const TfToken &key : {name, TfToken("camera:" + setting)}) {
+    for (const TfToken &key : {name, TfToken(rest)}) {
       if (auto ds = properties.Get(key)) {
         return ds->GetValue(0.0f);
       }
     }
   }
   return VtValue();
+}
+
+/* Value of a Cycles camera setting, empty if not authored: the "primvars:cycles:camera:<setting>"
+ * primvar the Camera LOP authors, or a "cycles:camera:<setting>" attribute (earlier builds; these
+ * do not update a running render: UsdImaging dirties no camera locator for them). */
+VtValue GetCameraSetting(const HdContainerDataSourceHandle &primDs, const std::string &setting)
+{
+  const TfToken name("cycles:camera:" + setting);
+  if (auto ds = HdPrimvarsSchema::GetFromParent(primDs).GetPrimvar(name).GetPrimvarValue()) {
+    return ds->GetValue(0.0f);
+  }
+  return GetCameraAttribute(primDs, "cycles", "camera:" + setting);
 }
 
 template<typename T>
@@ -245,6 +268,263 @@ class ScriptParamQuery final : public OSLCameraParamQuery {
 
   const std::map<std::string, VtValue> &_params;
 };
+
+/* Karma Physical Lens (kma_physicallens), not its Core node. */
+bool IsPhysicalLens(const std::string &shader)
+{
+  return TfStringContains(shader, "physicallens") && !TfStringContains(shader, "physicallenscore");
+}
+
+/* Arguments of a VEX shader string ("<shader> name value... name value..."): names are unquoted
+ * words, values numbers (vectors as several) or quoted strings. */
+std::map<std::string, VtValue> ParseShaderStringArguments(const std::string &text,
+                                                          std::string &shader)
+{
+  std::vector<std::pair<std::string, bool>> words; /* Text, quoted. */
+  for (size_t i = 0; i < text.size();) {
+    if (std::isspace(static_cast<unsigned char>(text[i]))) {
+      ++i;
+      continue;
+    }
+    std::string word;
+    const char quote = (text[i] == '"' || text[i] == '\'') ? text[i] : 0;
+    if (quote) {
+      for (++i; i < text.size() && text[i] != quote; ++i) {
+        if (text[i] == '\\' && i + 1 < text.size()) {
+          ++i;
+        }
+        word += text[i];
+      }
+      ++i;
+    }
+    else {
+      for (; i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])); ++i) {
+        word += text[i];
+      }
+    }
+    words.emplace_back(word, quote != 0);
+  }
+
+  std::map<std::string, VtValue> arguments;
+  shader = words.empty() ? "" : words[0].first;
+  const auto number = [](const std::string &word, double &value) {
+    char *end = nullptr;
+    value = std::strtod(word.c_str(), &end);
+    return !word.empty() && end == word.c_str() + word.size();
+  };
+  for (size_t i = 1; i < words.size();) {
+    double value;
+    const std::string &name = words[i++].first;
+    std::vector<double> numbers;
+    std::vector<std::string> strings;
+    while (i < words.size() && (words[i].second || number(words[i].first, value))) {
+      if (words[i].second) {
+        strings.push_back(words[i].first);
+      }
+      else {
+        numbers.push_back(value);
+      }
+      ++i;
+    }
+    if (!strings.empty()) {
+      arguments[name] = VtValue(strings[0]);
+    }
+    else if (numbers.size() == 1) {
+      arguments[name] = VtValue(numbers[0]);
+    }
+    else if (numbers.size() == 3) {
+      arguments[name] = VtValue(GfVec3f(float(numbers[0]), float(numbers[1]), float(numbers[2])));
+    }
+  }
+  return arguments;
+}
+
+/* Karma Physical Lens parameters of a camera with Use Lens Shader on (Camera LOP Karma tab): the
+ * kma_physicallens node of the bound Lens Material, else the arguments of the lens shader string
+ * of the Lens Shader VOP. False when the camera uses neither. */
+bool ReadKarmaPhysicalLens(HdSceneDelegate *sceneDelegate,
+                           const HdContainerDataSourceHandle &primDs,
+                           std::map<std::string, VtValue> &lens,
+                           bool &lensMaterial)
+{
+  if (!VtValue::Cast<bool>(GetCameraAttribute(primDs, "karma", "camera:use_lensshader"))
+           .GetWithDefault(false))
+  {
+    return false;
+  }
+
+  const HdMaterialBindingsSchema bindings = HdMaterialBindingsSchema::GetFromParent(primDs);
+  HdMaterialBindingSchema binding = bindings.GetMaterialBinding(HdTokens->full);
+  if (!binding) {
+    binding = bindings.GetMaterialBinding();
+  }
+  const HdPathDataSourceHandle pathDs = binding.GetPath();
+  const SdfPath path = pathDs ? pathDs->GetTypedValue(0.0f) : SdfPath();
+  const HdMaterialSchema material = HdMaterialSchema::GetFromParent(
+      path.IsPrimPath() ? GetPrim(sceneDelegate, path).dataSource : nullptr);
+  if (const HdContainerDataSourceHandle networks = material.GetContainer()) {
+    for (const TfToken &context : networks->GetNames()) {
+      const HdMaterialNodeContainerSchema nodes = material.GetMaterialNetwork(context).GetNodes();
+      for (const TfToken &nodeName : nodes.GetNames()) {
+        const HdMaterialNodeSchema node = nodes.Get(nodeName);
+        std::vector<HdTokenDataSourceHandle> ids = {node.GetNodeIdentifier()};
+        if (const HdContainerDataSourceHandle contextIds = node.GetRenderContextNodeIdentifiers())
+        {
+          for (const TfToken &name : contextIds->GetNames()) {
+            ids.push_back(HdTokenDataSource::Cast(contextIds->Get(name)));
+          }
+        }
+        if (std::none_of(ids.begin(), ids.end(), [](const HdTokenDataSourceHandle &ds) {
+              return ds && IsPhysicalLens(ds->GetTypedValue(0.0f).GetString());
+            }))
+        {
+          continue;
+        }
+        const HdMaterialNodeParameterContainerSchema parameters = node.GetParameters();
+        for (const TfToken &name : parameters.GetNames()) {
+          if (auto ds = parameters.Get(name).GetValue()) {
+            lens[name.GetString()] = ds->GetValue(0.0f);
+          }
+        }
+        lensMaterial = true;
+        return true;
+      }
+    }
+  }
+
+  const VtValue text = GetCameraAttribute(primDs, "karma", "camera:lensshader");
+  std::string shader;
+  lens = ParseShaderStringArguments(
+      text.IsHolding<std::string>() ?
+          text.UncheckedGet<std::string>() :
+          VtValue::Cast<TfToken>(text).GetWithDefault(TfToken()).GetString(),
+      shader);
+  lensMaterial = false;
+  return IsPhysicalLens(shader);
+}
+
+/* Parameters of the shipped OSL camera for Karma Physical Lens parameters (see
+ * hdcycles_physical_lens.osl). False when the lens does nothing it implements, or has another
+ * projection (rendered with the camera's own then). Warns about the effects it leaves out. */
+bool MapKarmaPhysicalLens(const std::map<std::string, VtValue> &lens,
+                          const bool lensMaterial,
+                          const GfCamera &camera,
+                          const SdfPath &id,
+                          std::map<std::string, VtValue> &script)
+{
+  const auto num = [&](const char *name, const double fallback) {
+    const auto it = lens.find(name);
+    return it == lens.end() ? fallback :
+                              VtValue::Cast<double>(it->second).GetWithDefault(fallback);
+  };
+  const auto str = [&](const char *name, const char *fallback) {
+    const auto it = lens.find(name);
+    std::string value = fallback;
+    if (it != lens.end() && it->second.IsHolding<TfToken>()) {
+      value = it->second.UncheckedGet<TfToken>().GetString();
+    }
+    else if (it != lens.end() && it->second.IsHolding<std::string>()) {
+      value = it->second.UncheckedGet<std::string>();
+    }
+    return TfStringToLower(value);
+  };
+  const auto vec = [&](const char *name) {
+    const auto it = lens.find(name);
+    return it == lens.end() ? GfVec3f(1.0f) :
+                              VtValue::Cast<GfVec3f>(it->second).GetWithDefault(GfVec3f(1.0f));
+  };
+
+  const std::string projection = str("lens_projection", "perspective");
+  if (projection != "perspective") {
+    TF_WARN(
+        "Camera %s: Karma Physical Lens projection '%s' is not supported, rendering with the "
+        "camera's projection",
+        id.GetText(),
+        projection.c_str());
+    return false;
+  }
+
+  std::vector<std::string> unsupported;
+  const auto check = [&](const bool active, const char *name) {
+    if (active) {
+      unsupported.emplace_back(name);
+    }
+  };
+  const std::string bokeh = str("bokeh_shape", "circle");
+  check(bokeh != "circle" && bokeh != "circular", "bokeh shape");
+  check(num("anisotropy", 0.0) != 0.0, "anisotropy");
+  check(num("aberration", 0.0) > 0.0, "chromatic aberration");
+  check(str("rollingshutter", "none") != "none", "rolling shutter");
+  check(num("scurve_enabled", 0.0) != 0.0 || num("tscale", 1.0) != 1.0, "shutter");
+  for (const char *map : {"bokeh_map",
+                          "anisotropy_map",
+                          "curv_map",
+                          "tint_map",
+                          "fstop_map",
+                          "focus_map",
+                          "toffset_map",
+                          "tscale_map"})
+  {
+    check(!str(map, "").empty(), map);
+  }
+
+  std::string curvType = str("curv_type", "none");
+  check(curvType != "none" && curvType != "quadratic" && curvType != "cubic", "curvature map");
+  const double curvature = num("curvature", 0.0);
+  if (curvType != "quadratic" && curvType != "cubic") {
+    curvType = "none";
+  }
+  const bool opencv = num("opencv_enabled", 0.0) != 0.0;
+  const GfVec3f tint = GfCompMult(vec("lens_addtint"), vec("addtint"));
+  const double exposure = num("lens_exposure", 0.0) + num("exposure", 0.0);
+  if (!unsupported.empty()) {
+    TF_WARN("Camera %s: Karma Physical Lens %s not supported by Cycles",
+            id.GetText(),
+            TfStringJoin(unsupported, ", ").c_str());
+  }
+
+  script["focal_length"] = VtValue(double(camera.GetFocalLength()));
+  script["aperture_offset_x"] = VtValue(double(camera.GetHorizontalApertureOffset()));
+  script["aperture_offset_y"] = VtValue(double(camera.GetVerticalApertureOffset()));
+  script["opencv_enabled"] = VtValue(int(opencv));
+  script["opencv_aspect"] = VtValue(int(lensMaterial));
+  bool active = false;
+  for (const char *name : {"opencv_k1",
+                           "opencv_k2",
+                           "opencv_k3",
+                           "opencv_k4",
+                           "opencv_k5",
+                           "opencv_k6",
+                           "opencv_p1",
+                           "opencv_p2"})
+  {
+    script[name] = VtValue(num(name, 0.0));
+    active |= opencv && num(name, 0.0) != 0.0;
+  }
+  script["curv_type"] = VtValue(curvType);
+  script["curvature"] = VtValue(curvature);
+  active |= curvType != "none" && curvature != 0.0;
+  for (const char *name : {"tiltx", "tilty", "shiftx", "shifty"}) {
+    script[name] = VtValue(num(name, 0.0));
+    active |= num(name, 0.0) != 0.0;
+  }
+  script["addtint"] = VtValue(tint);
+  script["intensity"] = VtValue(num("intensity", 1.0));
+  script["exposure"] = VtValue(exposure);
+  script["vignetting"] = VtValue(num("vignetting", 0.0));
+  active |= tint != GfVec3f(1.0f) || num("intensity", 1.0) != 1.0 || exposure != 0.0 ||
+            num("vignetting", 0.0) > 0.0;
+  return active;
+}
+
+/* Devices that run OSL cameras: the CPU and OptiX (other GPUs render black). */
+bool RunsOslCamera(const DeviceInfo &info)
+{
+  if (info.type == DEVICE_MULTI) {
+    return std::all_of(info.multi_devices.begin(), info.multi_devices.end(), RunsOslCamera);
+  }
+  return info.type == DEVICE_CPU || info.type == DEVICE_OPTIX;
+}
 
 }  // namespace
 
@@ -464,6 +744,22 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
         }
       }
     }
+
+    /* Karma's Physical Lens as the shipped OSL camera, unless the camera has a Cycles custom lens
+     * or panorama. shortcut: edits of the lens material do not re-sync the camera (nothing
+     * dirties it), a husk render or a camera edit picks them up; add a dependency on the bound
+     * material if live lens edits are needed. */
+    settings.karmaLens = false;
+    std::map<std::string, VtValue> lens, script;
+    bool lensMaterial = false;
+    if (settings.customScript.empty() && settings.panoramaType == "none" &&
+        ReadKarmaPhysicalLens(sceneDelegate, primDs, lens, lensMaterial) &&
+        MapKarmaPhysicalLens(lens, lensMaterial, _data, id, script))
+    {
+      settings.customScript = path_join(path_get("shader"), "hdcycles_physical_lens.osl");
+      settings.scriptParams = std::move(script);
+      settings.karmaLens = true;
+    }
   }
 
   *dirtyBits = DirtyBits::Clean;
@@ -629,7 +925,17 @@ bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera 
   /* A custom lens (OSL camera shader, CPU and OptiX) replaces the projection, like Blender's
    * Custom camera type. Only the render camera, the dicing camera keeps the projection. */
   if (scene && cam == scene->camera) {
-    if (!settings.customScript.empty()) {
+    /* Karma's lens falls back to the camera's projection on devices without OSL cameras. */
+    if (settings.karmaLens && !RunsOslCamera(scene->device->info)) {
+      static std::once_flag warned;
+      std::call_once(warned, [] {
+        TF_WARN("Karma Physical Lens needs the CPU or OptiX device, rendering without it");
+      });
+      if (!cam->script_name.empty()) {
+        cam->clear_osl_camera(scene);
+      }
+    }
+    else if (!settings.customScript.empty()) {
       ScriptParamQuery params(settings.scriptParams);
       cam->set_osl_camera(scene, params, settings.customScript);
       if (!cam->script_name.empty()) {

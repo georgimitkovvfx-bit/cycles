@@ -88,6 +88,8 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
      * "primvars:cycles:camera:script:<parameter>" primvars. */
     std::string customScript;
     std::map<std::string, PXR_NS::VtValue> scriptParams;
+    /* The script is the shipped one for Karma's Physical Lens (not set by the user). */
+    bool karmaLens = false;
     /* Blender's Shutter Curve: weight over the shutter at RAMP_TABLE_SIZE evenly spaced times,
      * empty for a constant one. */
     std::vector<float> shutterCurve;

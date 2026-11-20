@@ -1,0 +1,130 @@
+/* SPDX-FileCopyrightText: 2026 Blender Foundation
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/* Karma Physical Lens (Houdini's kma_physicallens VOP) as a Cycles custom (OSL) camera, for the
+ * perspective projection. hdCycles sets it on cameras with a Karma lens shader or lens material,
+ * with the lens parameters under their kma_physicallens names and the camera values below.
+ *
+ * Same model as karma_lens_physicalcore and its helpers in $HFS/houdini/vex/include/lens.h:
+ * - x, y: the sample on the aperture (sensor) in Karma's screen coordinates, -1..1 over the
+ *   horizontal and the vertical aperture, centered on the lens axis (aperture offsets included);
+ *   aspect = horizontal / vertical aperture (the image aspect ratio, square pixels).
+ * - OpenCV distortion (karma_lens_opencv_distort): radial k1..k6 (rational) and tangential
+ *   p1, p2 applied to x, y. A lens material (Karma's built-in code) measures y in units of the
+ *   horizontal half aperture (opencv_aspect 1); the cached code of the Lens Shader VOP uses x, y
+ *   as they are (opencv_aspect 0, elliptical on non-square images).
+ * - Curvature (karma_lens_quadraticdistort / cubicdistort): moves the image plane along the axis.
+ * - Perspective: direction (x * Hap / 2 + shift, y * Vap / 2 + shift) / focal, depth 1 - offset;
+ *   tilt rescales the focus distance per ray; depth of field focuses the direction at the focus
+ *   distance from a point on the aperture (Cycles' aperture: radius focal / (2 f-stop), blades);
+ *   vignetting is cos^4 of the ray angle; tint, intensity and exposure weight the ray.
+ * Cycles' camera space looks along +Z, Karma's along -Z (isRHS): z is mirrored. */
+
+shader hdcycles_physical_lens(
+    /* The camera's: focal length in the unit of the aperture (USD lens unit, tenths of a scene
+     * unit), aperture offsets in that unit. */
+    float focal_length = 50.0,
+    float aperture_offset_x = 0.0,
+    float aperture_offset_y = 0.0,
+    /* kma_physicallens parameters. */
+    int opencv_enabled = 0,
+    int opencv_aspect = 1,
+    float opencv_k1 = 0.0,
+    float opencv_k2 = 0.0,
+    float opencv_k3 = 0.0,
+    float opencv_k4 = 0.0,
+    float opencv_k5 = 0.0,
+    float opencv_k6 = 0.0,
+    float opencv_p1 = 0.0,
+    float opencv_p2 = 0.0,
+    string curv_type = "none",
+    float curvature = 0.0,
+    float tiltx = 0.0,
+    float tilty = 0.0,
+    /* In scene units, like Karma's (relative to the focal length in scene units). */
+    float shiftx = 0.0,
+    float shifty = 0.0,
+    color addtint = 1.0,
+    float intensity = 1.0,
+    float exposure = 0.0,
+    float vignetting = 0.0,
+    output point position = 0.0,
+    output vector direction = 0.0,
+    output color throughput = 1.0)
+{
+  vector sensor_size;
+  getattribute("cam:sensor_size", sensor_size);
+  if (sensor_size[0] <= 0.0 || sensor_size[1] <= 0.0 || focal_length <= 0.0) {
+    throughput = 0.0;
+    return;
+  }
+  float aspect = sensor_size[0] / sensor_size[1];
+
+  /* Raster position 0..1 over the image to Karma's screen coordinates. */
+  point raster = camera_shader_raster_position();
+  float x = ((raster[0] - 0.5) * sensor_size[0] + aperture_offset_x) / (0.5 * sensor_size[0]);
+  float y = ((raster[1] - 0.5) * sensor_size[1] + aperture_offset_y) / (0.5 * sensor_size[1]);
+
+  if (opencv_enabled) {
+    float ys = opencv_aspect ? y / aspect : y;
+    float r2 = x * x + ys * ys;
+    float r4 = r2 * r2;
+    float r6 = r4 * r2;
+    float rc = (1.0 + opencv_k1 * r2 + opencv_k2 * r4 + opencv_k3 * r6) /
+               (1.0 + opencv_k4 * r2 + opencv_k5 * r4 + opencv_k6 * r6);
+    float xd = rc * x + 2.0 * opencv_p1 * x * ys + opencv_p2 * (r2 + 2.0 * x * x);
+    float yd = rc * ys + opencv_p1 * (r2 + 2.0 * ys * ys) + 2.0 * opencv_p2 * x * ys;
+    x = xd;
+    y = opencv_aspect ? yd * aspect : yd;
+  }
+
+  float offset = 0.0;
+  float ux = x * aspect;
+  if (curv_type == "quadratic") {
+    offset = (2.0 * (ux * ux + y * y) - 1.0) * curvature;
+  }
+  else if (curv_type == "cubic") {
+    offset = (2.0 * (fabs(ux * ux * ux) + fabs(y * y * y)) - 1.0) * curvature;
+  }
+
+  /* Shift: scene units over the focal length in scene units (the lens unit is a tenth). */
+  vector R = vector((x * 0.5 * sensor_size[0] + shiftx * 10.0) / focal_length,
+                    (y * 0.5 * sensor_size[1] + shifty * 10.0) / focal_length,
+                    1.0 - offset);
+  if (R[2] <= 0.0) {
+    throughput = 0.0;
+    return;
+  }
+
+  float aperture_size = 0.0;
+  getattribute("cam:aperture_size", aperture_size);
+  if (aperture_size > 0.0) {
+    float focus = 1.0;
+    getattribute("cam:focal_distance", focus);
+    if (tiltx != 0.0 || tilty != 0.0) {
+      /* Karma's focus plane normal, z mirrored. */
+      float tx = radians(tiltx);
+      float ty = radians(tilty);
+      vector n = vector(sin(tx) * cos(ty), -sin(ty), -cos(tx) * cos(ty));
+      float t = n[2] / dot(n, R);
+      focus = t < 0.0 ? 1e10 : focus * t;
+    }
+    getattribute("cam:aperture_position", position);
+    position[2] = 0.0;
+    R = R * focus - position;
+    if (R[2] <= 0.0) {
+      throughput = 0.0;
+      return;
+    }
+  }
+
+  color tint = addtint;
+  if (vignetting > 0.0) {
+    float r = sqrt(R[0] * R[0] + R[1] * R[1]) * vignetting;
+    float cosr = cos(atan(r / R[2]));
+    tint *= cosr * cosr * cosr * cosr;
+  }
+  throughput = tint * intensity * pow(2.0, exposure);
+  direction = normalize(R);
+}

@@ -319,6 +319,11 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/imaging/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesImagingName}/resources")
   endif()
 
+  if(WITH_CYCLES_OSL)
+    # OSL camera for Karma's Physical Lens, compiled when first used (like Blender's scripts).
+    delayed_install("${CMAKE_CURRENT_SOURCE_DIR}/resources/osl" "hdcycles_physical_lens.osl" ${CYCLES_INSTALL_PATH}/shader)
+  endif()
+
   if(WITH_CYCLES_BLENDER)
     get_filename_component(_addons_core_dir "${CYCLES_INSTALL_PATH}" DIRECTORY)
     delayed_install(
