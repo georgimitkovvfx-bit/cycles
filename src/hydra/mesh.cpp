@@ -5,6 +5,7 @@
 
 #include "hydra/mesh.h"
 #include "hydra/geometry.inl"
+#include "hydra/mesh_attributes.h"
 #include "hydra/util.h"
 #include "scene/mesh.h"
 
@@ -111,6 +112,66 @@ VtValue ComputeTriangulatedFaceVaryingPrimvar(VtValue value,
   return VtValue();
 }
 
+/* Pointiness and Random Per Island, which Blender's sync computes, when a shader reads them. Like
+ * Blender, on the control mesh of subdivision meshes, interpolated by the tessellation. */
+void PopulateIslandAttributes(Mesh *mesh,
+                              Scene *scene,
+                              const HdMeshTopology &topology,
+                              const VtIntArray &primitiveParams)
+{
+  const bool subdivision = mesh->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
+  AttributeSet &attributes = subdivision ? mesh->subd_attributes : mesh->attributes;
+  attributes.remove(ATTR_STD_POINTINESS);
+  attributes.remove(ATTR_STD_RANDOM_PER_ISLAND);
+
+  const bool needPointiness = mesh->need_attribute(scene, ATTR_STD_POINTINESS);
+  const bool needIsland = mesh->need_attribute(scene, ATTR_STD_RANDOM_PER_ISLAND);
+  const Attribute *attr_P = attributes.find(ATTR_STD_POSITION);
+  if ((!needPointiness && !needIsland) || !attr_P) {
+    return;
+  }
+
+  const VtIntArray &counts = topology.GetFaceVertexCounts();
+  const VtIntArray &indices = topology.GetFaceVertexIndices();
+  const int numVerts = topology.GetNumPoints();
+  /* Topology from the scene: indices past the points would be read out of bounds. */
+  size_t numCorners = 0;
+  for (const int count : counts) {
+    numCorners += size_t(std::max(count, 0));
+  }
+  if (attr_P->size < numVerts || numCorners != indices.size() ||
+      std::ranges::any_of(counts, [](const int count) { return count < 0; }) ||
+      std::ranges::any_of(indices, [numVerts](const int v) { return v < 0 || v >= numVerts; }))
+  {
+    return;
+  }
+
+  const PolygonMesh polygons = {attr_P->data<packed_float3>(),
+                                numVerts,
+                                counts.data(),
+                                counts.size(),
+                                indices.data(),
+                                topology.GetOrientation() == HdTokens->leftHanded};
+
+  if (needPointiness) {
+    const std::vector<float> pointiness = compute_pointiness(polygons);
+    std::ranges::copy(pointiness, attributes.add(ATTR_STD_POINTINESS)->data_for_write<float>());
+  }
+  if (needIsland) {
+    const std::vector<float> island = compute_random_per_island(polygons);
+    float *data = attributes.add(ATTR_STD_RANDOM_PER_ISLAND)->data_for_write<float>();
+    if (subdivision) {
+      std::ranges::copy(island, data);
+    }
+    else {
+      /* Per triangle, from the polygon it was cut from. */
+      for (size_t i = 0; i < primitiveParams.size(); ++i) {
+        data[i] = island[HdMeshUtil::DecodeFaceIndexFromCoarseFaceParam(primitiveParams[i])];
+      }
+    }
+  }
+}
+
 }  // namespace
 
 Transform convert_transform(const GfMatrix4d &matrix)
@@ -194,6 +255,12 @@ void HdCyclesMesh::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyBit
   // the attribute is missing, and Hydra sends no DirtyNormals for them.
   if (dirtyBits & (HdChangeTracker::DirtyNormals | HdChangeTracker::DirtyPoints)) {
     PopulateNormals(sceneDelegate);
+  }
+
+  /* Moved points change the pointiness, and shader changes resync the primvars. Before the
+   * primvars, which tag an attribute-only update. */
+  if (dirtyBits & (HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyPrimvar)) {
+    PopulateIslandAttributes(_geom, (Scene *)_geom->get_owner(), _topology, _primitiveParams);
   }
 
   // Must happen after topology update, so that appropriate attribute set can be selected
