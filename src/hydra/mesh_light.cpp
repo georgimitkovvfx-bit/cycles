@@ -52,20 +52,31 @@ float WorldArea(const Geometry *geom, const Transform &tfm)
     return 0.0f;
   }
   const Mesh *mesh = static_cast<const Mesh *>(geom);
-  const Attribute *attr_P = mesh->attributes.find(ATTR_STD_POSITION);
+  /* Subdivision meshes have their cage positions in the subd attributes, the triangles and their
+   * positions only exist after tessellation. */
+  const bool subdivision = mesh->get_num_subd_faces() > 0;
+  const Attribute *attr_P = (subdivision ? mesh->subd_attributes : mesh->attributes)
+                                .find(ATTR_STD_POSITION);
   if (!attr_P) {
     return 0.0f;
   }
   const packed_float3 *verts = attr_P->data<packed_float3>();
+  const size_t numVerts = verts ? size_t(attr_P->size) : 0;
   const auto point = [&](const int i) { return transform_point(&tfm, float3(verts[i])); };
   const auto triangleArea = [&](const int a, const int b, const int c) {
+    if (a < 0 || b < 0 || c < 0 || size_t(std::max({a, b, c})) >= numVerts) {
+      return 0.0f;
+    }
     const float3 pa = point(a);
     return 0.5f * len(cross(point(b) - pa, point(c) - pa));
   };
   float area = 0.0f;
-  const array<int> &triangles = mesh->get_triangles();
-  for (size_t i = 0; i + 2 < triangles.size(); i += 3) {
-    area += triangleArea(triangles[i], triangles[i + 1], triangles[i + 2]);
+  if (!subdivision) {
+    const array<int> &triangles = mesh->get_triangles();
+    for (size_t i = 0; i + 2 < triangles.size(); i += 3) {
+      area += triangleArea(triangles[i], triangles[i + 1], triangles[i + 2]);
+    }
+    return area;
   }
   /* The control cage of subdivision meshes, a fan per face. */
   const array<int> &corners = mesh->get_subd_face_corners();
