@@ -76,7 +76,14 @@ bool HdCyclesOutputDriver::read_render_tile(const Tile &tile)
   const BakeSettings bake = _renderParam->GetBake();
   std::unique_lock<thread_mutex> sceneLock(scene->mutex, std::try_to_lock);
   if (sceneLock.owns_lock()) {
-    BakeMesh mesh = SnapshotBakeMesh(scene, bake, _renderParam->GetBakeSourcePrims());
+    std::shared_ptr<const BakeSources> previousSources;
+    {
+      const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
+      previousSources = _bakeMesh.sources;
+    }
+    unsigned int sourcesVersion = 0;
+    const std::vector<std::string> sourcePrims = _renderParam->GetBakeSourcePrims(sourcesVersion);
+    BakeMesh mesh = SnapshotBakeMesh(scene, bake, sourcePrims, sourcesVersion, previousSources);
     sceneLock.unlock();
     const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
     _bakeMesh = std::move(mesh);

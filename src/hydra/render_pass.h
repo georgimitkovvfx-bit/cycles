@@ -32,6 +32,9 @@ class HdCyclesRenderPass final : public PXR_NS::HdRenderPass {
   // Render tags drawn by the last execute, and the version of the prims' render tags then
   PXR_NS::TfTokenVector _lastRenderTags;
   unsigned int _lastRenderTagVersion = ~0u;
+  // Selected to Active sources resolved last, and the scene state version then
+  std::string _lastBakeSources;
+  unsigned int _lastBakeSourcesVersion = ~0u;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

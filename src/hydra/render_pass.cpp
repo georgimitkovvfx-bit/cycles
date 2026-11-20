@@ -201,9 +201,20 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     const BakeSettings bake = _renderParam->GetBake();
     if (!bake.object.empty() || scene->bake_manager->get_baking()) {
       SetBakeTarget(scene, bake);
-      _renderParam->SetBakeSourcePrims(
-          bake.useSources() ? ResolveBakeSources(renderIndex, bake.sources) :
-                              std::vector<std::string>());
+      /* Again after scene changes: the version also stamps the sources' ray tracing BVH, which
+       * the output driver keeps while it stays the same.
+       * shortcut: collection edits on prims outside the render index bump no version; they apply
+       * with the next scene change. */
+      const unsigned int sceneVersion = renderIndex->GetChangeTracker().GetSceneStateVersion();
+      const std::string sources = bake.useSources() ? bake.sources : std::string();
+      if (sources != _lastBakeSources || sceneVersion != _lastBakeSourcesVersion) {
+        _lastBakeSources = sources;
+        _lastBakeSourcesVersion = sceneVersion;
+        _renderParam->SetBakeSourcePrims(sources.empty() ?
+                                             std::vector<std::string>() :
+                                             ResolveBakeSources(renderIndex, sources),
+                                         sceneVersion);
+      }
     }
 
     bool displayChanged = false;

@@ -197,16 +197,19 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     bakeChanged = true;
     RequestResync(false, true);
   }
-  /* Selected to Active: the rprims the bake sources match, resolved by the render pass. */
-  std::vector<std::string> GetBakeSourcePrims() const
+  /* Selected to Active: the rprims the bake sources match, resolved by the render pass, and the
+   * scene state version (HdChangeTracker) they were resolved at. */
+  std::vector<std::string> GetBakeSourcePrims(unsigned int &version) const
   {
     const std::lock_guard<std::mutex> lock(_bakeMutex);
+    version = _bakeSourcesVersion;
     return _bakeSourcePrims;
   }
-  void SetBakeSourcePrims(std::vector<std::string> prims)
+  void SetBakeSourcePrims(std::vector<std::string> prims, const unsigned int version)
   {
     const std::lock_guard<std::mutex> lock(_bakeMutex);
     _bakeSourcePrims = std::move(prims);
+    _bakeSourcesVersion = version;
   }
   std::atomic<bool> bakeChanged = false;
   /* Bake margin in pixels (Blender's Extend margin). */
@@ -464,6 +467,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   mutable std::mutex _bakeMutex;
   BakeSettings _bake;
   std::vector<std::string> _bakeSourcePrims;
+  unsigned int _bakeSourcesVersion = 0;
   mutable std::mutex _materialOverrideMutex;
   std::string _materialOverride;
   float _filmExposure = 1.0f;

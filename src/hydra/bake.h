@@ -83,11 +83,14 @@ struct BakeMesh {
 /* Texture baking like Blender's: the image is the UV space of the bake target mesh (the object of
  * that prim and instance), each pixel a point on the triangle that covers it in the bake UV map.
  * Copies the target's data (empty when it has no triangles or UVs), and with Selected to Active
- * builds a ray tracing BVH of the source prims (`sourcePrims`, the resolved bake sources). Needs
- * the scene lock. */
+ * builds a ray tracing BVH of the source prims (`sourcePrims`, the resolved bake sources), or
+ * reuses `previousSources` when built from the same settings, prims and scene state version
+ * (`sourcesVersion`). Needs the scene lock. */
 BakeMesh SnapshotBakeMesh(CCL_NS::Scene *scene,
                           const BakeSettings &bake,
-                          const std::vector<std::string> &sourcePrims);
+                          const std::vector<std::string> &sourcePrims,
+                          unsigned int sourcesVersion,
+                          const std::shared_ptr<const BakeSources> &previousSources);
 
 /* Whether the object indices of the copy are those of the device scene rendered now. Reads the
  * device scene, which the session thread (the output driver's) updates. */

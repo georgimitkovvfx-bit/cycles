@@ -106,6 +106,11 @@ struct BakeSources {
   Transform inverseTfm = transform_identity();
   float extrusion = 0.0f;
   float maxDistance = 0.0f;
+  /* What it was built from: the same again reuses it. */
+  BakeSettings settings;
+  std::vector<std::string> prims;
+  unsigned int version = 0;
+  const Object *target = nullptr;
 
   BakeSources() = default;
   BakeSources(const BakeSources &) = delete;
@@ -122,16 +127,27 @@ struct BakeSources {
 
 namespace {
 
-/* Selected to Active: the source meshes (but the target) in world space in a BVH, built for
- * each snapshot.
- * shortcut: rebuilt per snapshot (each render start and tile); keep it while the sources do not
- * change if large sources make restarts slow. */
-std::shared_ptr<const BakeSources> SnapshotBakeSources(Scene *scene,
-                                                       const BakeSettings &settings,
-                                                       const std::vector<std::string> &prims,
-                                                       const Object *target)
+/* Selected to Active: the source meshes (but the target) in world space in a BVH. Built again
+ * only when the settings, the source prims or the scene state version changed, not for each
+ * snapshot (each render start and tile). */
+std::shared_ptr<const BakeSources> SnapshotBakeSources(
+    Scene *scene,
+    const BakeSettings &settings,
+    const std::vector<std::string> &prims,
+    const unsigned int version,
+    const Object *target,
+    const std::shared_ptr<const BakeSources> &previous)
 {
+  if (previous && previous->version == version && previous->target == target &&
+      previous->settings == settings && previous->prims == prims)
+  {
+    return previous;
+  }
   auto sources = std::make_shared<BakeSources>();
+  sources->settings = settings;
+  sources->prims = prims;
+  sources->version = version;
+  sources->target = target;
   const Mesh *const targetMesh = static_cast<const Mesh *>(target->get_geometry());
   sources->inverseTfm = transform_inverse(target->get_tfm());
   sources->extrusion = settings.cageExtrusion;
@@ -273,7 +289,9 @@ void RasterizeBake(const BakeMesh &mesh,
 
 BakeMesh SnapshotBakeMesh(Scene *scene,
                           const BakeSettings &settings,
-                          const std::vector<std::string> &sourcePrims)
+                          const std::vector<std::string> &sourcePrims,
+                          const unsigned int sourcesVersion,
+                          const std::shared_ptr<const BakeSources> &previousSources)
 {
   BakeMesh bake;
   Object *const object = FindBakeObject(scene, settings.object, settings.instance);
@@ -338,7 +356,8 @@ BakeMesh SnapshotBakeMesh(Scene *scene,
     }
   }
   if (settings.useSources()) {
-    bake.sources = SnapshotBakeSources(scene, settings, sourcePrims, object);
+    bake.sources = SnapshotBakeSources(
+        scene, settings, sourcePrims, sourcesVersion, object, previousSources);
   }
   return bake;
 }
