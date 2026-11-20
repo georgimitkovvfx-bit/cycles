@@ -551,6 +551,13 @@ const std::vector<KarmaFallback> &GetKarmaFallbacks()
       {HdCyclesRenderSettingsTokens->abortNoGpu,
        {TfToken("karma:global:abortnogpudevice")},
        [](const Settings &, const VtValue &first) { return VtValue::Cast<bool>(first); }},
+      /* Karma's LOP authors its Enable Motion Blur as disableMotionBlur, this is for others. */
+      {HdCyclesRenderSettingsTokens->disableMotionBlur,
+       {TfToken("karma:global:enablemblur")},
+       [](const Settings &, const VtValue &first) {
+         const VtValue enable = VtValue::Cast<bool>(first);
+         return enable.IsEmpty() ? VtValue() : VtValue(!enable.UncheckedGet<bool>());
+       }},
   };
   return fallbacks;
 }
