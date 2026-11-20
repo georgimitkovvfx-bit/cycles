@@ -68,6 +68,18 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
     HdVolumeFieldBindingSchema bindings = HdVolumeFieldBindingSchema::GetFromParent(
         prim.dataSource);
 
+    /* Only the fields the shaders read now: the volume mesh is built from all voxel attributes,
+     * which the volume keeps when it is rebuilt. */
+    for (auto it = _geom->attributes.attributes.begin(); it != _geom->attributes.attributes.end();)
+    {
+      if (it->element & ATTR_ELEMENT_VOXEL) {
+        _geom->attributes.remove(it++);
+      }
+      else {
+        ++it;
+      }
+    }
+
     /* A field kept for the bounds when the shaders need none (density first). */
     bool anyLoaded = false;
     HdCyclesField *boundsField = nullptr;
