@@ -170,7 +170,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     _geom->set_used_shaders(usedShaders);
   }
 
-  if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id)) {
+  if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
     // This needs to be corrected in the AOV
     _instances[0]->set_pass_id(Base::GetPrimId() + 1);
   }
@@ -188,19 +188,13 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     auto *const instancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
 
-    // Make sure the first object attribute is the instanceId
-    assert(_instances[0]->attributes.size() >= 1 &&
-           _instances[0]->attributes.front().name() == HdAovTokens->instanceId.GetString());
-
     VtMatrix4dArray transforms;
     if (instancer) {
       transforms = instancer->ComputeInstanceTransforms(id);
-      _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(), +0.0f);
     }
     else {
       // Default to a single instance with an identity transform
       transforms.push_back(GfMatrix4d(1.0));
-      _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(), -1.0f);
     }
 
     const size_t oldSize = _instances.size();
@@ -214,6 +208,19 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     for (size_t i = oldSize; i < newSize; ++i) {
       _instances[i] = lock.scene->create_node<Object>();
       InitializeInstance(static_cast<int>(i));
+      if (i == 0) {
+        _instances[0]->set_pass_id(Base::GetPrimId() + 1);
+      }
+    }
+
+    /* After the resize: every instance can be masked out (invisibleIds, culled native instances), leaving none —
+     * the next sync must not touch _instances[0] then (it was read out of bounds: heap corruption, crashes). */
+    if (!_instances.empty()) {
+      // Make sure the first object attribute is the instanceId
+      assert(_instances[0]->attributes.size() >= 1 &&
+             _instances[0]->attributes.front().name() == HdAovTokens->instanceId.GetString());
+      _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(),
+                                                     instancer ? +0.0f : -1.0f);
     }
 
     // Update transforms of all instances

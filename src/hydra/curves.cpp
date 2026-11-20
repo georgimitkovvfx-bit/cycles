@@ -154,7 +154,10 @@ void HdCyclesCurves::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
       {
         if (value.IsHolding<VtVec3fArray>() && value.GetArraySize() == 1) {
           const GfVec3f color = value.UncheckedGet<VtVec3fArray>()[0];
-          _instances[0]->set_color(make_float3(color[0], color[1], color[2]));
+          /* Every instance (there may be none: all masked out). */
+          for (Object *instance : _instances) {
+            instance->set_color(make_float3(color[0], color[1], color[2]));
+          }
         }
       }
 
