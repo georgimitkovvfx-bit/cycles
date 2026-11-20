@@ -245,50 +245,84 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
   const VtValue value = ReadPrimvar(primvars, HdTokens->widths);
   const HdInterpolation interpolation = ReadPrimvarInterpolation(primvars, HdTokens->widths);
+  Attribute *attr_R = _geom->attributes.add(ATTR_STD_RADIUS);
 
   if (!value.IsHolding<VtFloatArray>()) {
     /* Without widths, width 1 like Karma and Storm. */
     if (!value.IsEmpty()) {
       TF_WARN("Invalid widths data for %s", GetId().GetText());
     }
+    attr_R->remove_motion();
     std::fill_n(_geom->get_radius_for_write(), _geom->num_keys(), 0.5f);
     return;
   }
 
-  /* Widths at the keys: vertex widths follow the curve basis, varying ones are linear. */
-  const VtValue keyValue = (interpolation == HdInterpolationVertex) ? _vertexMap.Apply(value) :
-                           (interpolation == HdInterpolationVarying ||
-                            interpolation == HdInterpolationFaceVarying) ?
-                                                                      _varyingMap.Apply(value) :
-                                                                      value;
-  const auto &widths = keyValue.UncheckedGet<VtFloatArray>();
-  float *radius = _geom->get_radius_for_write();
+  /* Radii at the keys: vertex widths follow the curve basis, varying ones are linear. */
+  const auto setRadius = [&](const VtValue &widthsValue, float *radius) {
+    if (!widthsValue.IsHolding<VtFloatArray>()) {
+      return false;
+    }
+    const VtValue keyValue = (interpolation == HdInterpolationVertex) ?
+                                 _vertexMap.Apply(widthsValue) :
+                             (interpolation == HdInterpolationVarying ||
+                              interpolation == HdInterpolationFaceVarying) ?
+                                 _varyingMap.Apply(widthsValue) :
+                                 widthsValue;
+    const auto &widths = keyValue.UncheckedGet<VtFloatArray>();
 
-  if (interpolation == HdInterpolationConstant && !widths.empty()) {
-    const float constantRadius = widths[0] * 0.5f;
+    if (interpolation == HdInterpolationConstant && !widths.empty()) {
+      std::fill_n(radius, _geom->num_keys(), widths[0] * 0.5f);
+    }
+    else if (interpolation == HdInterpolationUniform) {
+      if (widths.size() != _geom->num_curves()) {
+        return false;
+      }
+      for (size_t curve = 0; curve < _geom->num_curves(); ++curve) {
+        const Hair::Curve c = _geom->get_curve(curve);
+        std::fill_n(radius + c.first_key, c.num_keys, widths[curve] * 0.5f);
+      }
+    }
+    else if (widths.size() == _geom->num_keys()) {
+      for (size_t i = 0; i < _geom->num_keys(); ++i) {
+        radius[i] = widths[i] * 0.5f;
+      }
+    }
+    else {
+      return false;
+    }
+    return true;
+  };
 
-    for (size_t i = 0; i < _geom->num_keys(); ++i) {
-      radius[i] = constantRadius;
-    }
-  }
-  else if (interpolation == HdInterpolationUniform) {
-    if (widths.size() != _geom->num_curves()) {
-      TF_WARN("Invalid widths data for %s", GetId().GetText());
-      return;
-    }
-    for (size_t curve = 0; curve < _geom->num_curves(); ++curve) {
-      const Hair::Curve c = _geom->get_curve(curve);
-      std::fill_n(radius + c.first_key, c.num_keys, widths[curve] * 0.5f);
-    }
-  }
-  else if (widths.size() == _geom->num_keys()) {
-    for (size_t i = 0; i < _geom->num_keys(); ++i) {
-      radius[i] = widths[i] * 0.5f;
-    }
-  }
-  else {
+  if (!setRadius(value, _geom->get_radius_for_write())) {
     TF_WARN("Invalid widths data for %s", GetId().GetText());
   }
+
+  /* Motion blur: radii at the motion steps of the points, when the widths are animated. Cycles
+   * reads the radius steps with the position steps, so they need the same number. */
+  const Attribute *attr_P = _geom->attributes.find(ATTR_STD_POSITION);
+  const std::vector<float> motionTimes = GetObjectMotionTimes();
+  const HdSampledDataSourceHandle widthsDs =
+      primvars.GetPrimvar(HdTokens->widths).GetFlattenedPrimvarValue();
+  std::vector<float> sampleTimes;
+  const int numSteps = int(_geom->get_motion_steps());
+  if (!attr_P || !attr_P->has_motion() || int(motionTimes.size()) != numSteps || !widthsDs ||
+      !widthsDs->GetContributingSampleTimesForInterval(
+          motionTimes.front(), motionTimes.back(), &sampleTimes))
+  {
+    attr_R->remove_motion();
+    return;
+  }
+  attr_R->add_motion(_geom);
+  for (int step = 0; step < numSteps; ++step) {
+    const int attrStep = attr_R->time_step_to_attr_step(step, numSteps);
+    if (attrStep != 0 &&
+        !setRadius(widthsDs->GetValue(motionTimes[step]), attr_R->data_for_write<float>(attrStep)))
+    {
+      attr_R->remove_motion(); /* Changing topology. */
+      break;
+    }
+  }
+  _geom->tag_radius_modified();
 }
 
 void HdCyclesCurves::PopulatePrimvars(HdSceneDelegate *sceneDelegate)

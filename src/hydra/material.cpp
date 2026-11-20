@@ -355,6 +355,12 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (shift)
     (roughnessAnisotropic)
     (roughnessAzimuthal)
+    (roughness_advanced)
+    (base)
+    (thicknessScale)
+    (tint)
+    (diffuse)
+    (diffuseColor)
 );
 // clang-format on
 
@@ -421,9 +427,10 @@ class UsdToCyclesMapping {
     return true;
   }
 
-  /* Add the nodes that an input needs besides its socket, once the graph is linked. */
+  /* Add the nodes that an input needs besides its socket, once the graph is linked. A node whose
+   * closure needs more nodes after it replaces `node` by the last one, for the terminals. */
   virtual void finalize(ShaderGraph * /*graph*/,
-                        ShaderNode * /*node*/,
+                        ShaderNode *& /*node*/,
                         const HdMaterialNodeParameterContainerSchema & /*params*/) const
   {
   }
@@ -510,7 +517,7 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
   }
 
   void finalize(ShaderGraph *graph,
-                ShaderNode *node,
+                ShaderNode *&node,
                 const HdMaterialNodeParameterContainerSchema &params) const override
   {
     /* A missing file or UDIM tile reads the fallback, (0, 0, 0, 1) by default, like in Karma and
@@ -587,7 +594,7 @@ class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
   }
 
   void finalize(ShaderGraph *graph,
-                ShaderNode *node,
+                ShaderNode *&node,
                 const HdMaterialNodeParameterContainerSchema &params) const override
   {
     PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
@@ -663,7 +670,7 @@ class UsdToCyclesPrimvarReader : public UsdToCyclesMapping {
   }
 
   void finalize(ShaderGraph * /*graph*/,
-                ShaderNode *node,
+                ShaderNode *&node,
                 const HdMaterialNodeParameterContainerSchema &params) const override
   {
     /* Geometry without the primvar reads the fallback (e.g. 1 for a displayOpacity reader into
@@ -676,9 +683,10 @@ class UsdToCyclesPrimvarReader : public UsdToCyclesMapping {
 };
 
 /* Karma Hair (kma_hair, Chiang et al.) as the Chiang Principled Hair BSDF with melanin, with
- * Karma's defaults. Base Color is a dye like the Principled Hair Tint. Base, Tint (a multiplier on
- * the lighting), Thickness Scale, Diffuse, Absorption, the TT/TRT roughness scales and the hair ID
- * and seed have no Cycles input and are ignored. */
+ * Karma's defaults. Base Color is a dye like the Principled Hair Tint, Base darkens it, Thickness
+ * Scale scales the absorption, Diffuse mixes in a Diffuse BSDF and Tint weights the result.
+ * Absorption and the hair ID and seed have no Cycles input and are ignored, Cycles' TT/TRT
+ * roughness scales are fixed at Karma's defaults. */
 class UsdToCyclesKarmaHair : public UsdToCyclesMapping {
  public:
   using UsdToCyclesMapping::UsdToCyclesMapping;
@@ -714,17 +722,67 @@ class UsdToCyclesKarmaHair : public UsdToCyclesMapping {
   }
 
   void finalize(ShaderGraph *graph,
-                ShaderNode *node,
+                ShaderNode *&node,
                 const HdMaterialNodeParameterContainerSchema &params) const override
   {
-    /* Without Roughness Anisotropic, Roughness is also the azimuthal roughness. */
-    if (GetParameter(params, CyclesMaterialTokens->roughnessAnisotropic, 0) != 0) {
-      return;
-    }
     PrincipledHairBsdfNode *hair = static_cast<PrincipledHairBsdfNode *>(node);
-    hair->set_radial_roughness(hair->get_roughness());
-    if (ShaderOutput *link = hair->input("Roughness")->link) {
-      graph->connect(link, hair->input("Radial Roughness"));
+    /* Without Roughness Anisotropic, Roughness is also the azimuthal roughness. */
+    if (GetParameter(params, CyclesMaterialTokens->roughnessAnisotropic, 0) == 0) {
+      hair->set_radial_roughness(hair->get_roughness());
+      if (ShaderOutput *link = hair->input("Roughness")->link) {
+        graph->connect(link, hair->input("Radial Roughness"));
+      }
+    }
+    if (GetParameter(params, CyclesMaterialTokens->roughness_advanced, 0) != 0) {
+      TF_WARN("Karma Hair TT and TRT roughness scales are fixed at 0.25 and 4 in Cycles");
+    }
+
+    /* Base scales the dye towards black. Thickness Scale k scales the absorption, which is
+     * -log(1 - melanin) for the melanin and log(dye)^2 / f(roughness) for the dye: melanin
+     * becomes 1 - (1 - melanin)^k, the dye dye^sqrt(k).
+     * shortcut: authored values only, Base and Thickness Scale leave a linked Base Color or
+     * Melanin as is; add math nodes when an asset needs it. */
+    const float base = GetParameter(params, CyclesMaterialTokens->base, 1.0f);
+    const float thickness = std::max(
+        GetParameter(params, CyclesMaterialTokens->thicknessScale, 1.0f), 0.0f);
+    if (!hair->input("Tint")->link) {
+      const float3 dye = max(hair->get_tint() * base, zero_float3());
+      const float e = sqrtf(thickness);
+      hair->set_tint(make_float3(powf(dye.x, e), powf(dye.y, e), powf(dye.z, e)));
+    }
+    if (!hair->input("Melanin")->link) {
+      const float melanin = std::clamp(hair->get_melanin(), 0.0f, 1.0f);
+      hair->set_melanin(1.0f - powf(1.0f - melanin, thickness));
+    }
+
+    /* Diffuse moves the hair towards a Diffuse BSDF of Diffuse Color.
+     * shortcut: authored values only for Diffuse, Diffuse Color and Tint, like Base. */
+    ShaderOutput *closure = hair->output("BSDF");
+    const float diffuse = std::clamp(
+        GetParameter(params, CyclesMaterialTokens->diffuse, 0.0f), 0.0f, 1.0f);
+    if (diffuse > 0.0f) {
+      const GfVec3f color = GetParameter(
+          params, CyclesMaterialTokens->diffuseColor, GfVec3f(1.0f));
+      DiffuseBsdfNode *bsdf = graph->create_node<DiffuseBsdfNode>();
+      bsdf->set_color(make_float3(color[0], color[1], color[2]));
+      MixClosureNode *mix = graph->create_node<MixClosureNode>();
+      mix->set_fac(diffuse);
+      graph->connect(closure, mix->input("Closure1"));
+      graph->connect(bsdf->output("BSDF"), mix->input("Closure2"));
+      closure = mix->output("Closure");
+      node = mix;
+    }
+
+    /* Tint multiplies the lighting.
+     * shortcut: closures only have scalar weights in Cycles, so the average of Tint weights the
+     * closure and values above 1 are clamped; a colored Tint only darkens. */
+    const GfVec3f tint = GetParameter(params, CyclesMaterialTokens->tint, GfVec3f(1.0f));
+    const float weight = std::clamp((tint[0] + tint[1] + tint[2]) / 3.0f, 0.0f, 1.0f);
+    if (weight < 1.0f) {
+      MixClosureNode *mix = graph->create_node<MixClosureNode>();
+      mix->set_fac(weight);
+      graph->connect(closure, mix->input("Closure2"));
+      node = mix;
     }
   }
 };
