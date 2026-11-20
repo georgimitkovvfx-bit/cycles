@@ -75,6 +75,17 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _shutterOpen = open;
     _shutterClose = close;
   }
+  /* Set by a host that never renders while Hydra syncs (cycles_usd_render): each rprim then fills its own geometry
+   * outside the scene lock, so Hydra's parallel sync is parallel. Interactive hosts (Blender's viewport) leave it
+   * off: the session thread may update the scene meanwhile. */
+  void SetExclusiveSync(const bool exclusive)
+  {
+    _exclusiveSync = exclusive;
+  }
+  bool ExclusiveSync() const
+  {
+    return _exclusiveSync;
+  }
   void SetMotionBlurAllowed(const bool allowed)
   {
     _motionBlurAllowed = allowed;
@@ -109,6 +120,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   float _shutterOpen = 0.0f;
   float _shutterClose = 0.0f;
   bool _motionBlurAllowed = true;
+  bool _exclusiveSync = false;
   int _transparentBackground = -1;
   bool _backgroundDirty = false; /* the setting changed: update the background once */
 };

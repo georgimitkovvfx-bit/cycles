@@ -13,7 +13,9 @@
 #include "scene/object.h"
 #include "scene/scene.h"
 #include "scene/volume.h"
+#include "session/session.h"
 
+#include <optional>
 #include <type_traits>
 #include "util/hash.h"
 
@@ -138,20 +140,23 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   HdInstancer::_SyncInstancerAndParents(sceneDelegate->GetRenderIndex(), Base::GetInstancerId());
   Base::_UpdateVisibility(sceneDelegate, dirtyBits);
 
-  const SceneLock lock(renderParam);
-
+  /* Read and compute everything from Hydra before taking the scene lock: Hydra syncs rprims in parallel, and with
+   * the lock held throughout (as before) they ran one at a time. Only changes to the Cycles scene need it. */
   {
     const HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
     _motionSteps = session->MotionSteps();
     _shutterOpen = session->ShutterOpen();
     _shutterClose = session->ShutterClose();
   }
+  const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
 
   const SdfPath &id = Base::GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
 
-  if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
+  const HdCyclesMaterial *material = nullptr;
+  const bool materialDirty = *dirtyBits & HdChangeTracker::DirtyMaterialId;
+  if (materialDirty) {
     SdfPath materialId;
     /* Purpose here matches #HdCyclesDelegate::GetMaterialBindingPurpose. */
     if (auto pathDs =
@@ -160,36 +165,8 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       materialId = pathDs->GetTypedValue(0.0f);
     }
     Base::SetMaterialId(materialId);
-
-    const auto *const material = static_cast<const HdCyclesMaterial *>(
-        sceneDelegate->GetRenderIndex().GetSprim(HdPrimTypeTokens->material,
-                                                 Base::GetMaterialId()));
-
-    array<Node *> usedShaders(1);
-    if (material && material->GetCyclesShader()) {
-      usedShaders[0] = material->GetCyclesShader();
-    }
-    else {
-      /* No material: a volume gets Cycles' default volume (Principled Volume, as Blender's USD importer gives
-       * it); the default surface has no volume closure, so the volume rendered as nothing. */
-      if constexpr (std::is_same_v<CyclesBase, Volume>) {
-        usedShaders[0] = lock.scene->default_volume;
-      }
-      else {
-        usedShaders[0] = lock.scene->default_surface;
-      }
-    }
-
-    for (Node *shader : usedShaders) {
-      static_cast<Shader *>(shader)->tag_used(lock.scene);
-    }
-
-    _geom->set_used_shaders(usedShaders);
-  }
-
-  if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
-    // This needs to be corrected in the AOV
-    _instances[0]->set_pass_id(Base::GetPrimId() + 1);
+    material = static_cast<const HdCyclesMaterial *>(
+        sceneDelegate->GetRenderIndex().GetSprim(HdPrimTypeTokens->material, Base::GetMaterialId()));
   }
 
   if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
@@ -199,12 +176,13 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     }
   }
 
-  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
-      HdChangeTracker::IsInstancerDirty(*dirtyBits, id))
-  {
-    auto *const instancer = static_cast<HdCyclesInstancer *>(
-        sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
-
+  const bool transformsDirty = HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
+                               HdChangeTracker::IsInstancerDirty(*dirtyBits, id);
+  HdCyclesInstancer *const instancer = static_cast<HdCyclesInstancer *>(
+      sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
+  vector<Transform> tfms;
+  std::vector<array<Transform>> motions; /* per instance; empty: no motion */
+  if (transformsDirty) {
     VtMatrix4dArray transforms;
     if (instancer) {
       transforms = instancer->ComputeInstanceTransforms(id);
@@ -213,9 +191,90 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       // Default to a single instance with an identity transform
       transforms.push_back(GfMatrix4d(1.0));
     }
+    tfms.resize(transforms.size());
+    for (size_t i = 0; i < transforms.size(); ++i) {
+      tfms[i] = transform_scale(make_float3(metersPerUnit)) * convert_transform(_geomTransform * transforms[i]);
+    }
 
+    /* Transform motion blur: the object's and its instancer's transforms at each motion step, when either moves
+     * within the shutter (Cycles: motion[center] is the frame's transform). */
+    bool moving = false;
+    auto stepMatrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix();
+    if (_motionSteps > 1) {
+      std::vector<float> times;
+      moving = (stepMatrixDs &&
+                stepMatrixDs->GetContributingSampleTimesForInterval(_shutterOpen, _shutterClose, &times)) ||
+               (instancer && instancer->IsMoving(_shutterOpen, _shutterClose));
+    }
+    if (moving) {
+      motions.assign(tfms.size(), array<Transform>(_motionSteps));
+      for (int step = 0; step < _motionSteps && moving; ++step) {
+        const float time = MotionTime(step);
+        const GfMatrix4d geomTransform = stepMatrixDs ? stepMatrixDs->GetTypedValue(time) : GfMatrix4d(1.0);
+        VtMatrix4dArray stepTransforms;
+        if (instancer) {
+          stepTransforms = instancer->ComputeInstanceTransforms(id, time);
+        }
+        else {
+          stepTransforms.push_back(GfMatrix4d(1.0));
+        }
+        if (stepTransforms.size() != tfms.size()) {
+          moving = false; /* the instance count changes within the shutter: no motion */
+          break;
+        }
+        for (size_t i = 0; i < tfms.size(); ++i) {
+          motions[i][step] = transform_scale(make_float3(metersPerUnit)) *
+                             convert_transform(geomTransform * stepTransforms[i]);
+        }
+      }
+      if (!moving) {
+        motions.clear();
+      }
+    }
+  }
+  const HdCyclesRenderFlags flags = ReadRenderFlags(primDs);
+
+  array<Node *> usedShaders(1);
+  if (materialDirty) {
+    Scene *const scene = static_cast<HdCyclesSession *>(renderParam)->session->scene.get();
+    if (material && material->GetCyclesShader()) {
+      usedShaders[0] = material->GetCyclesShader();
+    }
+    else {
+      /* No material: a volume gets Cycles' default volume (Principled Volume, as Blender's USD importer gives
+       * it); the default surface has no volume closure, so the volume rendered as nothing. */
+      if constexpr (std::is_same_v<CyclesBase, Volume>) {
+        usedShaders[0] = scene->default_volume;
+      }
+      else {
+        usedShaders[0] = scene->default_surface;
+      }
+    }
+  }
+
+  /* Exclusive sync (no render meanwhile, HdCyclesSession::ExclusiveSync): the scene changes below run under the
+   * lock, then this prim fills its own geometry unlocked — in parallel with the others — and the updates are tagged
+   * under the lock again. Otherwise everything runs under one lock. */
+  bool rebuild = false;
+  const bool exclusive = static_cast<HdCyclesSession *>(renderParam)->ExclusiveSync();
+  std::optional<SceneLock> lock_holder(std::in_place, renderParam);
+  const SceneLock &lock = *lock_holder;
+
+  if (materialDirty) {
+    for (Node *shader : usedShaders) {
+      static_cast<Shader *>(shader)->tag_used(lock.scene);
+    }
+    _geom->set_used_shaders(usedShaders);
+  }
+
+  if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
+    // This needs to be corrected in the AOV
+    _instances[0]->set_pass_id(Base::GetPrimId() + 1);
+  }
+
+  if (transformsDirty) {
     const size_t oldSize = _instances.size();
-    const size_t newSize = transforms.size();
+    const size_t newSize = tfms.size();
 
     // Resize instance list
     for (size_t i = newSize; i < oldSize; ++i) {
@@ -230,51 +289,15 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       }
     }
 
-    /* Transform motion blur: the object's and its instancer's transforms at each motion step, when either moves
-     * within the shutter (Cycles: motion[center] is the frame's transform). */
-    bool moving = false;
-    auto stepMatrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix();
-    if (_motionSteps > 1) {
-      std::vector<float> times;
-      moving = (stepMatrixDs &&
-                stepMatrixDs->GetContributingSampleTimesForInterval(_shutterOpen, _shutterClose, &times)) ||
-               (instancer && instancer->IsMoving(_shutterOpen, _shutterClose));
-    }
-    if (moving) {
-      const float metersPerUnit = static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
-      std::vector<array<Transform>> motions(_instances.size(), array<Transform>(_motionSteps));
-      for (int step = 0; step < _motionSteps && moving; ++step) {
-        const float time = MotionTime(step);
-        const GfMatrix4d geomTransform = stepMatrixDs ? stepMatrixDs->GetTypedValue(time) : GfMatrix4d(1.0);
-        VtMatrix4dArray stepTransforms;
-        if (instancer) {
-          stepTransforms = instancer->ComputeInstanceTransforms(id, time);
-        }
-        else {
-          stepTransforms.push_back(GfMatrix4d(1.0));
-        }
-        if (stepTransforms.size() != _instances.size()) {
-          moving = false; /* the instance count changes within the shutter: no motion */
-          break;
-        }
-        for (size_t i = 0; i < _instances.size(); ++i) {
-          motions[i][step] = transform_scale(make_float3(metersPerUnit)) *
-                             convert_transform(geomTransform * stepTransforms[i]);
-        }
+    for (size_t i = 0; i < _instances.size(); ++i) {
+      if (!motions.empty()) {
+        _instances[i]->set_motion(motions[i]);
       }
-      if (moving) {
-        for (size_t i = 0; i < _instances.size(); ++i) {
-          _instances[i]->set_motion(motions[i]);
-        }
+      else if (!_instances[i]->get_motion().empty()) {
+        array<Transform> none;
+        _instances[i]->set_motion(none);
       }
-    }
-    if (!moving) {
-      for (Object *instance : _instances) {
-        if (!instance->get_motion().empty()) {
-          array<Transform> none;
-          instance->set_motion(none);
-        }
-      }
+      _instances[i]->set_tfm(tfms[i]);
     }
 
     /* After the resize: every instance can be masked out (invisibleIds, culled native instances), leaving none —
@@ -286,21 +309,10 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       _instances[0]->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(),
                                                      instancer ? +0.0f : -1.0f);
     }
-
-    // Update transforms of all instances
-    for (size_t i = 0; i < transforms.size(); ++i) {
-      const float metersPerUnit =
-          static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit();
-
-      const Transform tfm = transform_scale(make_float3(metersPerUnit)) *
-                            convert_transform(_geomTransform * transforms[i]);
-      _instances[i]->set_tfm(tfm);
-    }
   }
 
   {
     /* Every sync: the flags are primvars, and new instances need them too. Unchanged values do not tag. */
-    const HdCyclesRenderFlags flags = ReadRenderFlags(primDs);
     for (Object *instance : _instances) {
       instance->set_visibility(Base::IsVisible() ? flags.visibility : 0);
       instance->set_use_holdout(flags.holdout == 1);
@@ -311,15 +323,21 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
   // Must happen after material ID update, so that attribute decisions can be made
   // based on it (e.g. check whether an attribute is actually needed)
-  bool rebuild = false;
-  Populate(sceneDelegate, *dirtyBits, rebuild);
+  if (exclusive) {
+    lock_holder.reset();
+    Populate(sceneDelegate, *dirtyBits, rebuild);
+    lock_holder.emplace(renderParam);
+  }
+  else {
+    Populate(sceneDelegate, *dirtyBits, rebuild);
+  }
 
   if (_geom->is_modified() || rebuild) {
-    _geom->tag_update(lock.scene, rebuild);
+    _geom->tag_update(lock_holder->scene, rebuild);
   }
 
   for (Object *instance : _instances) {
-    instance->tag_update(lock.scene);
+    instance->tag_update(lock_holder->scene);
   }
 
   *dirtyBits = HdChangeTracker::Clean;
