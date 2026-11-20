@@ -43,8 +43,9 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
 
   /* Motion blur from a velocity field: the kernel moves the density by velocity times
    * velocity_scale over the shutter, with velocities per second like Blender's default. The
-   * frame rate is the one velocities of points use (HdsiVelocityMotionResolvingSceneIndex). */
-  const std::vector<float> motionTimes = GetObjectMotionTimes();
+   * frame rate is the one velocities of points use (HdsiVelocityMotionResolvingSceneIndex). A
+   * deformation, so with the deformation samples. */
+  const std::vector<float> motionTimes = GetObjectMotionTimes(nullptr, true);
   float velocityScale = 0.0f;
   if (!motionTimes.empty()) {
     double fps = 24.0;
