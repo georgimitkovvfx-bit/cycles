@@ -57,6 +57,14 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   void SyncAovBindings(const PXR_NS::HdRenderPassAovBindingVector &aovBindings);
 
+  /* `cycles:background:transparent` (Blender's Film › Transparent): -1 = not set, the default depends on
+   * whether the stage has a dome light. */
+  void SetTransparentBackground(const int transparent)
+  {
+    _backgroundDirty = _backgroundDirty || transparent != _transparentBackground;
+    _transparentBackground = transparent;
+  }
+
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
 
   CCL_NS::Session *session;
@@ -67,6 +75,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   double _stageMetersPerUnit = 0.01;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
+  int _transparentBackground = -1;
+  bool _backgroundDirty = false; /* the setting changed: update the background once */
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

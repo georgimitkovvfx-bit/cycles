@@ -17,6 +17,7 @@
 #include "hydra/render_pass.h"
 #include "hydra/session.h"
 #include "hydra/volume.h"
+#include "scene/film.h"
 #include "scene/integrator.h"
 #include "scene/scene.h"
 #include "session/session.h"
@@ -464,6 +465,19 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
         SetNodeValue(scene->integrator, *socket, value);
         ++_settingsVersion;
       }
+    }
+    /* Film sockets (`exposure`, `filter_width`, `mist_start` …), as integrator ones. */
+    else if (keyString.rfind("cycles:film:", 0) == 0) {
+      const ustring socketName(keyString, sizeof("cycles:film:") - 1);
+      if (const SocketType *socket = scene->film->type->find_input(socketName)) {
+        SetNodeValue(scene->film, *socket, value);
+        ++_settingsVersion;
+      }
+    }
+    /* Blender's Film › Transparent: the world lights the scene but the camera does not see it. */
+    else if (keyString == "cycles:background:transparent") {
+      _renderParam->SetTransparentBackground(VtValue::Cast<bool>(value).GetWithDefault(false) ? 1 : 0);
+      ++_settingsVersion;
     }
   }
 }

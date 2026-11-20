@@ -135,7 +135,8 @@ void HdCyclesSession::UpdateScene()
   Scene *const scene = session->scene.get();
 
   // Update background depending on presence of a background light
-  if (scene->light_manager->need_update()) {
+  if (scene->light_manager->need_update() || _backgroundDirty) {
+    _backgroundDirty = false;
     Light *background_light = nullptr;
     bool have_lights = false;
     for (Object *object : scene->objects) {
@@ -168,6 +169,9 @@ void HdCyclesSession::UpdateScene()
     else {
       scene->background->set_shader(background_light->get_shader());
       scene->background->set_transparent(false);
+    }
+    if (_transparentBackground >= 0) {
+      scene->background->set_transparent(_transparentBackground != 0);
     }
 
     scene->background->tag_update(scene);
