@@ -295,12 +295,18 @@ ccl_device void osl_closure_ray_portal_bsdf_setup(KernelGlobals /*kg*/,
 ccl_device void osl_closure_coat_bsdf_setup(KernelGlobals kg,
                                             ccl_private ShaderData *sd,
                                             const PathRayVisibility path_visibility,
-                                            const uint32_t /*path_flag*/,
+                                            const uint32_t path_flag,
                                             const float3 weight,
                                             const ccl_private CoatBSDFClosure *closure,
                                             float3 *layer_albedo)
 {
   osl_zero_albedo(layer_albedo);
+
+  /* Nested dielectrics: masked with its surface (as the SVM Principled BSDF's coat), and its IOR
+   * relative to the medium outside, at least 1. Records no medium IOR. */
+  if (osl_closure_priority_masked(sd, path_flag, weight, 0.0f, layer_albedo)) {
+    return;
+  }
 
   if (osl_closure_skip(kg, path_visibility, LABEL_GLOSSY | LABEL_REFLECT)) {
     return;
@@ -308,7 +314,8 @@ ccl_device void osl_closure_coat_bsdf_setup(KernelGlobals kg,
 
   Coat coat;
   coat.tint = rgb_to_spectrum(closure->color);
-  coat.ior = closure->ior;
+  coat.ior = (sd->opposite_ior != 1.0f) ? fmaxf(closure->ior / sd->opposite_ior, 1.0f) :
+                                          closure->ior;
   coat.N = maybe_ensure_valid_specular_reflection(sd, safe_normalize_fallback(closure->N, sd->N));
   coat.roughness = closure->roughness;
   coat.weight = rgb_to_spectrum(weight);
@@ -972,6 +979,10 @@ ccl_device void osl_closure_emission_setup(KernelGlobals kg,
       return;
     }
     weight *= object_volume_density(kg, sd->object);
+  }
+  else if (sd->runtime_flag & SR_PRIORITY_MASKED) {
+    /* A surface masked by a nested dielectric emits nothing, as in SVM. */
+    return;
   }
   emission_setup(sd, rgb_to_spectrum(weight));
 }

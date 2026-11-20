@@ -135,7 +135,9 @@ principled_bsdf_emission(KernelGlobals kg,
   if (coat_weight > CLOSURE_WEIGHT_CUTOFF) {
     Coat coat;
     coat.tint = rgb_to_spectrum(max(stack_load(stack, data.coat_tint), zero_float3()));
-    coat.ior = fmaxf(stack_load(stack, data.coat_ior), 1.0f);
+    /* Nested dielectrics: against the medium outside, like the other dielectric layers (the
+     * same in OSL's coat closure). At most as dense: the coat reflects nothing then. */
+    coat.ior = fmaxf(stack_load(stack, data.coat_ior) / sd->opposite_ior, 1.0f);
     coat.N = safe_normalize_fallback(stack_load_float3_default(stack, data.coat_normal_offset, N),
                                      sd->N);
     coat.roughness = saturatef(stack_load(stack, data.coat_roughness));
@@ -192,6 +194,11 @@ ccl_device
 
     const ccl_global SVMNodePrincipledBsdfData &data = svm_node_get<SVMNodePrincipledBsdfData>(
         kg, &offset);
+
+    /* A surface masked by a nested dielectric has no emission either, as with the BSDFs. */
+    if (sd->runtime_flag & SR_PRIORITY_MASKED) {
+      return offset;
+    }
 
     float3 N = stack_load_float3_default(stack, data.normal_offset, sd->N);
     N = safe_normalize_fallback(N, sd->N);
