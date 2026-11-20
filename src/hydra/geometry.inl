@@ -465,6 +465,18 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
                         VtValue(true));
   }
 
+  /* Selected to Active, like Blender: the bake target (the baked instance) and the cage are
+   * hidden from all rays, so they do not shadow or occlude the sources. The kernel shades the
+   * source surfaces the bake object pass names and traces no ray to the target. SetBake()
+   * resyncs the rprims, which restores them when the bake changes. */
+  const BakeSettings bake = _session->GetBake();
+  const std::string &path = Base::GetId().GetString();
+  const int bakeHidden = !bake.useSources() ? -1 :
+                         path == bake.object ? bake.instance :
+                         path == bake.cage   ? 0 :
+                                               -1;
+  instanceRays |= bakeHidden >= 0 && size_t(bakeHidden) < _instances.size();
+
   _visibility = visibility;
   _instanceVisibility.assign(instanceRays ? _instances.size() : 0, visibility);
   for (size_t i = 0; i < _instances.size(); ++i) {
@@ -490,6 +502,9 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
       else {
         SetNodeValue(instance, *setting.socket, value);
       }
+    }
+    if (int(i) == bakeHidden) {
+      _instanceVisibility[i] = 0;
     }
     instance->set_visibility(
         _renderTagVisible ? (instanceRays ? _instanceVisibility[i] : visibility) : 0);
