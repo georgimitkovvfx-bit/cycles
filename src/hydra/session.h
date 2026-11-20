@@ -378,6 +378,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool lightsChanged = false;
   // Lights made of mesh objects (cylinder lights): they count as lights for the default world
   int meshLights = 0;
+  // disableDepthOfField render setting: cameras render without depth of field
+  std::atomic<bool> depthOfFieldDisabled = false;
 
   // Whether a requested re-sync has not reached the render yet
   bool IsResyncing() const

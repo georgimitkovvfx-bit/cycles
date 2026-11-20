@@ -571,7 +571,9 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   cam->set_viewplane_bottom(panorama ? 0.0f : viewplane.GetMin()[1]);
   cam->set_viewplane_top(panorama ? 1.0f : viewplane.GetMax()[1]);
 
-  if (data.GetFStop() != 0.0f) {
+  if (data.GetFStop() != 0.0f &&
+      !static_cast<HdCyclesSession *>(renderParam)->depthOfFieldDisabled)
+  {
     cam->set_focaldistance(data.GetFocusDistance());
     cam->set_aperturesize(focalLength / (2.0f * data.GetFStop()));
   }

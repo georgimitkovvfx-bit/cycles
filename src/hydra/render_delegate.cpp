@@ -558,6 +558,12 @@ const std::vector<KarmaFallback> &GetKarmaFallbacks()
          const VtValue enable = VtValue::Cast<bool>(first);
          return enable.IsEmpty() ? VtValue() : VtValue(!enable.UncheckedGet<bool>());
        }},
+      {HdCyclesRenderSettingsTokens->disableDepthOfField,
+       {TfToken("karma:global:enable_dof")},
+       [](const Settings &, const VtValue &first) {
+         const VtValue enable = VtValue::Cast<bool>(first);
+         return enable.IsEmpty() ? VtValue() : VtValue(!enable.UncheckedGet<bool>());
+       }},
   };
   return fallbacks;
 }
@@ -1244,8 +1250,23 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
       _renderParam->RequestResync(false, true);
     }
   }
-  else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur) {
-    _renderParam->SetMotionBlurDisabled(VtValue::Cast<bool>(value).GetWithDefault(false));
+  else if (key == HdCyclesRenderSettingsTokens->disableMotionBlur ||
+           key == HdCyclesRenderSettingsTokens->instantaneousShutter)
+  {
+    /* instantaneousShutter is the deprecated UsdRenderSettings name of disableMotionBlur. */
+    const auto get = [&](const TfToken &setting) {
+      const auto it = _settingsMap.find(setting);
+      return it != _settingsMap.end() && VtValue::Cast<bool>(it->second).GetWithDefault(false);
+    };
+    _renderParam->SetMotionBlurDisabled(get(HdCyclesRenderSettingsTokens->disableMotionBlur) ||
+                                        get(HdCyclesRenderSettingsTokens->instantaneousShutter));
+  }
+  else if (key == HdCyclesRenderSettingsTokens->disableDepthOfField) {
+    const bool disabled = VtValue::Cast<bool>(value).GetWithDefault(false);
+    /* Camera only: restart the render, so a finished one gets it too. */
+    if (_renderParam->depthOfFieldDisabled.exchange(disabled) != disabled) {
+      ++_settingsVersion;
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->motionSteps) {
     _renderParam->SetMotionSteps(VtValue::Cast<int>(value).GetWithDefault(1));
