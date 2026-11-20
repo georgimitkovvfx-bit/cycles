@@ -335,15 +335,23 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // light's own shader and its rotation. UpdateScene() uses the material's shader as background
   // and light shader, like a Blender world: Cycles builds the world volume from the shaders of
   // the background light. Called with the scene locked.
-  void SetWorldMaterial(CCL_NS::Light *light,
-                        CCL_NS::Shader *lightShader,
-                        const std::string &material,
-                        const CCL_NS::Transform &rotation);
+  // A dome light's world: its material ("" for the light's own shader), the light's rotation
+  // and the quick adjustments of its Cycles tab (exposure in stops, saturation factor)
+  struct WorldMaterial {
+    std::string material;
+    CCL_NS::Transform rotation;
+    CCL_NS::Shader *lightShader;
+    float exposure = 0.0f;
+    float saturation = 1.0f;
+  };
+  void SetWorldMaterial(CCL_NS::Light *light, const WorldMaterial &world);
   void RemoveWorldMaterial(CCL_NS::Light *light);
   // Stop using the shader of a material as world, before it is deleted
   void ReleaseWorldShader(CCL_NS::Shader *shader);
-  // Rotation of the dome light that uses the material as world, nullptr when no light does
-  const CCL_NS::Transform *GetWorldRotation(const std::string &material) const;
+  // The world of the dome light that uses the material as world, nullptr when no light does
+  const WorldMaterial *GetWorldOf(const std::string &material) const;
+  // Scales the strength and the saturation of the Background nodes of a world shader graph
+  static void AdjustWorld(CCL_NS::ShaderGraph *graph, float strength, float saturation);
   // Copy of a world shader's graph (a dome light's own shader or a world material) before
   // Cycles finalizes it, to add several dome lights into one world. Called with the scene locked.
   void SetWorldSource(CCL_NS::Shader *shader, CCL_NS::ShaderGraph &graph);
@@ -412,11 +420,6 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::unordered_map<std::string, std::pair<PXR_NS::TfToken, PXR_NS::TfToken>> _lightLinks;
   std::unordered_map<std::string, PXR_NS::VtArray<PXR_NS::TfToken>> _categories;
   bool _lightLinkingDirty = false;
-  struct WorldMaterial {
-    std::string material;
-    CCL_NS::Transform rotation;
-    CCL_NS::Shader *lightShader;
-  };
   std::map<CCL_NS::Light *, WorldMaterial> _worldMaterials;
   void SetLightShader(CCL_NS::Light *light, CCL_NS::Shader *shader);
   CCL_NS::Shader *GetWorldShader(CCL_NS::Light *light) const;

@@ -80,6 +80,10 @@ class HdCyclesLight final : public PXR_NS::HdLight {
   PXR_NS::TfToken _lightType;
   // Color times intensity of a dome light, baked into its world shader
   CCL_NS::float3 _domeStrength = CCL_NS::one_float3();
+  // Quick adjustments of a dome light's world (Cycles tab): stops, factor, radians around +Y
+  float _worldExposure = 0.0f;
+  float _worldSaturation = 1.0f;
+  float _worldRotation = 0.0f;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

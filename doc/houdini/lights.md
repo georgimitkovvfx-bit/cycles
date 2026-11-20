@@ -88,6 +88,9 @@ up in that group's pass.
 |---|---|---|---|
 | World Material | `inputs:cycles:light:world_material` | (empty) | Dome lights only: a material used as the Cycles world, like a Blender world. Its surface replaces the dome's color and texture, its volume fills the scene. See [world.md](world.md) |
 | Map Resolution | `inputs:cycles:light:map_resolution` | 0 | Dome lights only: resolution of the importance map used to sample the world. 0 is Auto, the resolution of the environment texture (Blender's world Sampling: Auto) |
+| Exposure | `inputs:cycles:light:world_exposure` | 0 | Dome lights only: brightens or darkens the world in stops, the dome's own color and texture or its World Material (the strength of its Background shaders), on top of the light's Intensity and Exposure |
+| Saturation | `inputs:cycles:light:world_saturation` | 1 | Dome lights only: saturation of the world (0 gray, 2 doubled), the dome's color or the color of the Background shaders of its World Material |
+| Rotation | `inputs:cycles:light:world_rotation` | 0 | Dome lights only: turns the world around the light's +Y (its pole) in degrees, counterclockwise seen from above, on top of the light's transform (its texture, or the sky and environment textures of its World Material) |
 
 ## Light and shadow linking
 

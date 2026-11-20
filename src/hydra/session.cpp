@@ -430,19 +430,19 @@ void HdCyclesSession::UpdateScene()
   UpdateLightLinking();
 }
 
-void HdCyclesSession::SetWorldMaterial(Light *light,
-                                       Shader *lightShader,
-                                       const std::string &material,
-                                       const Transform &rotation)
+void HdCyclesSession::SetWorldMaterial(Light *light, const WorldMaterial &world)
 {
+  const std::string &material = world.material;
   const auto it = _worldMaterials.find(light);
   if (it != _worldMaterials.end() && it->second.material == material &&
-      (material.empty() || it->second.rotation == rotation))
+      (material.empty() ||
+       (it->second.rotation == world.rotation && it->second.exposure == world.exposure &&
+        it->second.saturation == world.saturation)))
   {
     return;
   }
   const bool hadMaterial = it != _worldMaterials.end() && !it->second.material.empty();
-  _worldMaterials[light] = {material, rotation, lightShader};
+  _worldMaterials[light] = world;
   lightsChanged = true;
   /* Materials orient their sky and environment textures by the light they are the world of. */
   if (hadMaterial || !material.empty()) {
@@ -494,14 +494,54 @@ void HdCyclesSession::SetLightShader(Light *light, Shader *shader)
   light->tag_update(session->scene.get());
 }
 
-const Transform *HdCyclesSession::GetWorldRotation(const std::string &material) const
+const HdCyclesSession::WorldMaterial *HdCyclesSession::GetWorldOf(
+    const std::string &material) const
 {
   for (const auto &[light, world] : _worldMaterials) {
     if (world.material == material) {
-      return &world.rotation;
+      return &world;
     }
   }
   return nullptr;
+}
+
+void HdCyclesSession::AdjustWorld(ShaderGraph *graph, const float strength, const float saturation)
+{
+  if (strength == 1.0f && saturation == 1.0f) {
+    return;
+  }
+  const vector<ShaderNode *> nodes(graph->nodes.begin(), graph->nodes.end());
+  for (ShaderNode *node : nodes) {
+    if (node->type != BackgroundNode::get_node_type()) {
+      continue;
+    }
+    BackgroundNode *background = static_cast<BackgroundNode *>(node);
+    if (saturation != 1.0f) {
+      ShaderInput *color = background->input("Color");
+      HSVNode *hsv = graph->create_node<HSVNode>();
+      hsv->set_saturation(saturation);
+      if (ShaderOutput *source = color->link) {
+        graph->disconnect(color);
+        graph->connect(source, hsv->input("Color"));
+      }
+      else {
+        hsv->set_color(background->get_color());
+      }
+      graph->connect(hsv->output("Color"), color);
+    }
+    ShaderInput *strengthIn = background->input("Strength");
+    if (ShaderOutput *source = strengthIn->link) {
+      MathNode *multiply = graph->create_node<MathNode>();
+      multiply->set_math_type(NODE_MATH_MULTIPLY);
+      multiply->set_value2(strength);
+      graph->disconnect(strengthIn);
+      graph->connect(source, multiply->input("Value1"));
+      graph->connect(multiply->output("Value"), strengthIn);
+    }
+    else {
+      background->set_strength(background->get_strength() * strength);
+    }
+  }
 }
 
 namespace {

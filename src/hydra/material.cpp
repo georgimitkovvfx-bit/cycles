@@ -1225,7 +1225,8 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
     }
 
-    const Transform *const worldRotation = session->GetWorldRotation(id.GetString());
+    const HdCyclesSession::WorldMaterial *const world = session->GetWorldOf(id.GetString());
+    const Transform *const worldRotation = world ? &world->rotation : nullptr;
 
     /* The cycles:material_override render setting: surfaces render as clay or as another
      * material, like Blender's View Layer Material Override. World materials and materials
@@ -1271,6 +1272,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     SetUdimTiles(graph.get());
     if (worldRotation) {
       OrientWorldTextures(graph.get(), *worldRotation);
+      HdCyclesSession::AdjustWorld(graph.get(), exp2f(world->exposure), world->saturation);
     }
     AddIdAOVs(graph.get());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());

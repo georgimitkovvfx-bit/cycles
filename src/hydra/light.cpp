@@ -56,6 +56,9 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((isPortal, "inputs:cycles:light:is_portal"))
     ((softFalloff, "inputs:cycles:light:use_soft_falloff"))
     ((mapResolution, "inputs:cycles:light:map_resolution"))
+    ((worldExposure, "inputs:cycles:light:world_exposure"))
+    ((worldSaturation, "inputs:cycles:light:world_saturation"))
+    ((worldRotation, "inputs:cycles:light:world_rotation"))
     (cycles)
 );
 // clang-format on
@@ -205,6 +208,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       /* Blender's world Map Resolution, 0 is Auto (from the environment texture). */
       static_cast<BackgroundLight *>(_light)->set_map_resolution(
           max(GetTypedValue<int>(lightDs, _tokens->mapResolution, 0), 0));
+      _worldExposure = GetTypedValue<float>(lightDs, _tokens->worldExposure, 0.0f);
+      _worldSaturation = max(GetTypedValue<float>(lightDs, _tokens->worldSaturation, 1.0f), 0.0f);
+      _worldRotation = GfDegreesToRadians(
+          GetTypedValue<float>(lightDs, _tokens->worldRotation, 0.0f));
     }
     else if (_lightType == HdPrimTypeTokens->distantLight) {
       const float angleDeg = GetTypedValue<float>(lightDs, HdLightTokens->angle, 0.53f);
@@ -332,9 +339,14 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       transform_set_column(&rotation, i, normalize(transform_get_column(&rotation, i)));
     }
     transform_set_column(&rotation, 3, zero_float3());
+    rotation = rotation * transform_rotate(_worldRotation, make_float3(0.0f, 1.0f, 0.0f));
     static_cast<HdCyclesSession *>(renderParam)
-        ->SetWorldMaterial(
-            _light, _shader, SdfPath::IsValidPathString(material) ? material : "", rotation);
+        ->SetWorldMaterial(_light,
+                           {SdfPath::IsValidPathString(material) ? material : "",
+                            rotation,
+                            _shader,
+                            _worldExposure,
+                            _worldSaturation});
   }
 
   if (_light->is_modified()) {
@@ -803,6 +815,8 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
 
           /* We then spin around Blender's Z-up to align with USDLux */
           tfm = tfm * transform_rotate(-M_PI_2_F, make_float3(0.0f, 0.0f, 1.0f));
+          /* The Cycles tab's Rotation, around the texture's pole (the light's +Y). */
+          tfm = tfm * transform_rotate(_worldRotation, make_float3(0.0f, 0.0f, 1.0f));
 
           TextureCoordinateNode *coordNode = graph->create_node<TextureCoordinateNode>();
           coordNode->set_ob_tfm(tfm);
@@ -894,6 +908,7 @@ void HdCyclesLight::PopulateShaderGraph(const HdContainerDataSourceHandle &light
 
   Shader *const shader = _shader;
   if (_lightType == HdPrimTypeTokens->domeLight) {
+    HdCyclesSession::AdjustWorld(graph.get(), exp2f(_worldExposure), _worldSaturation);
     static_cast<HdCyclesSession *>(renderParam)->SetWorldSource(shader, *graph);
   }
   shader->set_graph(std::move(graph));

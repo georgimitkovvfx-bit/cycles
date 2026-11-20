@@ -854,6 +854,9 @@ LIGHT_SETTINGS = {
     "inputs:cycles:light:lightgroup": {"type": "string", "default": ""},
     "inputs:cycles:light:world_material": {"type": "string", "default": ""},
     "inputs:cycles:light:map_resolution": {"type": "int", "default": 0},
+    "inputs:cycles:light:world_exposure": {"type": "float", "default": 0.0},
+    "inputs:cycles:light:world_saturation": {"type": "float", "default": 1.0},
+    "inputs:cycles:light:world_rotation": {"type": "float", "default": 0.0},
 }
 
 # Per-camera settings, authored as "primvars:cycles:camera:<setting>" attributes by the Camera LOP
@@ -1052,6 +1055,20 @@ LIGHT_LAYOUT = [
           "Dome lights only: resolution of the importance map used to sample the world. 0 is "
           "Auto: the resolution of the environment texture (Blender's Sampling Auto).",
           range=(0, 8192, True, False)),
+        S("inputs:cycles:light:world_exposure", "Exposure",
+          "Dome lights only: brightens or darkens the world by stops, the dome light's own "
+          "texture and color or its World Material (the strength of its Background shaders), "
+          "on top of the light's Intensity and Exposure.",
+          range=(-10, 10, False, False)),
+        S("inputs:cycles:light:world_saturation", "Saturation",
+          "Dome lights only: saturation of the world, 0 is gray, 1 unchanged, 2 doubled (the "
+          "color of the dome light or of the Background shaders of its World Material).",
+          range=(0, 2, True, False)),
+        S("inputs:cycles:light:world_rotation", "Rotation",
+          "Dome lights only: turns the world around the light's +Y (its pole) in degrees, "
+          "counterclockwise seen from above, on top of the light's transform: its texture, or "
+          "the sky and environment textures of its World Material.",
+          range=(-180, 180, False, False)),
     ], open=True),
 ]
 
