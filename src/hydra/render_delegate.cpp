@@ -8,6 +8,9 @@
 #include "hydra/curves.h"
 #include "hydra/cylinder_light.h"
 #include "hydra/field.h"
+#ifdef WITH_HOUDINI_IMAGES
+#  include "hydra/houdini_image.h"
+#endif
 #include "hydra/instancer.h"
 #include "hydra/light.h"
 #include "hydra/material.h"
@@ -66,6 +69,7 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (openvdbAsset)
     (houdiniFieldAsset)
     (reloadTextures)
+    ((houdiniCopTextureChanged, "houdini:cop_texture_changed"))
 );
 // clang-format on
 
@@ -1090,6 +1094,50 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   Session *const session = _renderParam->session;
   const std::vector<float> motionTimes = _renderParam->GetMotionTimes();
 
+#ifdef WITH_HOUDINI_IMAGES
+  /* Houdini's viewport sets this when a COP read by an op: image changed (or the frame of a time
+   * dependent one), which syncs no material (KNOWN_ISSUES #55): convert the images again and
+   * update the shaders whose image file changed. */
+  if (key == _tokens->houdiniCopTextureChanged) {
+    HdCycles::ForgetHoudiniOpImages();
+    const auto imageFiles = [](const ShaderGraph *graph) {
+      vector<ustring> files;
+      for (const ShaderNode *node : graph->nodes) {
+        if (node->type == ImageTextureNode::get_node_type()) {
+          files.push_back(static_cast<const ImageTextureNode *>(node)->get_filename());
+        }
+        else if (node->type == EnvironmentTextureNode::get_node_type()) {
+          files.push_back(static_cast<const EnvironmentTextureNode *>(node)->get_filename());
+        }
+      }
+      return files;
+    };
+    const SceneLock lock(_renderParam.get());
+    bool changed = false;
+    for (Shader *shader : lock.scene->shaders) {
+      const vector<ustring> files = imageFiles(shader->graph.get());
+      if (files.empty()) {
+        continue;
+      }
+      HdCyclesMaterial::SetUdimTiles(shader->graph.get());
+      if (imageFiles(shader->graph.get()) == files) {
+        continue;
+      }
+      for (ShaderNode *node : shader->graph->nodes) {
+        if (node->special_type == SHADER_SPECIAL_TYPE_IMAGE_SLOT) {
+          static_cast<ImageSlotTextureNode *>(node)->handle.clear();
+        }
+      }
+      shader->tag_update(lock.scene);
+      changed = true;
+    }
+    if (changed) {
+      ++_settingsVersion;
+    }
+    return;
+  }
+#endif
+
   /* Houdini's viewport creates the render delegate without settings and sets them afterwards,
    * also the ones it restarts the delegate for. Recreate the session for those while nothing
    * uses it, then set the other settings again on it. */
@@ -1514,6 +1562,9 @@ bool HdCyclesDelegate::InvokeCommand(const TfToken &command, const HdCommandArgs
   /* Shaders add their images again when compiled without an image handle, and the image manager
    * loads the files that changed on disk since they were loaded (OIIOImageLoader::equals). OSL
    * holds handles of its own. */
+#ifdef WITH_HOUDINI_IMAGES
+  HdCycles::ForgetHoudiniOpImages();
+#endif
   const SceneLock lock(_renderParam.get());
   lock.scene->osl_manager->free_textures(lock.scene);
   for (Shader *shader : lock.scene->shaders) {

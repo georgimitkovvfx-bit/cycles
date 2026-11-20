@@ -100,21 +100,42 @@ std::string ContentHash(const fs::path &file)
   return Hex(hash);
 }
 
+/* The file of each op: image, and the version of its COP node then. */
+struct OpImage {
+  int opid;
+  size_t version;
+  std::string file;
+};
+std::unordered_map<std::string, OpImage> opImages;
+
 /* Copernicus and COP images ("op:" paths), which have no file to stamp: the image of now, named
  * by its content, so a changed image gets a new file (and Cycles loads it). */
 std::string ConvertOpImage(const std::string &path)
 {
   const std::lock_guard<std::mutex> lock(ConvertMutex());
+  std::error_code ec;
+  /* Every material/light sync resolves the image again: no cook while the COP is unchanged
+   * (KNOWN_ISSUES #55). Frame changes keep the version, Houdini then sets
+   * houdini:cop_texture_changed (ForgetHoudiniOpImages). */
+  if (const auto it = opImages.find(path);
+      it != opImages.end() &&
+      TIL_CopResolver::getRasterVersion(it->second.opid) == it->second.version &&
+      fs::exists(it->second.file, ec))
+  {
+    return it->second.file;
+  }
   const std::string name = "op_" + Hex(std::hash<std::string>()(path));
   const fs::path temporary = CacheDirectory() /
                              (name + ".tmp" + std::to_string(HDCYCLES_GETPID()) + "_" +
                               Hex(std::hash<std::thread::id>()(std::this_thread::get_id())) +
                               ".tif");
-  std::error_code ec;
   /* Houdini's image library has no op: format, the COP resolver cooks the node (only inside
-   * Houdini, husk has no resolver). */
+   * Houdini, husk has no resolver). Through the resolver cache, whose COPs Houdini's viewport
+   * watches to set houdini:cop_texture_changed; without its stale entries. */
   int opid = -1;
   bool saved = false;
+  TIL_CopResolver::clearResolverCache(false);
+  const TIL_CopResolver::autoEnableCache cache(true);
   if (TIL_Raster *raster = TIL_CopResolver::getRaster(path.c_str(), opid)) {
     /* Named by the cooked pixels: an unchanged image (every material/light sync) is not saved
      * and hashed again (KNOWN_ISSUES #55). */
@@ -128,8 +149,10 @@ std::string ConvertOpImage(const std::string &path)
     const fs::path destination = CacheDirectory() /
                                  (name + "_r" +
                                   Hex(hash ^ (std::hash<std::string>()(header) << 1)) + ".tif");
+    const OpImage image = {opid, TIL_CopResolver::getRasterVersion(opid), destination.string()};
     if (pixels && fs::exists(destination, ec)) {
       TIL_CopResolver::doneWithRaster(raster);
+      opImages[path] = image;
       return destination.string();
     }
     if (pixels && IMG_File::saveRasterAsFile(temporary.string().c_str(), raster)) {
@@ -139,6 +162,7 @@ std::string ConvertOpImage(const std::string &path)
         fs::remove(temporary, ec);
         return fs::exists(destination, ec) ? destination.string() : path;
       }
+      opImages[path] = image;
       return destination.string();
     }
     saved = !pixels && IMG_File::saveRasterAsFile(temporary.string().c_str(), raster);
@@ -200,6 +224,12 @@ std::mutex sourcesMutex;
 std::unordered_map<std::string, std::string> sources;
 
 }  // namespace
+
+void ForgetHoudiniOpImages()
+{
+  const std::lock_guard<std::mutex> lock(ConvertMutex());
+  opImages.clear();
+}
 
 std::string ResolveHoudiniImage(const std::string &filename)
 {
