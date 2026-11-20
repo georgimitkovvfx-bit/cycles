@@ -180,8 +180,10 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
           {_tokens->visibleTransmission, PATH_RAY_VISIBILITY_TRANSMIT},
           {_tokens->visibleVolumeScatter, PATH_RAY_VISIBILITY_VOLUME_SCATTER},
       };
+      // Karma's light Contributions for the rays without a Cycles setting
+      const uint karmaRays = KarmaLightContributions(lightDs);
       for (const auto &[token, ray] : rays) {
-        if (!GetTypedValue<bool>(lightDs, token, true)) {
+        if (!GetTypedValue<bool>(lightDs, token, (karmaRays & ray) != 0)) {
           visibility &= ~ray;
         }
       }

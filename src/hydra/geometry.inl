@@ -129,8 +129,12 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   /* Per-object motion blur: transforms and points again at the object's motion steps. */
   if (*dirtyBits & HdChangeTracker::DirtyPrimvar) {
     const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
-    const bool useMotionBlur = VtValue::Cast<bool>(GetObjectSetting(primvars, "use_motion_blur"))
-                                   .GetWithDefault(true);
+    /* Without the Cycles setting, Karma's Enable Motion Blur (Render Geometry Settings LOP). */
+    VtValue useMotionBlurValue = GetObjectSetting(primvars, "use_motion_blur");
+    if (useMotionBlurValue.IsEmpty()) {
+      useMotionBlurValue = ReadPrimvar(primvars, TfToken("karma:object:mblur"));
+    }
+    const bool useMotionBlur = VtValue::Cast<bool>(useMotionBlurValue).GetWithDefault(true);
     const int motionSteps = std::max(
         0, VtValue::Cast<int>(GetObjectSetting(primvars, "motion_steps")).GetWithDefault(0));
     if (useMotionBlur != _useMotionBlur || motionSteps != _motionSteps) {

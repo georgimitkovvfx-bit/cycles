@@ -177,4 +177,9 @@ unsigned int LightMultiplierVisibility(const PXR_NS::HdContainerDataSourceHandle
  * volume scatter bits. */
 unsigned int KarmaRenderVisibility(const std::string &pattern);
 
+/* Diffuse, glossy, transmission and volume scatter ray visibility of a light from Karma's light
+ * Contributions ("inputs:karma:light:contribs", components diffuse, reflect, coat, refract,
+ * volume, sss in a Render Visibility pattern). All of them when it is not authored. */
+unsigned int KarmaLightContributions(const PXR_NS::HdContainerDataSourceHandle &light);
+
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

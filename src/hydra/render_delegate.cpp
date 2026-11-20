@@ -41,7 +41,10 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <filesystem>
+#include <functional>
+#include <optional>
 
 #include <pxr/base/tf/getenv.h>
 #include <pxr/imaging/hd/materialSchema.h>
@@ -388,6 +391,154 @@ std::string FindMissingTexture(Scene *scene)
     }
   }
   return {};
+}
+
+/* A Cycles setting from Karma Render Settings LOP attributes, used while the Cycles setting is not
+ * authored, so scenes set up for Karma render alike. Karma's LOP authors all its attributes, also
+ * at its defaults. `value` gets the settings and the first Karma attribute's value, and returns
+ * the Cycles value, empty for no opinion. */
+struct KarmaFallback {
+  TfToken cycles;
+  std::vector<TfToken> karma;
+  std::function<VtValue(const HdRenderSettingsMap &settings, const VtValue &first)> value;
+};
+
+const std::vector<KarmaFallback> &GetKarmaFallbacks()
+{
+  using Settings = HdRenderSettingsMap;
+  static const TfToken diffuseLimit("karma:object:diffuselimit");
+  static const TfToken reflectLimit("karma:object:reflectlimit");
+  static const TfToken refractLimit("karma:object:refractlimit");
+  static const TfToken volumeLimit("karma:object:volumelimit");
+  static const TfToken colorLimit("karma:global:colorlimit");
+  static const TfToken imageFilter("karma:global:imagefilter");
+
+  const auto find = [](const Settings &settings, const TfToken &key) {
+    const auto it = settings.find(key);
+    return it == settings.end() ? VtValue() : it->second;
+  };
+  /* Karma's limits are floats, picked stochastically between the integers around them. */
+  const auto limit = [](const VtValue &value) {
+    const VtValue number = VtValue::Cast<float>(value);
+    return number.IsEmpty() ?
+               VtValue() :
+               VtValue(int(std::lround(std::max(number.UncheckedGet<float>(), 0.0f))));
+  };
+  const auto inverse = [](const VtValue &value) {
+    const float x = VtValue::Cast<float>(value).GetWithDefault(0.0f);
+    return x > 0.0f ? VtValue(1.0f / x) : VtValue();
+  };
+  /* The engine of Karma's denoise image filter, `[["denoise", {"engine": "oidn", ...}], ...]` as
+   * the LOP writes it with json.dumps, empty without one.
+   * shortcut: string search, not a JSON parse; parse it if other writers' spacing matters. */
+  const auto denoiseEngine = [](const VtValue &value) -> std::optional<std::string> {
+    if (value.IsEmpty()) {
+      return std::nullopt;
+    }
+    const std::string filters = GetStringSetting(value, "");
+    const size_t denoise = filters.find("[\"denoise\",");
+    if (denoise == std::string::npos) {
+      return std::string();
+    }
+    static const std::string engineKey = "\"engine\": \"";
+    const size_t engine = filters.find(engineKey, denoise);
+    if (engine == std::string::npos) {
+      return std::string("oidn");
+    }
+    const size_t begin = engine + engineKey.size();
+    return filters.substr(begin, filters.find('"', begin) - begin);
+  };
+
+  static const std::vector<KarmaFallback> fallbacks = {
+      /* Path Traced Samples: Cycles is a path tracer (one indirect ray per bounce). */
+      {HdCyclesRenderSettingsTokens->samples,
+       {TfToken("karma:global:pathtracedsamples")},
+       [](const Settings &, const VtValue &first) { return VtValue::Cast<int>(first); }},
+      {TfToken("cycles:integrator:max_diffuse_bounce"),
+       {diffuseLimit},
+       [=](const Settings &, const VtValue &first) { return limit(first); }},
+      {TfToken("cycles:integrator:max_glossy_bounce"),
+       {reflectLimit},
+       [=](const Settings &, const VtValue &first) { return limit(first); }},
+      {TfToken("cycles:integrator:max_transmission_bounce"),
+       {refractLimit},
+       [=](const Settings &, const VtValue &first) { return limit(first); }},
+      {TfToken("cycles:integrator:max_volume_bounce"),
+       {volumeLimit},
+       [=](const Settings &, const VtValue &first) { return limit(first); }},
+      /* Karma has no total limit: a path does at most the sum of the limits. */
+      {TfToken("cycles:integrator:max_bounce"),
+       {diffuseLimit, reflectLimit, refractLimit, volumeLimit},
+       [=](const Settings &settings, const VtValue &) {
+         int total = 0;
+         bool any = false;
+         for (const TfToken &key : {diffuseLimit, reflectLimit, refractLimit, volumeLimit}) {
+           const VtValue value = limit(find(settings, key));
+           if (!value.IsEmpty()) {
+             total += value.UncheckedGet<int>();
+             any = true;
+           }
+         }
+         return any ? VtValue(total) : VtValue();
+       }},
+      /* Only the indirect limit: Cycles' direct clamp also clamps emission and the background
+       * seen by the camera. */
+      {TfToken("cycles:integrator:sample_clamp_indirect"),
+       {TfToken("karma:global:colorlimitindlinked"),
+        colorLimit,
+        TfToken("karma:global:colorlimitindirect")},
+       [=](const Settings &settings, const VtValue &first) {
+         const bool shared = VtValue::Cast<bool>(first).GetWithDefault(true);
+         const VtValue value = VtValue::Cast<float>(
+             find(settings, shared ? colorLimit : TfToken("karma:global:colorlimitindirect")));
+         return value.IsEmpty() ? VtValue() :
+                                  VtValue(std::max(value.UncheckedGet<float>(), 0.0f));
+       }},
+      {TfToken("cycles:integrator:use_denoise"),
+       {imageFilter},
+       [=](const Settings &, const VtValue &first) {
+         const std::optional<std::string> engine = denoiseEngine(first);
+         return engine ? VtValue(!engine->empty()) : VtValue();
+       }},
+      /* Other engines keep Cycles' denoiser. */
+      {TfToken("cycles:integrator:denoiser_type"),
+       {imageFilter},
+       [=](const Settings &, const VtValue &first) {
+         const std::optional<std::string> engine = denoiseEngine(first);
+         return !engine ? VtValue() :
+                *engine == "oidn" ? VtValue(TfToken("openimagedenoise")) :
+                *engine == "optix" ? VtValue(TfToken("optix")) :
+                                     VtValue();
+       }},
+      /* Karma's dicing quality 2 dices twice as finely as 1: half the Cycles dicing rate. */
+      {HdCyclesRenderSettingsTokens->dicingRate,
+       {TfToken("karma:global:dicingqualityscale")},
+       [=](const Settings &, const VtValue &first) { return inverse(first); }},
+      {HdCyclesRenderSettingsTokens->offscreenDicingScale,
+       {TfToken("karma:global:offscreenquality")},
+       [=](const Settings &, const VtValue &first) { return inverse(first); }},
+      {HdCyclesRenderSettingsTokens->dicingCamera,
+       {TfToken("karma:global:dicingcamera")},
+       [](const Settings &, const VtValue &first) {
+         const std::string camera = GetStringSetting(first, "");
+         return camera.empty() ? VtValue() : VtValue(camera);
+       }},
+      {TfToken("cycles:integrator:use_light_tree"),
+       {TfToken("karma:global:light_sampling_mode")},
+       [](const Settings &, const VtValue &first) {
+         return first.IsEmpty() ? VtValue() : VtValue(GetStringSetting(first, "") != "Uniform");
+       }},
+      {TfToken("cycles:integrator:seed"),
+       {TfToken("karma:global:randomseed")},
+       [](const Settings &, const VtValue &first) { return VtValue::Cast<int>(first); }},
+      {HdCyclesRenderSettingsTokens->abortMissingTexture,
+       {TfToken("karma:global:abortmissingtexture")},
+       [](const Settings &, const VtValue &first) { return VtValue::Cast<bool>(first); }},
+      {HdCyclesRenderSettingsTokens->abortNoGpu,
+       {TfToken("karma:global:abortnogpudevice")},
+       [](const Settings &, const VtValue &first) { return VtValue::Cast<bool>(first); }},
+  };
+  return fallbacks;
 }
 
 HdCyclesResyncSceneIndexPtr FindResyncSceneIndex(const HdSceneIndexBaseRefPtr &sceneIndex)
@@ -913,6 +1064,13 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else {
     _settingsMap[key] = value;
   }
+  /* Karma settings only set the Cycles settings they are a fallback for. */
+  if (TfStringStartsWith(key.GetString(), "karma:")) {
+    ApplyKarmaFallbacks(key);
+    return;
+  }
+  /* Authored or unset: no longer from Karma (unset gets Karma's value again at the end). */
+  _karmaFallbacks.erase(key);
   if (IsSessionSetting(key)) {
     /* A thread count limits TBB in the whole process, which hangs Houdini with one thread: keep
      * the count the session was created with (all threads, unless husk set it). */
@@ -930,7 +1088,8 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     _renderParam->RecreateSession(params, sceneParams);
     settings = _settingsMap;
     for (const auto &[otherKey, otherValue] : settings) {
-      if (!IsSessionSetting(otherKey)) {
+      /* Settings from Karma are set again by their Karma settings. */
+      if (!IsSessionSetting(otherKey) && !_karmaFallbacks.count(otherKey)) {
         SetRenderSetting(otherKey, otherValue);
       }
     }
@@ -1136,6 +1295,37 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   }
 
   SendResync();
+
+  if (value.IsEmpty()) {
+    ApplyKarmaFallbacks(key);
+  }
+}
+
+void HdCyclesDelegate::ApplyKarmaFallbacks(const TfToken &key)
+{
+  for (const KarmaFallback &fallback : GetKarmaFallbacks()) {
+    if (fallback.cycles != key &&
+        std::find(fallback.karma.begin(), fallback.karma.end(), key) == fallback.karma.end())
+    {
+      continue;
+    }
+    /* An authored Cycles setting wins. */
+    const bool fromKarma = _karmaFallbacks.count(fallback.cycles) != 0;
+    if (_settingsMap.count(fallback.cycles) && !fromKarma) {
+      continue;
+    }
+    const auto first = _settingsMap.find(fallback.karma.front());
+    const VtValue value = fallback.value(
+        _settingsMap, first == _settingsMap.end() ? VtValue() : first->second);
+    if (value.IsEmpty() && !fromKarma) {
+      continue;
+    }
+    /* Empty resets it to the Cycles default. Setting it erases it from _karmaFallbacks. */
+    SetRenderSetting(fallback.cycles, value);
+    if (!value.IsEmpty()) {
+      _karmaFallbacks.insert(fallback.cycles);
+    }
+  }
 }
 
 void HdCyclesDelegate::UpdateDenoiser()

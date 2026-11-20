@@ -563,8 +563,19 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(prim.dataSource);
   const bool adaptive = IsAdaptiveSubdivision(sceneDelegate);
   _adaptiveSubdivision = adaptive;
+  /* Without the Cycles setting, Karma's Dicing Quality: quality 2 dices twice as finely, so half
+   * the dicing rate (approximate, Karma's micropolygon size is not specified in pixels). */
+  VtValue dicingRate = GetObjectSetting(primvars, "dicing_rate");
+  if (dicingRate.IsEmpty()) {
+    const float quality = VtValue::Cast<float>(
+                              ReadPrimvar(primvars, TfToken("karma:object:dicingquality")))
+                              .GetWithDefault(0.0f);
+    if (quality > 0.0f) {
+      dicingRate = VtValue(1.0f / quality);
+    }
+  }
   const float dicingScale = std::max(
-      0.0f, VtValue::Cast<float>(GetObjectSetting(primvars, "dicing_rate")).GetWithDefault(1.0f));
+      0.0f, VtValue::Cast<float>(dicingRate).GetWithDefault(1.0f));
   if (adaptive) {
     refineLevel = std::max(refineLevel, 1);
     /* Houdini's SOP Import authors polygon meshes as "none": dice them flat (Blender's Simple

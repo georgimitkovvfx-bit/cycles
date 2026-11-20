@@ -446,4 +446,25 @@ unsigned int KarmaRenderVisibility(const std::string &pattern)
   return visibility;
 }
 
+unsigned int KarmaLightContributions(const HdContainerDataSourceHandle &light)
+{
+  static const TfToken contribs("inputs:karma:light:contribs");
+  const std::string pattern = GetTypedValue<std::string>(light, contribs, "*");
+  /* Coat is a Cycles glossy closure; SSS has no light ray type in Cycles. */
+  static const std::pair<const char *, unsigned int> components[] = {
+      {"diffuse", PATH_RAY_VISIBILITY_DIFFUSE},
+      {"reflect", PATH_RAY_VISIBILITY_GLOSSY},
+      {"coat", PATH_RAY_VISIBILITY_GLOSSY},
+      {"refract", PATH_RAY_VISIBILITY_TRANSMIT},
+      {"volume", PATH_RAY_VISIBILITY_VOLUME_SCATTER},
+  };
+  unsigned int visibility = 0;
+  for (const auto &[component, bit] : components) {
+    if (KarmaRayVisible(pattern, component)) {
+      visibility |= bit;
+    }
+  }
+  return visibility;
+}
+
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

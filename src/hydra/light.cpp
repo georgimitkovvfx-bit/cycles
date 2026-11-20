@@ -44,6 +44,7 @@ extern Transform convert_transform(const GfMatrix4d &matrix);
 TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (visibleInPrimaryRay)
     ((karmaRenderLightGeo, "inputs:karma:light:renderlightgeo"))
+    ((karmaSpread, "inputs:karma:light:spread"))
     (falloff)
     ((visibleCamera, "inputs:cycles:light:visible_camera"))
     ((useMis, "inputs:cycles:light:use_mis"))
@@ -173,8 +174,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     {
       visibility |= PATH_RAY_VISIBILITY_CAMERA;
     }
+    // Karma's light Contributions for the rays without a Cycles setting
+    const uint karmaRays = KarmaLightContributions(lightDs);
     for (const auto &[token, ray] : rayVisibility) {
-      if (!GetTypedValue<bool>(lightDs, token, true)) {
+      if (!GetTypedValue<bool>(lightDs, token, (karmaRays & ray) != 0)) {
         visibility &= ~ray;
       }
     }
@@ -225,8 +228,14 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     {
       AreaLight *area_light = static_cast<AreaLight *>(_light);
 
-      area_light->set_spread(GfDegreesToRadians(
-          clamp(GetTypedValue<float>(lightDs, _tokens->spread, 180.0f), 0.0f, 180.0f)));
+      /* Without a Cycles spread, Karma's 0 (parallel beams) to 1 (diffuse) as 0 to 180 degrees.
+       * shortcut: linear, Karma's own curve between the ends is not documented. */
+      area_light->set_spread(GfDegreesToRadians(clamp(
+          GetTypedValue<float>(lightDs,
+                               _tokens->spread,
+                               180.0f * GetTypedValue<float>(lightDs, _tokens->karmaSpread, 1.0f)),
+          0.0f,
+          180.0f)));
       area_light->set_is_portal(GetTypedValue<bool>(lightDs, _tokens->isPortal, false));
 
       if (_lightType == HdPrimTypeTokens->diskLight) {

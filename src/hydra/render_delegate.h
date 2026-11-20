@@ -155,6 +155,12 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
    * denoises, or another denoiser when it cannot. */
   void UpdateDenoiser();
   bool _dlssWarned = false;
+
+  /* Set the Cycles settings that have a Karma fallback (GetKarmaFallbacks) using the Karma or
+   * Cycles setting `key`, from Karma's settings while the Cycles setting is not authored. */
+  void ApplyKarmaFallbacks(const PXR_NS::TfToken &key);
+  /* Cycles settings in the settings map that were set from Karma's. */
+  PXR_NS::TfToken::Set _karmaFallbacks;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
