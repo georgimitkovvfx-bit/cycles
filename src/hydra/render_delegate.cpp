@@ -880,7 +880,14 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
   }
 
   Session *const session = _renderParam->session;
-  const int samplesTotal = session->params.samples;
+  /* The scheduler's sample count (RenderScheduler::set_sample_params). */
+  const int samplesTotal = session->params.use_sample_subset ?
+                               std::max(std::min(session->params.sample_subset_offset +
+                                                     session->params.sample_subset_length,
+                                                 session->params.samples) -
+                                            session->params.sample_subset_offset,
+                                        0) :
+                               session->params.samples;
   const int samplesDone = std::min(progress.get_current_sample(), samplesTotal);
   /* Remaining time from the render time so far, like Blender's status bar. */
   const double remaining = (fractionDone > 0.0 && fractionDone < 1.0) ?
