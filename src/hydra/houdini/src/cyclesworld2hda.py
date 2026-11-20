@@ -84,6 +84,14 @@ def _node(net, node_type, name, parms=None, inputs=()):
     return n
 
 
+def _link(node, parm, top=None):
+    """Drive the node's parameter (all components) by the world node's parameter of the same
+    name (or top), so the preset's settings show on the world node."""
+    for p in node.parmTuple(parm):
+        p.setExpression('ch("%%s%%s")' %% (TOP, (top or parm) + p.name()[len(parm):]),
+                        hou.exprLanguage.Hscript)
+
+
 def _background(net, name, color=None, parms=None):
     bg = _node(net, "cycles_background_shader", name, parms,
                [("color", color)] if color else ())
@@ -97,19 +105,23 @@ def _hdri(net):
     hsv = _node(net, "cycles_hsv", "hue_saturation_value", inputs=[("color", (env, "color"))])
     bc = _node(net, "cycles_brightness_contrast", "brightness_contrast",
                inputs=[("color", (hsv, "color"))])
+    for node, parms in ((hsv, ("hue", "saturation", "value")), (bc, ("bright", "contrast"))):
+        for parm in parms:
+            _link(node, parm)
     return _background(net, "background", (bc, "color"))
 
 
 def _sky(net):
-    # The Cycles Sun & Sky LOP's defaults: sun 15 degrees up, compass azimuth 135 (south-east).
-    sky = _node(net, "cycles_sky_texture", "sky_texture",
-                {"sky_type": "multiple_scattering", "sun_disc": 1, "sun_size": 0.545,
-                 "sun_intensity": 1.0, "sun_elevation": 15.0, "sun_rotation": 45.0})
+    sky = _node(net, "cycles_sky_texture", "sky_texture", {"sky_type": "multiple_scattering"})
+    for parm in SKY_PARMS:
+        _link(sky, parm)
     return _background(net, "background", (sky, "color"))
 
 
 def _color(net):
-    return _background(net, "background", parms={"color": GREY})
+    bg = _background(net, "background")
+    _link(bg, "color")
+    return bg
 
 
 def _gradient(net):
@@ -123,14 +135,18 @@ def _gradient(net):
     linear = hou.rampBasis.Linear
     ramp.parm("ramp").set(hou.Ramp(
         (linear, linear, linear, linear), (0.0, 0.49, 0.5, 1.0),
-        ((0.08, 0.07, 0.06), (0.2, 0.18, 0.16), (0.8, 0.85, 0.9), (0.2, 0.4, 0.8))))
+        ((0.2, 0.18, 0.16), (0.2, 0.18, 0.16), (0.8, 0.85, 0.9), (0.2, 0.4, 0.8))))
+    # Ground below the horizon, then horizon to zenith.
+    for key, top in ((1, "ground"), (2, "ground"), (3, "horizon"), (4, "zenith")):
+        _link(ramp, "ramp%%dc" %% key, top)
     return _background(net, "background", (ramp, "color"))
 
 
 def _hdri_camera(net):
     light = _hdri(net)
     light.setName("background_lighting")
-    camera = _background(net, "background_camera", parms={"color": GREY})
+    camera = _background(net, "background_camera")
+    _link(camera, "color")
     path = _node(net, "cycles_light_path", "light_path")
     return _node(net, "cycles_mix_closure", "mix_shader", inputs=[
         ("fac", (path, "is_camera_ray")), ("closure1", (light, "background")),
@@ -139,6 +155,8 @@ def _hdri_camera(net):
 
 PRESETS = {"hdri": _hdri, "sky": _sky, "color": _color, "gradient": _gradient,
            "hdri_camera": _hdri_camera}
+SKY_PARMS = ("sun_disc", "sun_size", "sun_intensity", "sun_elevation", "sun_rotation", "altitude",
+             "air_density", "aerosol_density", "ozone_density")
 
 
 def build(net, preset):
@@ -194,6 +212,8 @@ def apply_preset(node):
     net = builder(node)
     build(net, preset)
     node.setUserData(SIGNATURE, signature(net))
+    # Shows the preset's parameters (hide when).
+    node.parm("appliedpreset").set(preset)
 
 
 def edit_nodes(node):
@@ -227,7 +247,7 @@ xform.AddRotateXYZOp().Set(Gf.Vec3f(*top.evalParmTuple("r")))
 """
 
 
-def parameters():
+def parameters(module):
     group = hou.ParmTemplateGroup()
     group.append(hou.StringParmTemplate(
         "lightpath", "Light Path", 1, default_value=("/lights/$OS",),
@@ -258,11 +278,17 @@ def parameters():
              "edit them like Blender's World nodes."))
 
     group.append(hou.StringParmTemplate(
+        "appliedpreset", "Applied Preset", 1, default_value=("hdri",), is_hidden=True,
+        help="Preset the world nodes were last built from: its parameters are shown."))
+    hdri = ("hdri", "hdri_camera")
+    hdrifile = hou.StringParmTemplate(
         "hdrifile", "HDRI File", 1,
         default_value=("$HFS/houdini/pic/lookdev/envmap.exr",),
         string_type=hou.stringParmType.FileReference, file_type=hou.fileType.Image,
         help="Latlong image of the HDRI presets' Environment Texture (its Filename refers to "
-             "this parameter)."))
+             "this parameter).")
+    _show_for(hdrifile, hdri)
+    group.append(hdrifile)
     group.append(hou.FloatParmTemplate(
         "strength", "Strength", 1, default_value=(1.0,), min=0.0, max=10.0, min_is_strict=True,
         help="Strength of the world: the presets' Background nodes refer to this parameter."))
@@ -270,7 +296,44 @@ def parameters():
         "r", "Rotation", 3, default_value=(0.0, 0.0, 0.0),
         help="Rotation of the dome light in degrees. Environment and Sky Textures follow it; "
              "other nodes see world-space directions (Y up)."))
+
+    # The applied preset's node settings, which its nodes refer to (hidden for other presets).
+    group.append(hou.SeparatorParmTemplate("sep2"))
+    # The Cycles Sun & Sky LOP's defaults: sun 15 degrees up, compass azimuth 135 (south-east).
+    sky = {"sun_disc": 1, "sun_size": 0.545, "sun_intensity": 1.0, "sun_elevation": 15.0,
+           "sun_rotation": 45.0}
+    linked = [("cycles_hsv", name, name, None, None, hdri)
+              for name in ("hue", "saturation", "value")]
+    linked += [("cycles_brightness_contrast", name, name, None, None, hdri)
+               for name in ("bright", "contrast")]
+    linked += [("cycles_background_shader", "color", "color", None, module["GREY"],
+                ("color", "hdri_camera"))]
+    linked += [("cycles_sky_texture", name, name, None, sky.get(name), ("sky",))
+               for name in module["SKY_PARMS"]]
+    linked += [("cycles_background_shader", "color", name, label, value, ("gradient",))
+               for name, label, value in (("ground", "Ground", (0.2, 0.18, 0.16)),
+                                          ("horizon", "Horizon", (0.8, 0.85, 0.9)),
+                                          ("zenith", "Sky", (0.2, 0.4, 0.8)))]
+    for vop, vop_parm, name, label, value, presets in linked:
+        template = hou.nodeType(hou.vopNodeTypeCategory(), vop).parmTemplateGroup().find(
+            vop_parm).clone()
+        template.setName(name)
+        if label:
+            template.setLabel(label)
+        if isinstance(value, tuple):
+            template.setDefaultValue(value)
+        elif value is not None:
+            template.setDefaultValue(bool(value) if template.type() == hou.parmTemplateType.Toggle
+                                     else (value,))
+        template.setConditional(hou.parmCondType.DisableWhen, "")
+        _show_for(template, presets)
+        group.append(template)
     return group
+
+
+def _show_for(template, presets):
+    template.setConditional(hou.parmCondType.HideWhen, "{ %s }" % " ".join(
+        'appliedpreset != "%s"' % preset for preset in presets))
 
 
 def main():
@@ -323,7 +386,7 @@ def main():
         name=NODE_TYPE, hda_file_name=hda_path, description=LABEL,
         min_num_inputs=0, max_num_inputs=1, ignore_external_references=True)
     definition = hda_node.type().definition()
-    definition.setParmTemplateGroup(parameters())
+    definition.setParmTemplateGroup(parameters(module))
     definition.setIcon("$CYCLES_ICON")
     definition.addSection("Tools.shelf", TOOL_XML)
     definition.addSection("PythonModule", MODULE)
@@ -362,9 +425,15 @@ def main():
         raise RuntimeError("World nodes are not editable inside the locked node")
     if test.hm().is_edited(test):
         raise RuntimeError("New node reports edited world nodes")
-    net.node("hue_saturation_value").parm("saturation").set(0.5)
+    net.node("hue_saturation_value").parm("fac").set(0.5)
     if not test.hm().is_edited(test):
         raise RuntimeError("Edit of the world nodes not detected")
+    # Per preset: a parameter shown only for it, and the node it drives.
+    shown = {"hdri": ("saturation", "hue_saturation_value", "saturation"),
+             "sky": ("sun_elevation", "sky_texture", "sun_elevation"),
+             "color": ("colorg", "background", "colorg"),
+             "gradient": ("horizong", "color_ramp", "ramp3cg"),
+             "hdri_camera": ("colorg", "background_camera", "colorg")}
     for preset in module["PRESETS"]:
         test.parm("preset").set(preset)
         test.hm().apply_preset(test)
@@ -373,6 +442,15 @@ def main():
             raise RuntimeError("Preset %s: outputs:cycles:surface not connected" % preset)
         if test.hm().is_edited(test):
             raise RuntimeError("Preset %s reports edited world nodes" % preset)
+        parm, node, node_parm = shown[preset]
+        test.updateParmStates()  # Evaluates the hide when conditionals without a parameter pane.
+        visible = {name for name, *_ in shown.values() if not test.parm(name).isHidden()}
+        if visible != {parm} | ({"saturation"} if preset == "hdri_camera" else set()):
+            raise RuntimeError("Preset %s shows %s" % (preset, sorted(visible)))
+        test.parm(parm).set(0.25)
+        if abs(net.node(node).evalParm(node_parm) - 0.25) > 1e-6:
+            raise RuntimeError("Preset %s: %s does not drive %s" % (preset, parm, node))
+        test.parm(parm).revertToDefaults()
     log("Wrote %s" % hda_path)
     return 0
 
