@@ -443,13 +443,13 @@ void HdCyclesSession::SetWorldMaterial(Light *light, const WorldMaterial &world)
   {
     return;
   }
-  const bool hadMaterial = it != _worldMaterials.end() && !it->second.material.empty();
+  const std::string oldMaterial = it != _worldMaterials.end() ? it->second.material : "";
   _worldMaterials[light] = world;
   lightsChanged = true;
-  /* Materials orient their sky and environment textures by the light they are the world of. */
-  if (hadMaterial || !material.empty()) {
-    RequestResync(true, false);
-  }
+  /* Materials orient their sky and environment textures by the light they are the world of:
+   * only the old and the new world material change. */
+  RequestMaterialResync(oldMaterial);
+  RequestMaterialResync(material);
 }
 
 void HdCyclesSession::RemoveWorldMaterial(Light *light)
@@ -458,9 +458,7 @@ void HdCyclesSession::RemoveWorldMaterial(Light *light)
   if (it == _worldMaterials.end()) {
     return;
   }
-  if (!it->second.material.empty()) {
-    RequestResync(true, false);
-  }
+  RequestMaterialResync(it->second.material);
   RemoveWorldSource(it->second.lightShader);
   _domeUseMis.erase(light);
   _worldMaterials.erase(it);
@@ -616,8 +614,7 @@ void HdCyclesSession::SetWorldSource(Shader *shader, ShaderGraph &graph)
   }
   for (const auto &[light, world] : _worldMaterials) {
     if (world.lightShader == shader && _domeTextureMaterials.count(world.material)) {
-      RequestResync(true, false);
-      break;
+      RequestMaterialResync(world.material);
     }
   }
 }
@@ -631,6 +628,7 @@ void HdCyclesSession::ExpandDomeTextures(ShaderGraph *graph, const WorldMaterial
     }
   }
   if (domeTextures.empty()) {
+    _domeTextureMaterials.erase(world.material);
     return;
   }
   _domeTextureMaterials.insert(world.material);
@@ -1173,6 +1171,24 @@ void HdCyclesSession::RequestResync(const bool materials, const bool rprims)
   }
   /* husk and the viewport only sync again while the render is not converged. */
   ResetConverged();
+}
+
+void HdCyclesSession::RequestMaterialResync(const std::string &material)
+{
+  if (!_resyncEnabled || material.empty()) {
+    return;
+  }
+  {
+    const std::lock_guard<thread_mutex> lock(_resyncMaterialIdsMutex);
+    _resyncMaterialIds.insert(material);
+  }
+  ResetConverged();
+}
+
+std::set<std::string> HdCyclesSession::TakeMaterialResyncs()
+{
+  const std::lock_guard<thread_mutex> lock(_resyncMaterialIdsMutex);
+  return std::exchange(_resyncMaterialIds, {});
 }
 
 void HdCyclesSession::RemoveAovBinding(HdRenderBuffer *renderBuffer)

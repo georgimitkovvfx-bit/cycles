@@ -373,6 +373,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // sent by HdCyclesDelegate::SendResync() outside of syncs, for the next sync: materials are
   // rebuilt, rprims and cameras read their transforms and primvars again.
   void RequestResync(bool materials, bool rprims);
+  // The same for one material (a world material), by its path
+  void RequestMaterialResync(const std::string &material);
+  // The materials RequestMaterialResync() asked for since the last call, for SendResync()
+  std::set<std::string> TakeMaterialResyncs();
 
   // Requests before the first render pass come from the first sync, which syncs the prims they
   // concern after them (render settings, cameras and materials before geometry)
@@ -413,7 +417,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Whether a requested re-sync has not reached the render yet
   bool IsResyncing() const
   {
-    return resyncMaterials || resyncRprims || resyncPending;
+    const std::lock_guard<CCL_NS::thread_mutex> lock(_resyncMaterialIdsMutex);
+    return resyncMaterials || resyncRprims || resyncPending || !_resyncMaterialIds.empty();
   }
 
  private:
@@ -443,6 +448,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   size_t _numDefaultShaders = 0;
   bool _resyncEnabled = false;
+  std::set<std::string> _resyncMaterialIds;
+  mutable CCL_NS::thread_mutex _resyncMaterialIdsMutex;
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);

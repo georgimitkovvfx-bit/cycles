@@ -819,7 +819,8 @@ void HdCyclesDelegate::SendResync()
   }
   const bool materials = _renderParam->resyncMaterials.exchange(false);
   const bool rprims = _renderParam->resyncRprims.exchange(false);
-  if (!(materials || rprims) || !_renderIndex) {
+  const std::set<std::string> materialIds = _renderParam->TakeMaterialResyncs();
+  if (!(materials || rprims || !materialIds.empty()) || !_renderIndex) {
     return;
   }
 
@@ -831,12 +832,22 @@ void HdCyclesDelegate::SendResync()
 
   const SdfPath &root = SdfPath::AbsoluteRootPath();
   HdSceneIndexObserver::DirtiedPrimEntries entries;
+  const HdDataSourceLocatorSet materialLocators = {HdMaterialSchema::GetDefaultLocator()};
   if (materials) {
-    const HdDataSourceLocatorSet locators = {HdMaterialSchema::GetDefaultLocator()};
     for (const SdfPath &id : _renderIndex->GetSprimSubtree(HdPrimTypeTokens->material, root)) {
-      entries.emplace_back(id, locators);
+      entries.emplace_back(id, materialLocators);
     }
     _renderParam->materialsResyncing = true;
+  }
+  else {
+    for (const std::string &material : materialIds) {
+      /* A world material may not be synced yet: its first sync sees its world. */
+      if (SdfPath::IsValidPathString(material) &&
+          _renderIndex->GetSprim(HdPrimTypeTokens->material, SdfPath(material)))
+      {
+        entries.emplace_back(SdfPath(material), materialLocators);
+      }
+    }
   }
   if (rprims) {
     /* Transforms and points at the motion steps, and the primvars and volume fields shaders read
