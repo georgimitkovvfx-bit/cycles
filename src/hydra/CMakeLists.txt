@@ -36,6 +36,7 @@ set(SRC_HD_CYCLES_HEADERS
   light.h
   material.h
   mesh.h
+  mesh_attributes.h
   node_util.h
   output_driver.h
   pointcloud.h
