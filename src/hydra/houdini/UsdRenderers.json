@@ -12,6 +12,12 @@
                                     "cycles:use_resolution_divider", "cycles:curve_shape",
                                     "cycles:use_texture_cache", "cycles:auto_texture_cache",
                                     "cycles:texture_cache_path", "cycles:texture_limit" ],
-        "husk.default_output" : "cycles.exr"
+        "husk.default_output" : "cycles.exr",
+        "viewstats" : [ "Samples", "Remaining", "Device" ],
+        "statsdatapaths" : {
+            "Samples"   : "cyclesSamples",
+            "Remaining" : "cyclesRemaining",
+            "Device"    : "cyclesDevice"
+        }
     }
 }

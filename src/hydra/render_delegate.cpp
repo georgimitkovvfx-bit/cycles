@@ -34,6 +34,8 @@
 #include "scene/shader_nodes.h"
 #include "util/murmurhash.h"
 #include "util/string.h"
+#include "util/time.h"
+#include "util/version.h"
 #include "session/session.h"
 
 #include <array>
@@ -630,8 +632,27 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
     status += " | " + substatus;
   }
 
+  Session *const session = _renderParam->session;
+  const int samplesTotal = session->params.samples;
+  const int samplesDone = std::min(progress.get_current_sample(), samplesTotal);
+  /* Remaining time from the render time so far, like Blender's status bar. */
+  const double remaining = (fractionDone > 0.0 && fractionDone < 1.0) ?
+                               renderTime * (1.0 / fractionDone - 1.0) :
+                               0.0;
+  const std::string device = session->device ? session->device->info.description : "";
+
   VtDictionary renderStats = {{"rendererName", VtValue("Cycles")},
-                              {"rendererVersion", VtValue(GfVec3i(0, 0, 0))},
+                              {"rendererVersion",
+                               VtValue(GfVec3i(CYCLES_VERSION_MAJOR,
+                                               CYCLES_VERSION_MINOR,
+                                               CYCLES_VERSION_PATCH))},
+                              {"cyclesSamples",
+                               VtValue(std::to_string(samplesDone) + " / " +
+                                       std::to_string(samplesTotal))},
+                              {"cyclesRemaining",
+                               VtValue(remaining > 0.0 ? time_human_readable_from_seconds(remaining) :
+                                                         std::string("-"))},
+                              {"cyclesDevice", VtValue(device)},
                               {"percentDone", VtValue(floor_to_int(fractionDone * 100))},
                               {"fractionDone", VtValue(fractionDone)},
                               {"loadClockTime", VtValue(totalTime - renderTime)},
