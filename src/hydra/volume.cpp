@@ -68,6 +68,11 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
     HdVolumeFieldBindingSchema bindings = HdVolumeFieldBindingSchema::GetFromParent(
         prim.dataSource);
 
+    /* A field kept for the bounds when the shaders need none (density first). */
+    bool anyLoaded = false;
+    HdCyclesField *boundsField = nullptr;
+    ustring boundsName;
+
     for (const TfToken &fieldName : bindings.GetVolumeFieldBindingNames()) {
       auto pathDs = bindings.GetVolumeFieldBinding(fieldName);
       if (!pathDs) {
@@ -106,13 +111,29 @@ void HdCyclesVolume::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyB
                                       _geom->attributes.add(std) :
                                       _geom->attributes.add(name, TypeFloat, ATTR_ELEMENT_VOXEL);
           attr->data_voxel_for_write() = openvdbAsset->GetImageHandle();
+          anyLoaded = true;
         }
         /* Shaders can also read a velocity field by its own name. */
         if (name != authored && _geom->need_attribute(scene, authored)) {
           _geom->attributes.add(authored, TypeFloat, ATTR_ELEMENT_VOXEL)->data_voxel_for_write() =
               openvdbAsset->GetImageHandle();
+          anyLoaded = true;
+        }
+        if (!boundsField || std == ATTR_STD_VOLUME_DENSITY) {
+          boundsField = openvdbAsset;
+          boundsName = name;
         }
       }
+    }
+
+    /* Cycles builds the volume mesh from the loaded fields: with none (an absorption or emission
+     * shader reading no field) the volume rendered empty, Karma fills the field's extent. */
+    if (!anyLoaded && boundsField) {
+      const AttributeStandard std = Attribute::name_volume_standard(boundsName);
+      Attribute *const attr = (std != ATTR_STD_NONE) ?
+                                  _geom->attributes.add(std) :
+                                  _geom->attributes.add(boundsName, TypeFloat, ATTR_ELEMENT_VOXEL);
+      attr->data_voxel_for_write() = boundsField->GetImageHandle();
     }
 
     _geom->merge_grids(scene);
