@@ -11,6 +11,11 @@
 #include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hgi/hgi.h>
 
+#include <atomic>
+#include <mutex>
+#include <string>
+#include <vector>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 // clang-format off
@@ -161,6 +166,13 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
   void ApplyKarmaFallbacks(const PXR_NS::TfToken &key);
   /* Cycles settings in the settings map that were set from Karma's. */
   PXR_NS::TfToken::Set _karmaFallbacks;
+
+  /* Farm aborts of GetRenderStats: the texture files last checked, the first of them missing,
+   * and whether the abort was reported. */
+  mutable std::mutex _abortMutex;
+  mutable std::vector<std::string> _checkedTextures;
+  mutable std::string _missingTexture;
+  mutable std::atomic<bool> _abortReported = false;
 };
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

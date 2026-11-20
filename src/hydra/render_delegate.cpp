@@ -355,14 +355,17 @@ SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionPar
   return params;
 }
 
-/* First image file of the scene's shaders (materials, lights, world) that is not on disk, empty
- * if there is none. Called with the scene locked.
- * shortcut: checks that the files exist, not that they load (corrupt files, OSL textures are not
+/* Image files of the scene's used shaders (materials, lights, world), a file per UDIM tile.
+ * Called with the scene locked.
+ * shortcut: the files are checked to exist, not to load (corrupt files, OSL textures are not
  * seen), count the image manager's load failures if farms need that. */
-std::string FindMissingTexture(Scene *scene)
+std::vector<std::string> GetTextureFiles(Scene *scene)
 {
+  std::vector<std::string> files;
   for (Shader *shader : scene->shaders) {
-    if (!shader->graph) {
+    /* Deleted and unassigned shaders stay in the scene unreferenced, Cycles loads none of their
+     * images. */
+    if (!shader->graph || shader->reference_count() == 0) {
       continue;
     }
     for (ShaderNode *node : shader->graph->nodes) {
@@ -379,8 +382,8 @@ std::string FindMissingTexture(Scene *scene)
       if (filename.empty()) {
         continue;
       }
-      if (tiles.empty() && !path_exists(filename)) {
-        return filename;
+      if (tiles.empty()) {
+        files.push_back(filename);
       }
       /* The tile file names ImageManager::add_image loads. */
       for (const int tile : tiles) {
@@ -389,13 +392,11 @@ std::string FindMissingTexture(Scene *scene)
         string_replace(tileFilename,
                        "<UVTILE>",
                        string_printf("u%d_v%d", (tile - 1001) % 10 + 1, (tile - 1001) / 10 + 1));
-        if (!path_exists(tileFilename)) {
-          return tileFilename;
-        }
+        files.push_back(tileFilename);
       }
     }
   }
-  return {};
+  return files;
 }
 
 /* A Cycles setting from Karma Render Settings LOP attributes, used while the Cycles setting is not
@@ -947,27 +948,46 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
   };
   std::string abortReason;
   if (enabled(HdCyclesRenderSettingsTokens->abortNoGpu) && session->device &&
-      (session->device->info.type == DEVICE_CPU || session->device->have_error()))
+      (session->device->info.type == DEVICE_CPU || progress.get_error()))
   {
+    /* The device error through the progress, which locks it against the render threads. */
     abortReason = "no working GPU device (" +
-                  (device.empty() ? session->device->error_message() : device) + ")";
+                  (session->device->info.type == DEVICE_CPU ? device :
+                                                              progress.get_error_message()) +
+                  ")";
   }
   if (abortReason.empty() && enabled(HdCyclesRenderSettingsTokens->abortMissingTexture)) {
     /* Don't wait for a scene update in progress, the next stats call checks again. */
-    const thread_scoped_lock lock(scene->mutex, std::try_to_lock);
-    if (lock.owns_lock()) {
-      const std::string missing = FindMissingTexture(scene);
-      if (!missing.empty()) {
-        abortReason = "missing texture " + missing;
+    std::vector<std::string> files;
+    bool locked = false;
+    {
+      const thread_scoped_lock lock(scene->mutex, std::try_to_lock);
+      if (lock.owns_lock()) {
+        files = GetTextureFiles(scene);
+        locked = true;
       }
+    }
+    /* Files are checked outside the scene lock (slow network storage), again when they change. */
+    const std::lock_guard<std::mutex> lock(_abortMutex);
+    if (locked && files != _checkedTextures) {
+      _missingTexture.clear();
+      for (const std::string &file : files) {
+        if (!path_exists(file)) {
+          _missingTexture = file;
+          break;
+        }
+      }
+      _checkedTextures = std::move(files);
+    }
+    if (!_missingTexture.empty()) {
+      abortReason = "missing texture " + _missingTexture;
     }
   }
   if (!abortReason.empty()) {
     renderStats["huskErrorStatus"] = VtValue(1);
     renderStats["renderProgressAnnotation"] = VtValue("Cycles abort: " + abortReason);
     /* Stats are polled while rendering: report the reason once. */
-    static std::atomic<bool> reported = false;
-    if (!reported.exchange(true)) {
+    if (!_abortReported.exchange(true)) {
       TF_RUNTIME_ERROR("Cycles render aborted: %s", abortReason.c_str());
     }
   }
