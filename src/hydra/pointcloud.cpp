@@ -32,22 +32,48 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
 namespace {
 
 /* Primvars of a particle field: float or half arrays (Hydra keeps the names of the float
- * attributes for both). */
-VtVec3fArray ReadSplatFloat3(const HdPrimvarsSchema &primvars, const TfToken &name)
+ * attributes for both), at a shutter time for the motion steps. */
+VtValue ReadSplatPrimvar(const HdPrimvarsSchema &primvars, const TfToken &name, const float time)
 {
-  const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, name));
+  const HdSampledDataSourceHandle ds = primvars ?
+                                           primvars.GetPrimvar(name).GetFlattenedPrimvarValue() :
+                                           nullptr;
+  return ds ? ds->GetValue(time) : VtValue();
+}
+
+bool SplatPrimvarIsAnimated(const HdPrimvarsSchema &primvars,
+                            const TfToken &name,
+                            const std::vector<float> &motionTimes)
+{
+  const HdSampledDataSourceHandle ds = primvars ?
+                                           primvars.GetPrimvar(name).GetFlattenedPrimvarValue() :
+                                           nullptr;
+  std::vector<float> sampleTimes;
+  return !motionTimes.empty() && ds &&
+         ds->GetContributingSampleTimesForInterval(
+             motionTimes.front(), motionTimes.back(), &sampleTimes);
+}
+
+VtVec3fArray ReadSplatFloat3(const HdPrimvarsSchema &primvars,
+                             const TfToken &name,
+                             const float time = 0.0f)
+{
+  const VtValue value = PrimvarAsFloats(ReadSplatPrimvar(primvars, name, time));
   return value.IsHolding<VtVec3fArray>() ? value.UncheckedGet<VtVec3fArray>() : VtVec3fArray();
 }
 
-VtFloatArray ReadSplatFloat(const HdPrimvarsSchema &primvars, const TfToken &name)
+VtFloatArray ReadSplatFloat(const HdPrimvarsSchema &primvars,
+                            const TfToken &name,
+                            const float time = 0.0f)
 {
-  const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, name));
+  const VtValue value = PrimvarAsFloats(ReadSplatPrimvar(primvars, name, time));
   return value.IsHolding<VtFloatArray>() ? value.UncheckedGet<VtFloatArray>() : VtFloatArray();
 }
 
-std::vector<Quaternion> ReadSplatOrientations(const HdPrimvarsSchema &primvars)
+std::vector<Quaternion> ReadSplatOrientations(const HdPrimvarsSchema &primvars,
+                                              const float time = 0.0f)
 {
-  const VtValue value = ReadPrimvar(primvars, _tokens->orientations);
+  const VtValue value = ReadSplatPrimvar(primvars, _tokens->orientations, time);
   std::vector<Quaternion> result;
   const auto add = [&](const auto &quats) {
     result.reserve(quats.size());
@@ -296,14 +322,27 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
   _geom->clear(true);
   _geom->set_render_as(PointCloud::RENDER_AS_GSPLATS);
   _geom->resize(int(n));
-  /* Motion blur from the time samples of the positions; the other splat data stay at the frame. */
-  SetPositions(
-      _geom->attributes.add(ATTR_STD_POSITION), primvars, positions, n, {}, _tokens->positions);
+  Attribute *attr_P = _geom->attributes.add(ATTR_STD_POSITION);
+  SetPositions(attr_P, primvars, positions, n, {}, _tokens->positions);
   std::fill_n(_geom->get_radius_for_write(), n, 0.0f); /* Cycles bounds the splats. */
 
-  const VtFloatArray opacities = ReadSplatFloat(primvars, _tokens->opacities);
-  const VtVec3fArray scales = ReadSplatFloat3(primvars, _tokens->scales);
-  const std::vector<Quaternion> orientations = ReadSplatOrientations(primvars);
+  /* Motion blur of the scales, orientations and opacities like Karma, at the motion steps of the
+   * positions (static positions get steps when only the other splat data are animated). */
+  const std::vector<float> motionTimes = GetObjectMotionTimes();
+  const bool scalesMotion = SplatPrimvarIsAnimated(primvars, _tokens->scales, motionTimes);
+  const bool orientationsMotion = SplatPrimvarIsAnimated(
+      primvars, _tokens->orientations, motionTimes);
+  const bool opacitiesMotion = SplatPrimvarIsAnimated(primvars, _tokens->opacities, motionTimes);
+  if (!attr_P->has_motion() && (scalesMotion || orientationsMotion || opacitiesMotion)) {
+    _geom->set_use_motion_blur(_session->session->scene->integrator->get_motion_blur());
+    _geom->set_motion_steps(uint(motionTimes.size()));
+    attr_P->add_motion(_geom);
+    for (int step = 1; step < attr_P->num_motion_steps(); ++step) {
+      std::copy_n(attr_P->data<packed_float3>(), n, attr_P->data_for_write<packed_float3>(step));
+    }
+  }
+  const int numSteps = attr_P->has_motion() ? int(_geom->get_motion_steps()) : 0;
+
   const VtVec3fArray sh = ReadSplatFloat3(primvars,
                                           _tokens->radianceSphericalHarmonicsCoefficients);
   int degree = VtValue::Cast<int>(ReadPrimvar(primvars, _tokens->radianceSphericalHarmonicsDegree))
@@ -315,28 +354,75 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
   /* Ignored when too short, like USD says. */
   const bool hasSH = coefficients > 0 && sh.size() >= n * coefficients;
 
-  float4 *base = _geom->attributes.add(ATTR_STD_GSPLAT_RADIANCE_BASE)->data_for_write<float4>();
-  packed_float3 *scale =
-      _geom->attributes.add(ATTR_STD_GSPLAT_SCALE)->data_for_write<packed_float3>();
-  Quaternion *rotation =
-      _geom->attributes.add(ATTR_STD_GSPLAT_ROTATION)->data_for_write<Quaternion>();
+  Attribute *attr_base = _geom->attributes.add(ATTR_STD_GSPLAT_RADIANCE_BASE);
+  Attribute *attr_scale = _geom->attributes.add(ATTR_STD_GSPLAT_SCALE);
+  Attribute *attr_rotation = _geom->attributes.add(ATTR_STD_GSPLAT_ROTATION);
   PackedSphericalHarmonicsRest *rest = nullptr;
   if (hasSH && coefficients > 1) {
     rest = _geom->attributes.add(ATTR_STD_GSPLAT_RADIANCE_SPHERICAL_HARMONICS_REST)
                ->data_for_write<PackedSphericalHarmonicsRest>();
   }
+  if (numSteps > 0) {
+    if (scalesMotion || opacitiesMotion) {
+      _geom->attributes.find(ATTR_STD_RADIUS)->add_motion(_geom); /* Bounds of every step. */
+    }
+    for (const auto &[attr, animated] : {std::pair{attr_base, opacitiesMotion},
+                                         std::pair{attr_scale, scalesMotion},
+                                         std::pair{attr_rotation, orientationsMotion}})
+    {
+      if (animated) {
+        attr->add_motion(_geom);
+      }
+    }
+  }
 
-  const size_t numRest = std::min<size_t>(coefficients > 0 ? coefficients - 1 : 0,
-                                          PackedSphericalHarmonicsRest::MAX_COEFFICIENTS);
-  for (size_t i = 0; i < n; ++i) {
-    /* Without coefficients, a DC signal of 0.5 (USD), which is a 0 DC coefficient in 3DGS. */
-    const GfVec3f dc = hasSH ? sh[i * coefficients] : GfVec3f(0.0f);
-    const float opacity = i < opacities.size() ? opacities[i] : 1.0f;
-    base[i] = make_float4(dc[0], dc[1], dc[2], opacity);
-    scale[i] = i < scales.size() ? make_float3(scales[i][0], scales[i][1], scales[i][2]) :
-                                   PointCloud::DEFAULT_GSPLAT_SCALE;
-    rotation[i] = i < orientations.size() ? orientations[i] : identity_quaternion();
-    if (rest) {
+  /* Without coefficients, a DC signal of 0.5 (USD), which is a 0 DC coefficient in 3DGS. The
+   * spherical harmonics are not blurred: every step has the frame's DC. */
+  const auto fillBase = [&](const VtFloatArray &opacities, float4 *base) {
+    for (size_t i = 0; i < n; ++i) {
+      const GfVec3f dc = hasSH ? sh[i * coefficients] : GfVec3f(0.0f);
+      base[i] = make_float4(dc[0], dc[1], dc[2], i < opacities.size() ? opacities[i] : 1.0f);
+    }
+  };
+  const auto fillScale = [&](const VtVec3fArray &scales, packed_float3 *scale) {
+    for (size_t i = 0; i < n; ++i) {
+      scale[i] = i < scales.size() ? make_float3(scales[i][0], scales[i][1], scales[i][2]) :
+                                     PointCloud::DEFAULT_GSPLAT_SCALE;
+    }
+  };
+  const auto fillRotation = [&](const std::vector<Quaternion> &orientations,
+                                Quaternion *rotation) {
+    for (size_t i = 0; i < n; ++i) {
+      rotation[i] = i < orientations.size() ? orientations[i] : identity_quaternion();
+    }
+  };
+  fillBase(ReadSplatFloat(primvars, _tokens->opacities), attr_base->data_for_write<float4>());
+  fillScale(ReadSplatFloat3(primvars, _tokens->scales),
+            attr_scale->data_for_write<packed_float3>());
+  fillRotation(ReadSplatOrientations(primvars), attr_rotation->data_for_write<Quaternion>());
+  for (int step = 0; step < numSteps; ++step) {
+    const float time = motionTimes[step];
+    if (opacitiesMotion) {
+      fillBase(
+          ReadSplatFloat(primvars, _tokens->opacities, time),
+          attr_base->data_for_write<float4>(attr_base->time_step_to_attr_step(step, numSteps)));
+    }
+    if (scalesMotion) {
+      fillScale(ReadSplatFloat3(primvars, _tokens->scales, time),
+                attr_scale->data_for_write<packed_float3>(
+                    attr_scale->time_step_to_attr_step(step, numSteps)));
+    }
+    if (orientationsMotion) {
+      fillRotation(ReadSplatOrientations(primvars, time),
+                   attr_rotation->data_for_write<Quaternion>(
+                       attr_rotation->time_step_to_attr_step(step, numSteps)));
+    }
+  }
+
+  if (rest) {
+    const size_t numRest = std::min<size_t>(coefficients - 1,
+                                            PackedSphericalHarmonicsRest::MAX_COEFFICIENTS);
+    for (size_t i = 0; i < n; ++i) {
       spherical_harmonics_rest_fill_zero(rest[i]);
       for (size_t c = 0; c < numRest; ++c) {
         const GfVec3f &v = sh[i * coefficients + 1 + c];
