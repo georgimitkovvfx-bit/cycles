@@ -93,8 +93,9 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       /* Unclear why, but approximately matches Karma. */
       strength *= 4.0f;
     }
-    else {
-      /* Convert from intensity to radiant flux. */
+    else if (_lightType != HdPrimTypeTokens->domeLight) {
+      /* Convert from intensity to radiant flux. A dome light's intensity is already the background's radiance
+       * (UsdLux; Blender's USD importer and Karma agree): no factor. */
       strength *= M_PI_F;
     }
 
