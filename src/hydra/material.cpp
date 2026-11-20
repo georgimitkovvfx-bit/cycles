@@ -1106,50 +1106,56 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
   const bool dirtyResource = (*dirtyBits & DirtyBits::DirtyResource);
 
   const SdfPath &id = GetId();
+  HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
 
   if (dirtyResource || dirtyParams) {
-    const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
-    const HdContainerDataSourceHandle &primDs = prim.dataSource;
-
-    HdMaterialSchema matSchema = HdMaterialSchema::GetFromParent(primDs);
     /* Prefer cycles network if it exists, then MaterialX, otherwise use universal network. */
-    HdMaterialNetworkSchema network = matSchema.GetMaterialNetwork(CyclesMaterialTokens->cycles);
+    const auto getNetwork = [](const HdMaterialSchema &matSchema) {
+      HdMaterialNetworkSchema network = matSchema.GetMaterialNetwork(CyclesMaterialTokens->cycles);
 #ifdef WITH_HYDRA_MATERIALX
-    for (const TfToken &context : MaterialXRenderContexts()) {
-      if (!network) {
-        network = matSchema.GetMaterialNetwork(context);
+      for (const TfToken &context : MaterialXRenderContexts()) {
+        if (!network) {
+          network = matSchema.GetMaterialNetwork(context);
+        }
       }
-    }
 #endif
-    if (!network) {
-      network = matSchema.GetMaterialNetwork();
-    }
-#ifdef WITH_HYDRA_MATERIALX
-    const bool isMaterialX = network && IsMaterialXNetwork(network);
-#endif
+      if (!network) {
+        network = matSchema.GetMaterialNetwork();
+      }
+      return network;
+    };
+
+    const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
+    HdMaterialSchema matSchema = HdMaterialSchema::GetFromParent(prim.dataSource);
+    HdMaterialNetworkSchema network = getNetwork(matSchema);
 
     const SceneLock lock(renderParam);
 
-    unique_ptr<ShaderGraph> graph;
-    if (!network) {
-      TF_WARN("Could not get a material network for %s.", id.GetText());
-    }
-    else {
+    const auto buildGraph = [&](const SdfPath &path,
+                                const HdMaterialNetworkSchema &pathNetwork,
+                                const HdContainerDataSourceHandle &primDs) {
+      unique_ptr<ShaderGraph> graph;
+      if (!pathNetwork) {
+        TF_WARN("Could not get a material network for %s.", path.GetText());
+        return graph;
+      }
 #ifdef WITH_HYDRA_MATERIALX
-      if (isMaterialX) {
+      if (IsMaterialXNetwork(pathNetwork)) {
         /* The node map is only for native networks. */
         _nodes.clear();
-        graph = BuildMaterialXShaderGraph(id, network, primDs);
+        graph = BuildMaterialXShaderGraph(path, pathNetwork, primDs);
       }
       else
 #endif
       {
-        graph = BuildShaderGraph(network, lock.scene);
+        graph = BuildShaderGraph(pathNetwork, lock.scene);
       }
       if (!graph) {
-        TF_WARN("Could not build a shader graph for %s.", id.GetText());
+        TF_WARN("Could not build a shader graph for %s.", path.GetText());
       }
-    }
+      return graph;
+    };
+    unique_ptr<ShaderGraph> graph = buildGraph(id, network, prim.dataSource);
 
     if (!graph) {
       /* Default shader if translation failed, so something is visible. */
@@ -1158,9 +1164,44 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
     }
 
+    const Transform *const worldRotation = session->GetWorldRotation(id.GetString());
+
+    /* The cycles:material_override render setting: surfaces render as clay or as another
+     * material, like Blender's View Layer Material Override. World materials and materials
+     * without a surface (volumes) keep theirs. */
+    const std::string &materialOverride = session->GetMaterialOverride();
+    if (materialOverride == id.GetString() && !session->materialsResyncing) {
+      /* Not in the sync of the resync this requests, which would request another one. */
+      session->RequestResync(true, false);
+    }
+    ShaderInput *const surface = graph->output()->input("Surface");
+    if (!materialOverride.empty() && materialOverride != id.GetString() && !worldRotation &&
+        surface->link)
+    {
+      if (materialOverride == "clay") {
+        /* Only the surface: displacement and volumes keep the shapes of the beauty render. */
+        graph->disconnect(surface);
+        graph->connect(graph->create_node<DiffuseBsdfNode>()->output("BSDF"), surface);
+      }
+      else if (SdfPath::IsValidPathString(materialOverride)) {
+        const SdfPath overrideId(materialOverride);
+        const HdSceneIndexPrim overridePrim = GetPrim(sceneDelegate, overrideId);
+        if (overridePrim.primType == HdPrimTypeTokens->material) {
+          const HdMaterialSchema overrideSchema = HdMaterialSchema::GetFromParent(
+              overridePrim.dataSource);
+          const HdMaterialNetworkSchema overrideNetwork = getNetwork(overrideSchema);
+          if (unique_ptr<ShaderGraph> overrideGraph = buildGraph(
+                  overrideId, overrideNetwork, overridePrim.dataSource))
+          {
+            graph = std::move(overrideGraph);
+            matSchema = overrideSchema;
+            network = overrideNetwork;
+          }
+        }
+      }
+    }
+
     SetUdimTiles(graph.get());
-    const Transform *const worldRotation =
-        static_cast<HdCyclesSession *>(renderParam)->GetWorldRotation(id.GetString());
     if (worldRotation) {
       OrientWorldTextures(graph.get(), *worldRotation);
     }
@@ -1700,6 +1741,10 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
 
   /* The world material of a dome light: UpdateScene() picks the light's own shader again. */
   session->ReleaseWorldShader(_shader);
+  /* Materials rendered as this override material go back to their own. */
+  if (session->GetMaterialOverride() == GetId().GetString()) {
+    session->RequestResync(true, false);
+  }
 
   if (!keep_nodes) {
     static_cast<HdCyclesSession *>(renderParam)->DeleteNode(_shader);

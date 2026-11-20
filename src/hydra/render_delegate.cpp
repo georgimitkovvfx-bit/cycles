@@ -575,6 +575,7 @@ void HdCyclesDelegate::CommitResources(HdChangeTracker *tracker)
 
   _renderParam->UpdateScene();
   _renderParam->rprimsResyncing = false;
+  _renderParam->materialsResyncing = false;
 
   /* Requests of the prims just synced, for the next sync. */
   SendResync();
@@ -614,6 +615,7 @@ void HdCyclesDelegate::SendResync()
     for (const SdfPath &id : _renderIndex->GetSprimSubtree(HdPrimTypeTokens->material, root)) {
       entries.emplace_back(id, locators);
     }
+    _renderParam->materialsResyncing = true;
   }
   if (rprims) {
     /* Transforms and points at the motion steps, and the primvars and volume fields shaders read
@@ -970,6 +972,9 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
       dicing.camera = GetStringSetting(it->second, "");
     }
     _renderParam->SetDicing(dicing);
+  }
+  else if (key == HdCyclesRenderSettingsTokens->materialOverride) {
+    _renderParam->SetMaterialOverride(GetStringSetting(value, ""));
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeObject) {
     _renderParam->SetBakeObject(GetStringSetting(value, ""));

@@ -191,6 +191,20 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   /* Space of baked normals (BakeNormalSpace: 0 world, 1 object, 2 tangent). */
   std::atomic<int> bakeNormalSpace = 2;
 
+  // The cycles:material_override render setting: empty, "clay" or the path of the material that
+  // every material renders as. Set outside of syncs, read by material syncs.
+  void SetMaterialOverride(const std::string &materialOverride)
+  {
+    if (materialOverride != _materialOverride) {
+      _materialOverride = materialOverride;
+      RequestResync(true, false);
+    }
+  }
+  const std::string &GetMaterialOverride() const
+  {
+    return _materialOverride;
+  }
+
   void SetDicing(const DicingSettings &dicing)
   {
     if (!(dicing == _dicing)) {
@@ -342,6 +356,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Set from HdCyclesDelegate::SendResync() to CommitResources() when the next sync syncs every
   // rprim again: the materials and cameras synced before them need no other rprim sync
   std::atomic<bool> rprimsResyncing = false;
+  // The same for every material
+  std::atomic<bool> materialsResyncing = false;
   // Prims were marked dirty for the next sync, which restarts the render
   std::atomic<bool> resyncPending = false;
   // Scene changes the render was not reset for yet, set by SceneLock with the scene locked. The
@@ -402,6 +418,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   DicingSettings _dicing;
   mutable std::mutex _bakeMutex;
   std::string _bakeObject;
+  std::string _materialOverride;
   float _filmExposure = 1.0f;
   double _framesPerSecond = 0.0;
   std::optional<bool> _transparentBackground;

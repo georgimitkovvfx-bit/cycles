@@ -91,6 +91,7 @@ SESSION_SETTINGS = {
     "cycles:max_subdivisions": {"type": "int", "default": 12},
     "cycles:dicing_camera": {"type": "string", "default": ""},
     "cycles:bake_object": {"type": "string", "default": ""},
+    "cycles:material_override": {"type": "string", "default": ""},
     "cycles:bake_margin": {"type": "int", "default": 16},
     "cycles:bake_normal_space": {"type": "menu", "default": "tangent",
                                  "enum_values": {"tangent": "Tangent", "object": "Object",
@@ -543,6 +544,15 @@ LAYOUT = [
               "quadratic).",
               range=(0, 4, True, False)),
         ], open=True),
+    ]),
+    P("Override", [
+        S("cycles:material_override", "Material Override",
+          "Render every surface with one material, like Blender's View Layer Material Override: "
+          "clay for a grey diffuse surface that keeps each material's displacement and volume, "
+          "or the path of a material prim to use instead of each whole material. Emission is "
+          "overridden too. Lights, dome light world materials and materials without a surface "
+          "(volumes) keep theirs. Empty renders the materials.",
+          tags=PRIM_PATH_TAGS),
     ]),
     P("Performance", [
         P("Threads", [
