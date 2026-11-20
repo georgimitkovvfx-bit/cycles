@@ -229,6 +229,8 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
 {
   Object *instance = _instances[index];
   instance->set_geometry(_geom);
+  /* The prim path: Cryptomatte object IDs hash the object name (all objects hashed "" before). */
+  instance->name = _geom->name;
 
   instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(),
                                     _instances.size() == 1 ? -1.0f : static_cast<float>(index));

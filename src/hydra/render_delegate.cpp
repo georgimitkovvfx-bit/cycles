@@ -20,6 +20,7 @@
 #include "scene/integrator.h"
 #include "scene/scene.h"
 #include "session/session.h"
+#include "util/string.h"
 
 #include <pxr/base/tf/getenv.h>
 #include <pxr/imaging/hgi/tokens.h>
@@ -368,6 +369,31 @@ HdAovDescriptor HdCyclesDelegate::GetDefaultAovDescriptor(const TfToken &name) c
       name == HdAovTokens->elementId)
   {
     return HdAovDescriptor(HdFormatInt32, false, VtValue(-1));
+  }
+
+  /* Cycles passes by Blender's view-layer pass names (session.cpp); channel counts as Blender registers them. */
+  const std::string &aov = name.GetString();
+  if (name == TfToken("z") || name == TfToken("mist") || name == TfToken("object_index") ||
+      name == TfToken("material_index"))
+  {
+    return HdAovDescriptor(HdFormatFloat32, false, VtValue(0.0f));
+  }
+  if (name == TfToken("vector") || string_startswith(aov, "Crypto")) {
+    return HdAovDescriptor(HdFormatFloat32Vec4, false, VtValue(GfVec4f(0.0f)));
+  }
+  if (string_startswith(aov, "lightgroup_")) {
+    return HdAovDescriptor(HdFormatFloat32Vec3, false, VtValue(GfVec3f(0.0f)));
+  }
+  static const TfToken kVec3Passes[] = {
+      TfToken("position"), TfToken("uv"), TfToken("diffuse_direct"), TfToken("diffuse_indirect"),
+      TfToken("diffuse_color"), TfToken("glossy_direct"), TfToken("glossy_indirect"), TfToken("glossy_color"),
+      TfToken("transmission_direct"), TfToken("transmission_indirect"), TfToken("transmission_color"),
+      TfToken("volume_direct"), TfToken("volume_indirect"), TfToken("emit"), TfToken("environment"),
+      TfToken("ambient_occlusion"), TfToken("shadow_catcher")};
+  for (const TfToken &known : kVec3Passes) {
+    if (name == known) {
+      return HdAovDescriptor(HdFormatFloat32Vec3, false, VtValue(GfVec3f(0.0f)));
+    }
   }
 
   return HdAovDescriptor();
