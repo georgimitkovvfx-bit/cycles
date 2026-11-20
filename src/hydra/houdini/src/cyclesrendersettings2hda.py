@@ -198,7 +198,7 @@ AOV_SHARED_PASS = {
 # Python Script LOP inside the node: authors a render var for every enabled pass and shader AOV
 # and adds it to the render product.
 AOV_SCRIPT = """import hou
-from pxr import Sdf, Tf, UsdGeom, UsdLux, UsdRender
+from pxr import Sdf, Tf, Usd, UsdGeom, UsdLux, UsdRender
 
 PASSES = %r
 CRYPTOMATTE = %r
@@ -250,19 +250,29 @@ for i in range(1, top.evalParm("primvar_aovs") + 1):
 # Light groups, with Blender's pass names
 groups = [top.evalParm("lightgroup_name%%d" %% i)
           for i in range(1, top.evalParm("lightgroups") + 1)]
+warnings = []
 if top.evalParm("lightgroups_auto"):
     # A group per light without one, named after the light, dome lights in "Environment", and
     # the objects without a group in "Rest": a constant primvar on the root prims, inherited by
     # every object below that has none of its own.
     group_attr = "inputs:cycles:light:lightgroup"
-    for prim in stage.Traverse():
+    named = {}
+    # Also the lights inside instanceable prims, which can only be read.
+    for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
         if not (prim.IsA(UsdLux.BoundableLightBase) or prim.IsA(UsdLux.NonboundableLightBase)):
             continue
         attr = prim.GetAttribute(group_attr)
         name = attr.Get() if attr else None
         if not name:
-            name = ("Environment" if prim.GetTypeName() in ("DomeLight", "DomeLight_1") else
-                    prim.GetName())
+            if prim.IsInstanceProxy():
+                warnings.append("Light %%s is inside an instanceable prim: no light group"
+                                %% prim.GetPath())
+                continue
+            dome = prim.GetTypeName() in ("DomeLight", "DomeLight_1")
+            name = "Environment" if dome else prim.GetName()
+            if not dome and named.setdefault(name, prim.GetPath()) != prim.GetPath():
+                warnings.append("Lights %%s and %%s share light group %%s"
+                                %% (named[name], prim.GetPath(), name))
             prim.CreateAttribute(group_attr, Sdf.ValueTypeNames.String).Set(name)
         groups.append(name)
     for root in stage.GetPseudoRoot().GetChildren():
@@ -283,6 +293,12 @@ if filters:
     settings = stage.OverridePrim(top.evalParm("primpath"))
     settings.CreateRelationship("husk:orderedImageFilters").SetTargets(
         [Sdf.Path(path) for path in filters])
+
+if warnings:
+    try:
+        hou.pwd().addWarning("\\n".join(warnings))
+    except Exception:
+        print("Cycles Render Settings: " + "; ".join(warnings))
 """
 
 
