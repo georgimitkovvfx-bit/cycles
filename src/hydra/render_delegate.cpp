@@ -33,12 +33,14 @@
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/murmurhash.h"
+#include "util/path.h"
 #include "util/string.h"
 #include "util/time.h"
 #include "util/version.h"
 #include "session/session.h"
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 
 #include <pxr/base/tf/getenv.h>
@@ -300,6 +302,49 @@ SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionPar
   }
 
   return params;
+}
+
+/* First image file of the scene's shaders (materials, lights, world) that is not on disk, empty
+ * if there is none. Called with the scene locked.
+ * shortcut: checks that the files exist, not that they load (corrupt files, OSL textures are not
+ * seen), count the image manager's load failures if farms need that. */
+std::string FindMissingTexture(Scene *scene)
+{
+  for (Shader *shader : scene->shaders) {
+    if (!shader->graph) {
+      continue;
+    }
+    for (ShaderNode *node : shader->graph->nodes) {
+      string filename;
+      array<int> tiles;
+      if (node->type == ImageTextureNode::get_node_type()) {
+        const ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+        filename = image->get_filename().string();
+        tiles = image->get_tiles();
+      }
+      else if (node->type == EnvironmentTextureNode::get_node_type()) {
+        filename = static_cast<EnvironmentTextureNode *>(node)->get_filename().string();
+      }
+      if (filename.empty()) {
+        continue;
+      }
+      if (tiles.empty() && !path_exists(filename)) {
+        return filename;
+      }
+      /* The tile file names ImageManager::add_image loads. */
+      for (const int tile : tiles) {
+        string tileFilename = filename;
+        string_replace(tileFilename, "<UDIM>", string_printf("%04d", tile));
+        string_replace(tileFilename,
+                       "<UVTILE>",
+                       string_printf("u%d_v%d", (tile - 1001) % 10 + 1, (tile - 1001) / 10 + 1));
+        if (!path_exists(tileFilename)) {
+          return tileFilename;
+        }
+      }
+    }
+  }
+  return {};
 }
 
 HdCyclesResyncSceneIndexPtr FindResyncSceneIndex(const HdSceneIndexBaseRefPtr &sceneIndex)
@@ -682,6 +727,38 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
     }
     if (cryptomatte & CRYPT_ASSET) {
       addLayer("CryptoAsset", scene->object_manager->get_cryptomatte_assets(scene));
+    }
+  }
+
+  /* Farm aborts, like Karma's Cancel Render on No Working GPU Devices and Redshift's Abort on
+   * Missing Resources: husk stops with "Delegate fatal error" when huskErrorStatus is not 0. */
+  const auto enabled = [&](const TfToken &key) {
+    return VtValue::Cast<bool>(GetRenderSetting(key)).GetWithDefault(false);
+  };
+  std::string abortReason;
+  if (enabled(HdCyclesRenderSettingsTokens->abortNoGpu) && session->device &&
+      (session->device->info.type == DEVICE_CPU || session->device->have_error()))
+  {
+    abortReason = "no working GPU device (" +
+                  (device.empty() ? session->device->error_message() : device) + ")";
+  }
+  if (abortReason.empty() && enabled(HdCyclesRenderSettingsTokens->abortMissingTexture)) {
+    /* Don't wait for a scene update in progress, the next stats call checks again. */
+    const thread_scoped_lock lock(scene->mutex, std::try_to_lock);
+    if (lock.owns_lock()) {
+      const std::string missing = FindMissingTexture(scene);
+      if (!missing.empty()) {
+        abortReason = "missing texture " + missing;
+      }
+    }
+  }
+  if (!abortReason.empty()) {
+    renderStats["huskErrorStatus"] = VtValue(1);
+    renderStats["renderProgressAnnotation"] = VtValue("Cycles abort: " + abortReason);
+    /* Stats are polled while rendering: report the reason once. */
+    static std::atomic<bool> reported = false;
+    if (!reported.exchange(true)) {
+      TF_RUNTIME_ERROR("Cycles render aborted: %s", abortReason.c_str());
     }
   }
 

@@ -49,6 +49,8 @@ SESSION_SETTINGS = {
         },
     },
     "cycles:threads": {"type": "int", "default": 0},
+    "cycles:abort_no_gpu": {"type": "boolean", "default": False},
+    "cycles:abort_missing_texture": {"type": "boolean", "default": False},
     "cycles:shading_system": {"type": "boolean", "default": False},
     "cycles:use_resolution_divider": {"type": "boolean", "default": True},
     "cycles:curve_shape": {
@@ -585,6 +587,14 @@ LAYOUT = [
               "Directory of the cache files, absolute or relative to each image. Empty uses a "
               "blender_tx folder next to each image. Changing it restarts the render."),
         ], open=True, toggle="cycles:use_texture_cache"),
+        P("Farm", [
+            S("cycles:abort_no_gpu", "Abort Without GPU",
+              "Fail the husk render when it would run on the CPU because no GPU device of the "
+              "chosen Device works, instead of silently rendering on the CPU."),
+            S("cycles:abort_missing_texture", "Abort on Missing Textures",
+              "Fail the husk render when an image texture, environment or light texture file "
+              "(or UDIM tile) does not exist, instead of rendering it magenta."),
+        ], open=True),
     ]),
     P("Bake", [
         S("cycles:bake_object", "Bake Object",
