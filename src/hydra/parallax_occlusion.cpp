@@ -106,11 +106,18 @@ void expand(ShaderGraph *graph, ParallaxOcclusionNode *pom)
   ShaderInput *heightIn = pom->input("Height");
   ShaderInput *vectorIn = pom->input("Vector");
   ShaderInput *depthIn = pom->input("Depth");
-  const int steps = clamp(pom->get_steps(), 1, 256);
+  /* Each step copies the nodes linked to Height. */
+  const int steps = clamp(pom->get_steps(), 1, 64);
   const float layer = 1.0f / float(steps);
 
+  /* Unlinked: the UVs of the UV map of the tangent frame. */
   ShaderOutput *uv0 = vectorIn->link;
-  if (!uv0) {
+  if (!uv0 && !pom->get_uv_map().empty()) {
+    UVMapNode *uvMap = graph->create_node<UVMapNode>();
+    uvMap->set_attribute(pom->get_uv_map());
+    uv0 = uvMap->output("UV");
+  }
+  else if (!uv0) {
     uv0 = graph->create_node<TextureCoordinateNode>()->output("UV");
   }
 

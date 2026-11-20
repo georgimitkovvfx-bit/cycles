@@ -153,7 +153,7 @@ coordinates where the view ray hits a height map below the surface, for bricks, 
 that look deep without displacement. Connect the height map (1 = the surface, 0 = the deepest
 point) into **Height** and the node's **Vector** output into the Vector input of the color, normal
 and roughness textures. **Depth** is the depth of the height field in UV units, **Steps** the
-number of layers searched (more is slower but avoids stepping at grazing angles), **UV Map** the
+number of layers searched (1 to 64, more is slower but avoids stepping at grazing angles), **UV Map** the
 UV map of the tangent frame (empty: the default UV map, like the Normal Map node).
 
 The delegate expands the node into standard nodes: Steps + 1 copies of the nodes linked to Height,

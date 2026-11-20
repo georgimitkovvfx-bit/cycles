@@ -281,6 +281,8 @@ RANGE_OVERRIDES = {
                     "sun_rotation": (0.0, 2.0 * math.pi, False, False)},
     "vector_rotate": {"angle": (-math.pi, math.pi, False, False)},
     "gabor_texture": {"orientation_2d": (0.0, math.pi, False, False)},
+    # Delegate node: the expansion caps the layers at 64.
+    "parallax_occlusion": {"steps": (1, 64, True, True)},
 }
 
 
@@ -453,7 +455,8 @@ def node_layout(cycles_node, layouts, problems):
                 panels.append(TEXTURE_MAPPING_PANEL)
         else:
             add(socket, hidden=socket["name"] in internal,
-                default=SOCKET_DEFAULTS.get(name, {}).get(socket["name"], socket.get("default")))
+                default=SOCKET_DEFAULTS.get(name, {}).get(socket["name"], socket.get("default")),
+                range=RANGE_OVERRIDES.get(name, {}).get(socket["name"]))
 
     if name == "raycast":
         for i in range(1, RAYCAST_ATTRIBUTES + 1):
