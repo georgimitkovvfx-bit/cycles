@@ -32,6 +32,7 @@
 #include "scene/shader.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
+#include "util/log.h"
 #include "util/murmurhash.h"
 #include "util/path.h"
 #include "util/string.h"
@@ -996,6 +997,8 @@ VtDictionary HdCyclesDelegate::GetRenderStats() const
     /* Stats are polled while rendering: report the reason once. */
     if (!_abortReported.exchange(true)) {
       TF_RUNTIME_ERROR("Cycles render aborted: %s", abortReason.c_str());
+      /* husk hides TF errors at every verbosity, the Cycles log reaches the farm log. */
+      LOG_ERROR << "Cycles render aborted: " << abortReason;
     }
   }
 
