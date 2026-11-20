@@ -10,6 +10,9 @@
 #include <pxr/base/gf/quatf.h>
 #include <pxr/base/gf/quath.h>
 #include <pxr/base/tf/stringUtils.h>
+#include <pxr/base/vt/traits.h>
+#include <pxr/base/vt/typeHeaders.h> /* The element types VtVisitValue visits. */
+#include <pxr/base/vt/visitValue.h>
 #include <pxr/imaging/hd/instancedBySchema.h>
 #include <pxr/imaging/hd/instancerTopologySchema.h>
 #include <pxr/imaging/hd/primvarSchema.h>
@@ -158,15 +161,28 @@ void HdCyclesInstancer::SyncPrimvars()
     if (TfStringStartsWith(name.GetString(), "hydra:")) {
       continue; /* Instance transforms. */
     }
+    const VtValue raw = ReadPrimvar(primvars, name);
+    Primvar pv{name, 0, {}, {}};
+    /* Object settings of native instances, like the light group: UsdImaging moves the constant
+     * primvars of instanceable prims here. Kept with their own type, strings too. */
+    if (TfStringStartsWith(name.GetString(), "cycles:object:")) {
+      VtVisitValue(raw, [&](const auto &array) {
+        if constexpr (VtIsArray<std::decay_t<decltype(array)>>::value) {
+          pv.elements.assign(array.begin(), array.end());
+        }
+      });
+    }
     /* shortcut: one value per instance (an elementSize above 1 reads the wrong values), upgrade
      * when per-instance array primvars are needed. */
-    const VtValue value = PrimvarAsFloats(ReadPrimvar(primvars, name));
-    if (value.IsEmpty()) {
-      continue;
+    const VtValue value = PrimvarAsFloats(raw);
+    if (!value.IsEmpty()) {
+      pv.width = HdGetComponentCount(HdGetValueTupleType(value).type);
+      const float *data = static_cast<const float *>(HdGetValueData(value));
+      pv.values.assign(data, data + value.GetArraySize() * pv.width);
     }
-    const size_t width = HdGetComponentCount(HdGetValueTupleType(value).type);
-    const float *data = static_cast<const float *>(HdGetValueData(value));
-    _primvars.push_back({name, width, {data, data + value.GetArraySize() * width}});
+    if (pv.width > 0 || !pv.elements.empty()) {
+      _primvars.push_back(std::move(pv));
+    }
   }
 
   sceneDelegate->GetRenderIndex().GetChangeTracker().MarkInstancerClean(id);
@@ -182,12 +198,16 @@ static std::vector<HdCyclesInstancer::Primvar> ComposeNested(
 {
   const size_t numOwn = inner.size();
   for (HdCyclesInstancer::Primvar &pv : inner) {
-    std::vector<float> values;
-    values.reserve(numOuter * pv.values.size());
-    for (size_t p = 0; p < numOuter; ++p) {
-      values.insert(values.end(), pv.values.begin(), pv.values.end());
-    }
-    pv.values = std::move(values);
+    const auto repeat = [&](auto &own) {
+      std::remove_reference_t<decltype(own)> values;
+      values.reserve(numOuter * own.size());
+      for (size_t p = 0; p < numOuter; ++p) {
+        values.insert(values.end(), own.begin(), own.end());
+      }
+      own = std::move(values);
+    };
+    repeat(pv.values);
+    repeat(pv.elements);
   }
   for (const HdCyclesInstancer::Primvar &pv : outer) {
     if (std::any_of(inner.begin(), inner.begin() + numOwn, [&](const auto &own) {
@@ -196,13 +216,16 @@ static std::vector<HdCyclesInstancer::Primvar> ComposeNested(
     {
       continue;
     }
-    inner.push_back({pv.name, pv.width, {}});
+    inner.push_back({pv.name, pv.width, {}, {}});
     HdCyclesInstancer::Primvar &composed = inner.back();
     for (size_t p = 0; p < numOuter; ++p) {
       for (size_t l = 0; l < numInner; ++l) {
         composed.values.insert(composed.values.end(),
                                pv.values.begin() + p * pv.width,
                                pv.values.begin() + (p + 1) * pv.width);
+        if (!pv.elements.empty()) {
+          composed.elements.push_back(pv.elements[p]);
+        }
       }
     }
   }
@@ -262,13 +285,17 @@ std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeInstanceTransforms(
   if (primvars) {
     for (const Primvar &pv : _primvars) {
       std::vector<float> values(instanceIndices.size() * pv.width, 0.0f);
+      std::vector<VtValue> elements(pv.elements.empty() ? 0 : instanceIndices.size());
       for (size_t i = 0; i < instanceIndices.size(); ++i) {
         const size_t index = instanceIndices[i];
         if ((index + 1) * pv.width <= pv.values.size()) {
           std::copy_n(&pv.values[index * pv.width], pv.width, &values[i * pv.width]);
         }
+        if (index < pv.elements.size()) {
+          elements[i] = pv.elements[index];
+        }
       }
-      localPrimvars.push_back({pv.name, pv.width, std::move(values)});
+      localPrimvars.push_back({pv.name, pv.width, std::move(values), std::move(elements)});
     }
   }
 

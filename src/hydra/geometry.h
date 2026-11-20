@@ -80,6 +80,8 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   std::vector<CCL_NS::Object *> _instances;
   // Ray visibility of the instances from the prim, and whether its render tag is drawn
   unsigned int _visibility = ~0u;
+  // Per instance when the instancer has per-instance ray visibility settings, else empty
+  std::vector<unsigned int> _instanceVisibility;
   bool _renderTagVisible = true;
   const HdCyclesSession *_session = nullptr;
 
@@ -92,6 +94,9 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void SetInstancePrimvars(CCL_NS::Scene *scene,
                            const PXR_NS::HdContainerDataSourceHandle &primDs,
                            const std::vector<HdCyclesInstancer::Primvar> &primvars);
+
+  // Per-instance "cycles:object:<setting>" primvars of the instancer (Primvar::elements)
+  std::vector<HdCyclesInstancer::Primvar> _instanceSettings;
 
   // Per-object motion blur and motion steps (0: the Motion Steps render setting)
   bool _useMotionBlur = true;

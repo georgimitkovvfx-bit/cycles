@@ -12,6 +12,7 @@
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/token.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/base/vt/value.h>
 #include <pxr/imaging/hd/instancer.h>
 
 #include <vector>
@@ -20,11 +21,14 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 class HdCyclesInstancer final : public PXR_NS::HdInstancer {
  public:
-  /* Per-instance primvar, `width` (1 to 4) floats per instance. */
+  /* Per-instance primvar, `width` (1 to 4) floats per instance (0 when not numeric). Object
+   * settings ("cycles:object:*") also keep their value of each instance, of any type, in
+   * `elements` (empty where an instance has none). */
   struct Primvar {
     PXR_NS::TfToken name;
     size_t width;
     std::vector<float> values;
+    std::vector<PXR_NS::VtValue> elements;
   };
 
   HdCyclesInstancer(PXR_NS::HdSceneDelegate *delegate, const PXR_NS::SdfPath &instancerId);

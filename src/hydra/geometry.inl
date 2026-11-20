@@ -231,6 +231,12 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
     if (instancePrimvarsDirty) {
       SetInstancePrimvars(lock.scene, primDs, instancePrimvars);
+      _instanceSettings.clear();
+      for (HdCyclesInstancer::Primvar &pv : instancePrimvars) {
+        if (!pv.elements.empty()) {
+          _instanceSettings.push_back(std::move(pv));
+        }
+      }
     }
   }
 
@@ -267,9 +273,10 @@ void HdCyclesGeometry<Base, CyclesBase>::SetRenderTagVisible(Scene *scene, const
     return;
   }
   _renderTagVisible = visible;
-  for (Object *instance : _instances) {
-    instance->set_visibility(visible ? _visibility : 0);
-    instance->tag_update(scene);
+  for (size_t i = 0; i < _instances.size(); ++i) {
+    _instances[i]->set_visibility(
+        visible ? (i < _instanceVisibility.size() ? _instanceVisibility[i] : _visibility) : 0);
+    _instances[i]->tag_update(scene);
   }
 }
 
@@ -310,9 +317,35 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
   };
   static const std::string prefix = "cycles:object:";
 
-  uint visibility = Base::IsVisible() ? PATH_RAY_VISIBILITY_OBJECT_ALL : 0;
+  /* The ray types (`ray`) or the object socket a setting sets, neither for geometry settings. */
+  const auto findSetting = [&](const TfToken &primvarName, uint &ray) -> const SocketType * {
+    const std::string setting = primvarName.GetString().substr(prefix.size());
+    const auto rayIt = rayVisibility.find(setting);
+    ray = rayIt != rayVisibility.end() ? rayIt->second : 0;
+    if (ray || std::find(std::begin(geometrySettings), std::end(geometrySettings), setting) !=
+                   std::end(geometrySettings))
+    {
+      return nullptr;
+    }
+
+    const ustring socketName(setting);
+    const bool known = std::find(std::begin(objectSettings),
+                                 std::end(objectSettings),
+                                 socketName) != std::end(objectSettings);
+    const SocketType *socket = known ? Object::get_node_type()->find_input(socketName) : nullptr;
+    if (!socket) {
+      TF_WARN("Unknown Cycles object setting %s on %s",
+              primvarName.GetText(),
+              Base::GetId().GetText());
+    }
+    return socket;
+  };
+
+  const uint visibleRays = Base::IsVisible() ? PATH_RAY_VISIBILITY_OBJECT_ALL : 0;
+  uint visibility = visibleRays;
   uint cyclesRays = 0; /* Ray types a Cycles setting decides. */
   std::vector<std::pair<const SocketType *, VtValue>> values;
+  TfTokenVector ownSettings;
 
   const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
   for (const TfToken &primvarName : PrimvarNamesAtInterpolation(primvars, HdInterpolationConstant))
@@ -320,35 +353,41 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     if (!TfStringStartsWith(primvarName.GetString(), prefix)) {
       continue;
     }
-    const std::string setting = primvarName.GetString().substr(prefix.size());
+    ownSettings.push_back(primvarName);
     const VtValue value = ReadPrimvar(primvars, primvarName);
 
-    const auto ray = rayVisibility.find(setting);
-    if (ray != rayVisibility.end()) {
-      cyclesRays |= ray->second;
+    uint ray;
+    const SocketType *socket = findSetting(primvarName, ray);
+    if (ray) {
+      cyclesRays |= ray;
       if (!VtValue::Cast<bool>(value).GetWithDefault(true)) {
-        visibility &= ~ray->second;
+        visibility &= ~ray;
       }
-      continue;
     }
+    else if (socket) {
+      values.emplace_back(socket, value);
+    }
+  }
 
-    if (std::find(std::begin(geometrySettings), std::end(geometrySettings), setting) !=
-        std::end(geometrySettings))
-    {
+  /* Settings of native instances, which UsdImaging moves from the instanceable prim to the
+   * instancer. Like for shader primvars, the prim's own setting wins. */
+  struct InstanceSetting {
+    uint ray;
+    const SocketType *socket;
+    const std::vector<VtValue> *elements;
+  };
+  std::vector<InstanceSetting> instanceSettings;
+  bool instanceRays = false;
+  for (const HdCyclesInstancer::Primvar &pv : _instanceSettings) {
+    if (std::find(ownSettings.begin(), ownSettings.end(), pv.name) != ownSettings.end()) {
       continue;
     }
-
-    const ustring socketName(setting);
-    const bool known = std::find(std::begin(objectSettings), std::end(objectSettings),
-                                 socketName) != std::end(objectSettings);
-    const SocketType *socket = known ? Object::get_node_type()->find_input(socketName) : nullptr;
-    if (!socket) {
-      TF_WARN("Unknown Cycles object setting %s on %s",
-              primvarName.GetText(),
-              Base::GetId().GetText());
-      continue;
+    uint ray;
+    const SocketType *socket = findSetting(pv.name, ray);
+    if (ray || socket) {
+      instanceSettings.push_back({ray, socket, &pv.elements});
+      instanceRays |= ray != 0;
     }
-    values.emplace_back(socket, value);
   }
 
   /* Karma's Render Visibility for the ray types without a Cycles setting, so scenes set up for
@@ -382,8 +421,9 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
   }
 
   _visibility = visibility;
-  for (Object *instance : _instances) {
-    instance->set_visibility(_renderTagVisible ? visibility : 0);
+  _instanceVisibility.assign(instanceRays ? _instances.size() : 0, visibility);
+  for (size_t i = 0; i < _instances.size(); ++i) {
+    Object *const instance = _instances[i];
     // Settings without a primvar go back to their default
     for (const ustring &socketName : objectSettings) {
       instance->set_default_value(*Object::get_node_type()->find_input(socketName));
@@ -391,6 +431,23 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     for (const auto &[socket, value] : values) {
       SetNodeValue(instance, *socket, value);
     }
+    for (const InstanceSetting &setting : instanceSettings) {
+      if (i >= setting.elements->size() || (*setting.elements)[i].IsEmpty()) {
+        continue;
+      }
+      const VtValue &value = (*setting.elements)[i];
+      if (setting.ray) {
+        uint &rays = _instanceVisibility[i];
+        rays = VtValue::Cast<bool>(value).GetWithDefault(true) ?
+                   rays | (visibleRays & setting.ray) :
+                   rays & ~setting.ray;
+      }
+      else {
+        SetNodeValue(instance, *setting.socket, value);
+      }
+    }
+    instance->set_visibility(
+        _renderTagVisible ? (instanceRays ? _instanceVisibility[i] : visibility) : 0);
   }
 }
 
@@ -403,7 +460,7 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstancePrimvars(
   static const TfToken Cd("Cd");
   const auto find = [&](const TfToken &name) -> const HdCyclesInstancer::Primvar * {
     for (const HdCyclesInstancer::Primvar &pv : primvars) {
-      if (pv.name == name) {
+      if (pv.name == name && pv.width > 0) {
         assert(pv.values.size() == _instances.size() * pv.width);
         return &pv;
       }
@@ -416,6 +473,9 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstancePrimvars(
    * like Karma. */
   std::vector<std::pair<ustring, const HdCyclesInstancer::Primvar *>> attributes;
   for (const HdCyclesInstancer::Primvar &pv : primvars) {
+    if (pv.width == 0) {
+      continue; /* Not numeric (object settings only). */
+    }
     for (const ustring &name : RequestedPrimvarNames(
              _geom,
              scene,
