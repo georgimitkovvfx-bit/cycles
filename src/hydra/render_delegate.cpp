@@ -41,6 +41,7 @@
 
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <functional>
@@ -138,6 +139,8 @@ bool IsSessionSetting(const TfToken &key)
 {
   return key == HdCyclesRenderSettingsTokens->device ||
          key == HdCyclesRenderSettingsTokens->threads ||
+         key == HdCyclesRenderSettingsTokens->useCpuToo ||
+         key == HdCyclesRenderSettingsTokens->gpuDevices ||
          key == HdCyclesRenderSettingsTokens->shadingSystem ||
          key == HdCyclesRenderSettingsTokens->useResolutionDivider ||
          key == HdCyclesRenderSettingsTokens->curveShape ||
@@ -257,7 +260,9 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
     for (size_t i = 0; i < devices.size(); i++) {
       for (const string &part : tokens) {
         const string token = string_strip(part);
-        const bool index = std::all_of(token.begin(), token.end(), ::isdigit);
+        const bool index = std::all_of(token.begin(), token.end(), [](const unsigned char c) {
+          return std::isdigit(c) != 0;
+        });
         if (index ? token == std::to_string(i) :
                     string_to_lower(devices[i].id + " " + devices[i].description).find(token) != string::npos)
         {
