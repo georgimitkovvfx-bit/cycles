@@ -88,6 +88,9 @@ class HdCyclesCamera final : public PXR_NS::HdCamera {
      * "primvars:cycles:camera:script:<parameter>" primvars. */
     std::string customScript;
     std::map<std::string, PXR_NS::VtValue> scriptParams;
+    /* Blender's Shutter Curve: weight over the shutter at RAMP_TABLE_SIZE evenly spaced times,
+     * empty for a constant one. */
+    std::vector<float> shutterCurve;
   };
   /* Returns whether the camera is panoramic (or custom). The scene is for custom lenses. */
   static bool ApplyCyclesSettings(const CyclesSettings &settings,

@@ -91,6 +91,91 @@ std::string GetCameraStringSetting(const HdContainerDataSourceHandle &primDs,
   return value.IsHolding<std::string>() ? value.UncheckedGet<std::string>() : fallback;
 }
 
+/* Blender's Shutter Curve from the "shutter_curve" ramp of the Camera LOP, in Houdini's ramp
+ * convention: the values, with their positions in "shutter_curve_pos" and interpolation in
+ * "shutter_curve_basis". Values without positions are evenly spaced. Empty when not authored.
+ * shortcut: the spline bases (catmull-rom, monotonecubic, bezier, bspline, hermite) are all
+ * evaluated as Catmull-Rom; evaluate each one like Houdini if the shapes need to match. */
+std::vector<float> ReadShutterCurve(const HdContainerDataSourceHandle &primDs)
+{
+  const VtValue valuesValue = VtValue::Cast<VtFloatArray>(
+      GetCameraSetting(primDs, "shutter_curve"));
+  if (valuesValue.IsEmpty() || valuesValue.UncheckedGet<VtFloatArray>().empty()) {
+    return {};
+  }
+  const VtFloatArray &values = valuesValue.UncheckedGet<VtFloatArray>();
+  const size_t count = values.size();
+  VtFloatArray positions = VtValue::Cast<VtFloatArray>(
+                               GetCameraSetting(primDs, "shutter_curve_pos"))
+                               .GetWithDefault(VtFloatArray());
+  std::vector<std::string> bases(count, "linear");
+  const VtValue basisValue = GetCameraSetting(primDs, "shutter_curve_basis");
+  if (basisValue.IsHolding<VtTokenArray>() && basisValue.GetArraySize() == count) {
+    for (size_t i = 0; i < count; ++i) {
+      bases[i] = basisValue.UncheckedGet<VtTokenArray>()[i].GetString();
+    }
+  }
+  else if (basisValue.IsHolding<VtStringArray>() && basisValue.GetArraySize() == count) {
+    bases.assign(basisValue.UncheckedGet<VtStringArray>().begin(),
+                 basisValue.UncheckedGet<VtStringArray>().end());
+  }
+  else if (basisValue.IsHolding<TfToken>() || basisValue.IsHolding<std::string>()) {
+    bases.assign(count,
+                 basisValue.IsHolding<TfToken>() ? basisValue.UncheckedGet<TfToken>().GetString() :
+                                                   basisValue.UncheckedGet<std::string>());
+  }
+  if (positions.size() != count) {
+    positions.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+      positions[i] = count > 1 ? float(i) / float(count - 1) : 0.0f;
+    }
+  }
+  /* Keys sorted by position. */
+  std::vector<size_t> keys(count);
+  for (size_t i = 0; i < count; ++i) {
+    keys[i] = i;
+  }
+  std::stable_sort(keys.begin(), keys.end(), [&](const size_t a, const size_t b) {
+    return positions[a] < positions[b];
+  });
+  const auto value = [&](const ptrdiff_t k) {
+    return values[keys[std::clamp<ptrdiff_t>(k, 0, ptrdiff_t(count) - 1)]];
+  };
+
+  std::vector<float> curve(RAMP_TABLE_SIZE);
+  for (int i = 0; i < RAMP_TABLE_SIZE; ++i) {
+    const float x = float(i) / float(RAMP_TABLE_SIZE - 1);
+    /* Last key at or before x. */
+    ptrdiff_t k = 0;
+    while (k + 1 < ptrdiff_t(count) && positions[keys[k + 1]] <= x) {
+      ++k;
+    }
+    if (x <= positions[keys[0]] || k + 1 >= ptrdiff_t(count)) {
+      curve[i] = value(x <= positions[keys[0]] ? 0 : k);
+      continue;
+    }
+    const float x0 = positions[keys[k]];
+    const float x1 = positions[keys[k + 1]];
+    const float t = x1 > x0 ? (x - x0) / (x1 - x0) : 0.0f;
+    const std::string &basis = bases[keys[k]];
+    if (basis == "constant") {
+      curve[i] = value(k);
+    }
+    else if (basis == "linear") {
+      curve[i] = value(k) + (value(k + 1) - value(k)) * t;
+    }
+    else {
+      const float p0 = value(k - 1), p1 = value(k), p2 = value(k + 1), p3 = value(k + 2);
+      curve[i] = 0.5f *
+                 (2.0f * p1 + (p2 - p0) * t + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t * t +
+                  (3.0f * p1 - p0 - 3.0f * p2 + p3) * t * t * t);
+    }
+    /* A weight: never negative. */
+    curve[i] = std::max(curve[i], 0.0f);
+  }
+  return curve;
+}
+
 /* Parameters of a custom lens script from primvar values. */
 class ScriptParamQuery final : public OSLCameraParamQuery {
  public:
@@ -351,6 +436,7 @@ void HdCyclesCamera::Sync(HdSceneDelegate *sceneDelegate,
       settings.customScript = path.GetResolvedPath().empty() ? path.GetAssetPath() :
                                                                path.GetResolvedPath();
     }
+    settings.shutterCurve = ReadShutterCurve(primDs);
     settings.scriptParams.clear();
     const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
     static const std::string scriptPrefix = "cycles:camera:script:";
@@ -503,6 +589,13 @@ bool HdCyclesCamera::ApplyCyclesSettings(const CyclesSettings &settings, Camera 
                                     Camera::ROLLING_SHUTTER_TOP :
                                     Camera::ROLLING_SHUTTER_NONE);
   cam->set_rolling_shutter_duration(std::clamp(settings.rollingShutterDuration, 0.0f, 1.0f));
+
+  /* Constant (Cycles' default) without a curve, not the curve of the camera rendered before. */
+  array<float> shutterCurve(RAMP_TABLE_SIZE);
+  for (int i = 0; i < RAMP_TABLE_SIZE; ++i) {
+    shutterCurve[i] = settings.shutterCurve.empty() ? 1.0f : settings.shutterCurve[i];
+  }
+  cam->set_shutter_curve(shutterCurve);
 
   /* A custom lens (OSL camera shader, CPU and OptiX) replaces the projection, like Blender's
    * Custom camera type. Only the render camera, the dicing camera keeps the projection. */

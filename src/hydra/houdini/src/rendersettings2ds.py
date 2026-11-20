@@ -645,6 +645,8 @@ TYPES = {
     "menu": ("token", "string", "string"),
     "string": ("string", "string", "string"),
     "file": ("string", "file", "string"),
+    # Houdini's ramp convention: the values, "<name>_pos" and "<name>_basis" arrays
+    "ramp": ("ramp", "ramp_flt", "ramp"),
 }
 
 
@@ -845,6 +847,7 @@ CAMERA_SETTINGS = {
                                                            "top": "Top-Bottom"}},
     "primvars:cycles:camera:rolling_shutter_duration": {"type": "float", "default": 0.1},
     "primvars:cycles:camera:custom_script": {"type": "file", "default": ""},
+    "primvars:cycles:camera:shutter_curve": {"type": "ramp", "default": 2},
 }
 
 
@@ -930,6 +933,12 @@ CAMERA_LAYOUT = [
               range=(0, 1, True, True),
               disablewhen="{ primvars:cycles:camera:rolling_shutter_type == none }"),
         ], open=True),
+        S("primvars:cycles:camera:shutter_curve", "Shutter Curve",
+          "Weight of the motion blur samples over the shutter, from Shutter Open (left) to "
+          "Shutter Close (right), like Blender's Shutter Curve. Constant by default.",
+          tags=(("rampfloatdefault", "1pos ( 0 ) 1value ( 1 ) 1interp ( linear ) "
+                 "2pos ( 1 ) 2value ( 1 ) 2interp ( linear )"),
+                ("rampshowcontrolsdefault", "0"))),
     ], open=True),
 ]
 
@@ -1152,7 +1161,10 @@ class Writer:
             indent + "    name    %s" % quote(parm_name),
             indent + "    label   %s" % quote(setting["label"]),
             indent + "    type    %s" % parm_type,
-            indent + "    size    1",
+        ]
+        if parm_type != "ramp_flt":
+            lines.append(indent + "    size    1")
+        lines += [
             indent + "    default { %s }" % format_value(socket["default"]),
         ]
         if setting["range"]:
