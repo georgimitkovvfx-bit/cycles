@@ -195,13 +195,18 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // every material renders as. Set outside of syncs, read by material syncs.
   void SetMaterialOverride(const std::string &materialOverride)
   {
-    if (materialOverride != _materialOverride) {
+    {
+      const std::lock_guard<std::mutex> lock(_materialOverrideMutex);
+      if (materialOverride == _materialOverride) {
+        return;
+      }
       _materialOverride = materialOverride;
-      RequestResync(true, false);
     }
+    RequestResync(true, false);
   }
-  const std::string &GetMaterialOverride() const
+  std::string GetMaterialOverride() const
   {
+    const std::lock_guard<std::mutex> lock(_materialOverrideMutex);
     return _materialOverride;
   }
 
@@ -418,6 +423,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   DicingSettings _dicing;
   mutable std::mutex _bakeMutex;
   std::string _bakeObject;
+  mutable std::mutex _materialOverrideMutex;
   std::string _materialOverride;
   float _filmExposure = 1.0f;
   double _framesPerSecond = 0.0;

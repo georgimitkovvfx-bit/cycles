@@ -29,6 +29,7 @@
 
 #include <pxr/base/js/json.h>
 #include <pxr/imaging/hd/material.h>
+#include <pxr/imaging/hd/dataSourceHash.h>
 #include <pxr/imaging/hd/materialConnectionSchema.h>
 #include <pxr/imaging/hd/materialNetworkSchema.h>
 #include <pxr/imaging/hd/materialNodeParameterSchema.h>
@@ -1227,10 +1228,16 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     /* The cycles:material_override render setting: surfaces render as clay or as another
      * material, like Blender's View Layer Material Override. World materials and materials
      * without a surface (volumes) keep theirs. */
-    const std::string &materialOverride = session->GetMaterialOverride();
-    if (materialOverride == id.GetString() && !session->materialsResyncing) {
-      /* Not in the sync of the resync this requests, which would request another one. */
-      session->RequestResync(true, false);
+    const std::string materialOverride = session->GetMaterialOverride();
+    if (materialOverride == id.GetString()) {
+      /* The other materials build this graph: rebuild them when it changed (a sync without a
+       * change, e.g. of an unchanged time sample, rebuilds none), not in the sync of the resync
+       * this requests, which would request another one. */
+      const size_t hash = HdDataSourceHash(matSchema.GetContainer(), 0.0f, 0.0f);
+      if (hash != _overrideHash && !session->materialsResyncing) {
+        session->RequestResync(true, false);
+      }
+      _overrideHash = hash;
     }
     ShaderInput *const surface = graph->output()->input("Surface");
     if (!materialOverride.empty() && materialOverride != id.GetString() && !worldRotation &&

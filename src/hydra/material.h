@@ -63,6 +63,8 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
                                                    CCL_NS::Scene *scene);
 
   CCL_NS::Shader *_shader = nullptr;
+  /* Hash of this material's data when it was last synced as the material override. */
+  size_t _overrideHash = 0;
   std::unordered_map<PXR_NS::SdfPath, NodeDesc, PXR_NS::SdfPath::Hash> _nodes;
 };
 
