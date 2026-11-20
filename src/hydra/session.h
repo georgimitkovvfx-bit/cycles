@@ -144,12 +144,17 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     return GetMotionTimes(_shutterOpen, _shutterClose);
   }
-  // With motion blur, objects can have their own motion steps (0 is the Motion Steps setting)
-  std::vector<float> GetMotionTimes(const int steps) const
+  // With motion blur, objects can have their own motion steps (0 is the Motion Steps setting),
+  // or a number of motion samples (Karma's time samples, 0 uses the steps; 1 is no motion blur),
+  // rounded up to an odd number so that one sample is at mid-shutter
+  std::vector<float> GetMotionTimes(const int steps, const int samples = 0) const
   {
-    return GetMotionTimes(_shutterOpen, _shutterClose, steps);
+    return GetMotionTimes(_shutterOpen, _shutterClose, steps, samples);
   }
-  std::vector<float> GetMotionTimes(float shutterOpen, float shutterClose, int steps = 0) const;
+  std::vector<float> GetMotionTimes(float shutterOpen,
+                                    float shutterClose,
+                                    int steps = 0,
+                                    int samples = 0) const;
 
   // Blender's Subdivision render settings: dicing rate in pixels (viewport and final renders),
   // max subdivision level of adaptive subdivision, offscreen dicing scale and the dicing camera

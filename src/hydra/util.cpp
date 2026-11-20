@@ -446,6 +446,21 @@ unsigned int KarmaRenderVisibility(const std::string &pattern)
   return visibility;
 }
 
+int VelocityBlurMode(const VtValue &value)
+{
+  if (value.IsHolding<TfToken>() || value.IsHolding<std::string>()) {
+    const std::string label = value.IsHolding<TfToken>() ?
+                                  value.UncheckedGet<TfToken>().GetString() :
+                                  value.UncheckedGet<std::string>();
+    return label == "No Velocity Blur"  ? 0 :
+           label == "Velocity Blur"     ? 1 :
+           label == "Acceleration Blur" ? 2 :
+                                          -1;
+  }
+  const int mode = VtValue::Cast<int>(value).GetWithDefault(-1);
+  return mode >= 0 && mode <= 2 ? mode : -1;
+}
+
 unsigned int KarmaLightContributions(const HdContainerDataSourceHandle &light)
 {
   static const TfToken contribs("inputs:karma:light:contribs");

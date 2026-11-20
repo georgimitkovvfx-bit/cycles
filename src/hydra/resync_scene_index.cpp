@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/resync_scene_index.h"
+#include "hydra/util.h"
 
 #include <algorithm>
 #include <optional>
@@ -12,6 +13,7 @@
 #include <pxr/imaging/hd/lightSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
+#include <pxr/imaging/hd/primvarSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/retainedDataSource.h>
 #include <pxr/imaging/hd/sceneGlobalsSchema.h>
@@ -23,7 +25,48 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
-/* Sets the frame rate in the scene globals of the root prim to the render delegate's. */
+/* Karma's Velocity Blur of geometry and of the instances of point instancers (Render Geometry
+ * Settings LOP), as the velocity motion mode of HdsiVelocityMotionResolvingSceneIndex. */
+const TfToken &VelocityBlurPrimvar(const TfToken &primType)
+{
+  static const TfToken vblur("karma:object:vblur");
+  static const TfToken instanceVblur("karma:object:instance_vblur");
+  return primType == HdPrimTypeTokens->instancer ? instanceVblur : vblur;
+}
+
+HdContainerDataSourceHandle VelocityMotionMode(const HdSceneIndexPrim &prim)
+{
+  const HdSampledDataSourceHandle ds = HdPrimvarsSchema::GetFromParent(prim.dataSource)
+                                           .GetPrimvar(VelocityBlurPrimvar(prim.primType))
+                                           .GetPrimvarValue();
+  const int mode = ds ? VelocityBlurMode(ds->GetValue(0.0f)) : -1;
+  if (mode < 0) {
+    return nullptr;
+  }
+  /* Karma without velocity blur interpolates the time samples, Velocity Blur ignores the
+   * accelerations. */
+  const TfToken &token = mode == 0 ? HdsiVelocityMotionResolvingSceneIndexTokens->ignore :
+                         mode == 1 ? HdsiVelocityMotionResolvingSceneIndexTokens->noAcceleration :
+                                     HdsiVelocityMotionResolvingSceneIndexTokens->enable;
+  const HdTokenDataSourceHandle tokenDs = HdRetainedTypedSampledDataSource<TfToken>::New(token);
+  const TfToken &name = HdsiVelocityMotionResolvingSceneIndexTokens->velocityMotionMode;
+  /* shortcut: authored both as a constant primvar and as a prim-level data source, the header
+   * does not say which one the scene index reads; drop the unused one once tested. */
+  return HdRetainedContainerDataSource::New(
+      HdPrimvarsSchema::GetSchemaToken(),
+      HdRetainedContainerDataSource::New(
+          name,
+          HdPrimvarSchema::Builder()
+              .SetPrimvarValue(tokenDs)
+              .SetInterpolation(
+                  HdPrimvarSchema::BuildInterpolationDataSource(HdPrimvarSchemaTokens->constant))
+              .Build()),
+      name,
+      tokenDs);
+}
+
+/* Sets the frame rate in the scene globals of the root prim to the render delegate's, and the
+ * velocity motion mode of prims with Karma's Velocity Blur. */
 class SceneGlobalsSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
  public:
   static TfRefPtr<SceneGlobalsSceneIndex> New(
@@ -47,6 +90,10 @@ class SceneGlobalsSceneIndex final : public HdSingleInputFilteringSceneIndexBase
                       HdRetainedTypedSampledDataSource<double>::New(timeCodesPerSecond))
                   .Build()),
           prim.dataSource);
+    }
+    if (const HdContainerDataSourceHandle mode = VelocityMotionMode(prim)) {
+      prim.dataSource = HdOverlayContainerDataSource::OverlayedContainerDataSources(
+          mode, prim.dataSource);
     }
     return prim;
   }
@@ -79,7 +126,26 @@ class SceneGlobalsSceneIndex final : public HdSingleInputFilteringSceneIndexBase
   void _PrimsDirtied(const HdSceneIndexBase & /*sender*/,
                      const HdSceneIndexObserver::DirtiedPrimEntries &entries) override
   {
-    _SendPrimsDirtied(entries);
+    /* A changed Velocity Blur changes the velocity motion mode. */
+    static const HdDataSourceLocator modeLocator = HdPrimvarsSchema::GetDefaultLocator().Append(
+        HdsiVelocityMotionResolvingSceneIndexTokens->velocityMotionMode);
+    std::optional<HdSceneIndexObserver::DirtiedPrimEntries> mapped;
+    for (size_t i = 0; i < entries.size(); ++i) {
+      const HdDataSourceLocatorSet &locators = entries[i].dirtyLocators;
+      for (const TfToken &primType : {HdPrimTypeTokens->mesh, HdPrimTypeTokens->instancer}) {
+        if (locators.Intersects(
+                HdPrimvarsSchema::GetDefaultLocator().Append(VelocityBlurPrimvar(primType))))
+        {
+          if (!mapped) {
+            mapped = entries;
+          }
+          (*mapped)[i].dirtyLocators.insert(modeLocator);
+          (*mapped)[i].dirtyLocators.insert(HdDataSourceLocator(
+              HdsiVelocityMotionResolvingSceneIndexTokens->velocityMotionMode));
+        }
+      }
+    }
+    _SendPrimsDirtied(mapped ? *mapped : entries);
   }
 
  private:

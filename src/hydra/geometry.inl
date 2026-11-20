@@ -135,23 +135,57 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       useMotionBlurValue = ReadPrimvar(primvars, TfToken("karma:object:mblur"));
     }
     const bool useMotionBlur = VtValue::Cast<bool>(useMotionBlurValue).GetWithDefault(true);
-    const int motionSteps = std::max(
+    /* Number of samples from the Cycles setting, else Karma's (0: not authored). */
+    const auto samples = [&](const char *setting, const char *karma) {
+      VtValue value = GetObjectSetting(primvars, setting);
+      if (value.IsEmpty()) {
+        value = ReadPrimvar(primvars, TfToken(std::string("karma:object:") + karma));
+      }
+      return std::max(0, VtValue::Cast<int>(value).GetWithDefault(0));
+    };
+    VtValue fromStage = GetObjectSetting(primvars, "samples_from_stage");
+    if (fromStage.IsEmpty()) {
+      fromStage = ReadPrimvar(primvars, TfToken("karma:object:samplesfromstage"));
+    }
+    MotionSettings motion = _motion;
+    motion.steps = std::max(
         0, VtValue::Cast<int>(GetObjectSetting(primvars, "motion_steps")).GetWithDefault(0));
-    if (useMotionBlur != _useMotionBlur || motionSteps != _motionSteps) {
+    motion.transformSamples = samples("transform_samples", "xformsamples");
+    motion.deformSamples = samples("deform_samples", "geosamples");
+    /* Unlike Karma, off when not authored: the motion steps stay what they were. */
+    motion.fromStage = VtValue::Cast<bool>(fromStage).GetWithDefault(false);
+    motion.velocityBlur = VelocityBlurMode(ReadPrimvar(primvars, TfToken("karma:object:vblur")));
+    if (useMotionBlur != _useMotionBlur || motion != _motion) {
       _useMotionBlur = useMotionBlur;
-      _motionSteps = motionSteps;
+      _motion = motion;
       *dirtyBits |= HdChangeTracker::DirtyTransform | HdChangeTracker::DirtyPoints;
     }
   }
 
-  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
+  /* The instances move over the motion steps of the prototype: sampled again with the instancer,
+   * which can have its own number of samples. */
+  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
+      HdChangeTracker::IsInstancerDirty(*dirtyBits, id))
+  {
+    /* Karma's Instance Motion Samples of the instancer. */
+    _motion.instanceSamples = 0;
+    if (!Base::GetInstancerId().IsEmpty()) {
+      const HdPrimvarsSchema instancerPrimvars = HdPrimvarsSchema::GetFromParent(
+          GetPrim(sceneDelegate, Base::GetInstancerId()).dataSource);
+      _motion.instanceSamples = std::max(
+          0,
+          VtValue::Cast<int>(
+              ReadPrimvar(instancerPrimvars, TfToken("karma:object:instance_samples")))
+              .GetWithDefault(0));
+    }
+
     _geomTransform = GfMatrix4d(1.0);
     _geomTransformMotion.clear();
     if (auto matrixDs = HdXformSchema::GetFromParent(primDs).GetMatrix()) {
       _geomTransform = matrixDs->GetTypedValue(0.0f);
 
       // Motion blur: transforms at the motion steps, rendered at the center one
-      const std::vector<float> motionTimes = GetObjectMotionTimes();
+      const std::vector<float> motionTimes = GetObjectMotionTimes(matrixDs);
       std::vector<float> sampleTimes;
       if (!motionTimes.empty() && matrixDs->GetContributingSampleTimesForInterval(
                                       motionTimes.front(), motionTimes.back(), &sampleTimes))
@@ -180,7 +214,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     if (instancer) {
       stepTransforms = instancer->ComputeInstanceTransforms(
           id,
-          GetObjectMotionTimes(),
+          GetObjectMotionTimes(HdXformSchema::GetFromParent(primDs).GetMatrix()),
           instancePrimvarsDirty ? &instancePrimvars : nullptr);
     }
     else {
@@ -547,9 +581,9 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(
 
   /* Motion blur: positions at the motion steps, from time samples of the points (the scene index
    * resolves velocities into those). Rendered at the center step. */
-  const std::vector<float> motionTimes = GetObjectMotionTimes();
-  std::vector<VtVec3fArray> motionPoints;
   const HdSampledDataSourceHandle pointsDs = primvars.GetPrimvar(pointsPrimvar).GetPrimvarValue();
+  const std::vector<float> motionTimes = GetObjectMotionTimes(pointsDs, true);
+  std::vector<VtVec3fArray> motionPoints;
   std::vector<float> sampleTimes;
   if (!motionTimes.empty() && pointsDs &&
       pointsDs->GetContributingSampleTimesForInterval(
@@ -596,9 +630,35 @@ void HdCyclesGeometry<Base, CyclesBase>::SetPositions(
 }
 
 template<typename Base, typename CyclesBase>
-std::vector<float> HdCyclesGeometry<Base, CyclesBase>::GetObjectMotionTimes() const
+std::vector<float> HdCyclesGeometry<Base, CyclesBase>::GetObjectMotionTimes(
+    const HdSampledDataSourceHandle &ds, const bool deform) const
 {
-  return _useMotionBlur ? _session->GetMotionTimes(_motionSteps) : std::vector<float>();
+  if (!_useMotionBlur) {
+    return {};
+  }
+  int samples = _motion.instanceSamples > 0 ? _motion.instanceSamples : _motion.transformSamples;
+  if (deform) {
+    /* Like Karma: Velocity Blur replaces deformation blur, Acceleration Blur samples it with the
+     * deformation samples (at least two). */
+    samples = _motion.velocityBlur == 1 ? 0 :
+              _motion.velocityBlur == 2 && _motion.deformSamples > 0 ?
+                                          std::max(_motion.deformSamples, 2) :
+                                          _motion.deformSamples;
+  }
+  /* Samples from the stage: enough for the time samples of the value inside the shutter. Cycles
+   * needs evenly spaced ones, the time samples between them are interpolated. */
+  if (_motion.fromStage && ds) {
+    const std::vector<float> times = _session->GetMotionTimes(_motion.steps);
+    std::vector<float> stageTimes;
+    if (!times.empty() &&
+        ds->GetContributingSampleTimesForInterval(times.front(), times.back(), &stageTimes))
+    {
+      samples = 2 + int(std::count_if(stageTimes.begin(), stageTimes.end(), [&](const float t) {
+                  return t > times.front() && t < times.back();
+                }));
+    }
+  }
+  return _session->GetMotionTimes(_motion.steps, samples);
 }
 
 template<typename Base, typename CyclesBase>

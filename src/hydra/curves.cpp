@@ -300,7 +300,8 @@ void HdCyclesCurves::PopulateWidths(HdSceneDelegate *sceneDelegate)
   /* Motion blur: radii at the motion steps of the points, when the widths are animated. Cycles
    * reads the radius steps with the position steps, so they need the same number. */
   const Attribute *attr_P = _geom->attributes.find(ATTR_STD_POSITION);
-  const std::vector<float> motionTimes = GetObjectMotionTimes();
+  const std::vector<float> motionTimes = GetObjectMotionTimes(
+      primvars.GetPrimvar(HdTokens->points).GetPrimvarValue(), true);
   const HdSampledDataSourceHandle widthsDs =
       primvars.GetPrimvar(HdTokens->widths).GetFlattenedPrimvarValue();
   std::vector<float> sampleTimes;

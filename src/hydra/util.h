@@ -177,6 +177,11 @@ unsigned int LightMultiplierVisibility(const PXR_NS::HdContainerDataSourceHandle
  * volume scatter bits. */
 unsigned int KarmaRenderVisibility(const std::string &pattern);
 
+/* Karma's Velocity Blur (karma:object:vblur, karma:object:instance_vblur): 0 none, 1 velocity,
+ * 2 acceleration blur, from the menu index (geometry settings) or its label (render settings);
+ * -1 when empty or unknown. */
+int VelocityBlurMode(const PXR_NS::VtValue &value);
+
 /* Diffuse, glossy, transmission and volume scatter ray visibility of a light from Karma's light
  * Contributions ("inputs:karma:light:contribs", components diffuse, reflect, coat, refract,
  * volume, sss in a Render Visibility pattern). All of them when it is not authored. */

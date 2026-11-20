@@ -69,8 +69,10 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
       const PXR_NS::TfToken &pointsPrimvar = PXR_NS::HdTokens->points);
 
   /* Times of the motion steps of this object: none when its motion blur is off, its own number
-   * of steps when set. */
-  std::vector<float> GetObjectMotionTimes() const;
+   * of steps or of transform (`deform` false) or deformation samples when set. `ds` is the
+   * animated value, for samples from the time samples of the stage. */
+  std::vector<float> GetObjectMotionTimes(const PXR_NS::HdSampledDataSourceHandle &ds = nullptr,
+                                          bool deform = false) const;
 
   /* Constant "cycles:object:<setting>" primvar, empty if not authored. */
   static PXR_NS::VtValue GetObjectSetting(const PXR_NS::HdPrimvarsSchema &primvars,
@@ -98,9 +100,25 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   // Per-instance "cycles:object:<setting>" primvars of the instancer (Primvar::elements)
   std::vector<HdCyclesInstancer::Primvar> _instanceSettings;
 
-  // Per-object motion blur and motion steps (0: the Motion Steps render setting)
+  // Per-object motion blur settings: 0 steps or samples use the Motion Steps render setting
+  struct MotionSettings {
+    int steps = 0;
+    int transformSamples = 0;
+    int deformSamples = 0;
+    // Instance Motion Samples of the instancer, for the transforms
+    int instanceSamples = 0;
+    bool fromStage = false;
+    // Karma's Velocity Blur: -1 not authored, 0 none, 1 velocity, 2 acceleration
+    int velocityBlur = -1;
+    bool operator!=(const MotionSettings &other) const
+    {
+      return steps != other.steps || transformSamples != other.transformSamples ||
+             deformSamples != other.deformSamples || instanceSamples != other.instanceSamples ||
+             fromStage != other.fromStage || velocityBlur != other.velocityBlur;
+    }
+  };
   bool _useMotionBlur = true;
-  int _motionSteps = 0;
+  MotionSettings _motion;
 
   PXR_NS::GfMatrix4d _geomTransform;
   // Transforms at the motion steps when moving over the shutter, else empty

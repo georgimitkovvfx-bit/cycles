@@ -672,6 +672,9 @@ GEOMETRY_SETTINGS = {
     "primvars:cycles:object:pass_id": {"type": "int", "default": 0},
     "primvars:cycles:object:use_motion_blur": {"type": "boolean", "default": True},
     "primvars:cycles:object:motion_steps": {"type": "int", "default": 0},
+    "primvars:cycles:object:transform_samples": {"type": "int", "default": 0},
+    "primvars:cycles:object:deform_samples": {"type": "int", "default": 0},
+    "primvars:cycles:object:samples_from_stage": {"type": "boolean", "default": False},
     "primvars:cycles:object:use_adaptive_subdivision": {"type": "boolean", "default": False},
     "primvars:cycles:object:dicing_rate": {"type": "float", "default": 1.0},
     "primvars:cycles:object:volume_step_size": {"type": "float", "default": 0.0},
@@ -692,6 +695,23 @@ GEOMETRY_LAYOUT = [
           "Motion steps of this object: 2^steps + 1 motion samples over the shutter, for "
           "curved motion. 0 uses the Motion Steps render setting.",
           range=(0, 7, True, True)),
+        S("primvars:cycles:object:transform_samples", "Transform Samples",
+          "Number of samples of the transform over the shutter, like Karma's Transform Time "
+          "Samples (karma:object:xformsamples, used when this is not set). 1 is no transform "
+          "blur, 0 uses the motion steps. Even numbers are rounded up to the next odd one, so "
+          "that one sample is at the frame.",
+          range=(0, 16, True, False)),
+        S("primvars:cycles:object:deform_samples", "Deformation Samples",
+          "Number of samples of the points over the shutter, like Karma's Geometry Time "
+          "Samples (karma:object:geosamples, used when this is not set). 1 is no deformation "
+          "blur, 0 uses the motion steps. Karma's Velocity Blur uses the motion steps, its "
+          "Acceleration Blur at least 2 samples.",
+          range=(0, 16, True, False)),
+        S("primvars:cycles:object:samples_from_stage", "Samples from Stage",
+          "Take the number of transform and deformation samples from the time samples of the "
+          "stage inside the shutter, like Karma's Motion Samples from Stage "
+          "(karma:object:samplesfromstage, used when this is not set). Off by default, unlike "
+          "in Karma."),
     ], toggle="primvars:cycles:object:use_motion_blur"),
     P("Visibility", [
         P("Ray Visibility", [

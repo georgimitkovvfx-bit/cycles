@@ -936,7 +936,8 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 
 std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
                                                    const float shutterClose,
-                                                   const int steps) const
+                                                   const int steps,
+                                                   const int samples) const
 {
   if (!session->scene->integrator->get_motion_blur()) {
     /* Motion pass: the previous and next frame, like Blender (Scene::motion_shutter_time() is 2
@@ -958,8 +959,9 @@ std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
   }
 
   // Three steps for Blender's default of one motion step for objects
-  const int numSteps = (1 << (steps > 0 ? std::min(steps, 7) : _motionSteps)) + 1;
-  if (_motionBlurDisabled || !(shutterClose > shutterOpen)) {
+  const int numSteps = samples > 0 ? (std::min(samples, 129) | 1) :
+                                     (1 << (steps > 0 ? std::min(steps, 7) : _motionSteps)) + 1;
+  if (_motionBlurDisabled || !(shutterClose > shutterOpen) || numSteps < 3) {
     return {};
   }
   std::vector<float> times(numSteps);
