@@ -318,7 +318,7 @@ def parameters():
              "turn Sun Disc off for a single sun."))
     no_light = "{ sunlight == 0 }"
     sun.addParmTemplate(hou.StringParmTemplate(
-        "sunlightpath", "Light Path", 1, default_value=("/lights/$OS_sun",),
+        "sunlightpath", "Light Path", 1, default_value=("/lights/${OS}_sun",),
         disable_when=no_light, help="Distant light primitive."))
     sun.addParmTemplate(float_parm(
         "sunlightintensity", "Intensity", 1.0, 0, 10, "Intensity of the distant light.",
