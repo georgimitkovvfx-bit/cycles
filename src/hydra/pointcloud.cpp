@@ -7,6 +7,7 @@
 #include "hydra/geometry.inl"
 #include "hydra/util.h"
 #include "scene/pointcloud.h"
+#include "util/color.h"
 #include "util/hash.h"
 #include "util/types_spherical_harmonics.h"
 
@@ -24,8 +25,8 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (orientations)
     (scales)
     (opacities)
-    (radianceSphericalHarmonicsCoefficients)
-    (radianceSphericalHarmonicsDegree)
+    ((radianceSphericalHarmonicsCoefficients, "radiance:sphericalHarmonicsCoefficients"))
+    ((radianceSphericalHarmonicsDegree, "radiance:sphericalHarmonicsDegree"))
 );
 // clang-format on
 
@@ -380,12 +381,24 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
     }
   }
 
-  /* Without coefficients, a DC signal of 0.5 (USD), which is a 0 DC coefficient in 3DGS. The
-   * spherical harmonics are not blurred: every step has the frame's DC. */
+  /* Without coefficients, the display color like Karma: Houdini's SOP Import of a Bake GSplats SOP
+   * (Compute SPH Coefficients off by default) writes only the color, as primvars:displayColor
+   * (scene linear). Cycles reads 0.5 + C0 * DC as sRGB. Else a 0 DC coefficient (0.5, USD).
+   * The spherical harmonics are not blurred: every step has the frame's DC. */
+  const VtVec3fArray displayColor = hasSH ? VtVec3fArray() :
+                                            ReadSplatFloat3(primvars, HdTokens->displayColor);
   const auto fillBase = [&](const VtFloatArray &opacities, float4 *base) {
     for (size_t i = 0; i < n; ++i) {
-      const GfVec3f dc = hasSH ? sh[i * coefficients] : GfVec3f(0.0f);
-      base[i] = make_float4(dc[0], dc[1], dc[2], i < opacities.size() ? opacities[i] : 1.0f);
+      float3 dc = zero_float3();
+      if (hasSH) {
+        dc = make_float3(sh[i * coefficients][0], sh[i * coefficients][1], sh[i * coefficients][2]);
+      }
+      else if (!displayColor.empty()) {
+        const GfVec3f &c = displayColor[displayColor.size() == n ? i : 0];
+        dc = (color_linear_to_srgb_v3(make_float3(c[0], c[1], c[2])) - make_float3(0.5f)) /
+             0.28209479177387814f;
+      }
+      base[i] = make_float4(dc.x, dc.y, dc.z, i < opacities.size() ? opacities[i] : 1.0f);
     }
   };
   const auto fillScale = [&](const VtVec3fArray &scales, packed_float3 *scale) {
