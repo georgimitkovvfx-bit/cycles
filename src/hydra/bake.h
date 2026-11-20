@@ -69,6 +69,10 @@ struct BakeMesh {
   bool transformApplied = false;
   /* Selected to Active, null otherwise. */
   std::shared_ptr<const BakeSources> sources;
+  /* Device object and triangle counts when copied: a copy reused after the device scene changed
+   * has other object indices (BakeMeshCurrent). */
+  size_t deviceObjects = 0;
+  size_t deviceTriangles = 0;
 
   bool valid() const
   {
@@ -84,6 +88,10 @@ struct BakeMesh {
 BakeMesh SnapshotBakeMesh(CCL_NS::Scene *scene,
                           const BakeSettings &bake,
                           const std::vector<std::string> &sourcePrims);
+
+/* Whether the object indices of the copy are those of the device scene rendered now. Reads the
+ * device scene, which the session thread (the output driver's) updates. */
+bool BakeMeshCurrent(const BakeMesh &mesh, const CCL_NS::Scene *scene);
 
 /* Writes Cycles' bake primitive and differential passes of a tile (all empty for an invalid
  * snapshot), and with Selected to Active the bake object pass: the source surface each pixel's

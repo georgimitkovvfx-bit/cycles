@@ -136,8 +136,18 @@ ccl_device bool integrator_init_from_bake(KernelGlobals kg,
    * target, like Selected to Active), else the bake target. */
   int object = kernel_data.bake.object_index;
   if (kernel_data.film.pass_bake_object != PASS_UNUSED) {
+    /* The pass may be written for another scene than the one rendered (an application snapshot
+     * taken before the scene changed): skip objects and triangles that do not exist. */
     object = __float_as_uint(buffer[kernel_data.film.pass_bake_object]);
+    if (uint(object) >= uint(kernel_data.bake.num_objects)) {
+      film_write_transparent(kg, 0, 1.0f, buffer);
+      return true;
+    }
     prim += kernel_data_fetch(object_prim_offset, object);
+    if (uint(prim) >= uint(kernel_data.bake.num_triangles)) {
+      film_write_transparent(kg, 0, 1.0f, buffer);
+      return true;
+    }
   }
   else {
     prim += kernel_data.bake.tri_offset;

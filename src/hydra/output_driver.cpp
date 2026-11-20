@@ -84,7 +84,8 @@ bool HdCyclesOutputDriver::read_render_tile(const Tile &tile)
   }
   const std::lock_guard<std::mutex> lock(_bakeMeshMutex);
   static const BakeMesh noMesh;
-  return FillBakeTile(_bakeMeshSettings == bake ? _bakeMesh : noMesh, tile);
+  return FillBakeTile(
+      _bakeMeshSettings == bake && BakeMeshCurrent(_bakeMesh, scene) ? _bakeMesh : noMesh, tile);
 }
 
 bool HdCyclesOutputDriver::update_render_tile(const Tile &tile)

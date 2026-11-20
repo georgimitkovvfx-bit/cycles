@@ -311,6 +311,8 @@ BakeMesh SnapshotBakeMesh(Scene *scene,
 
   bake.object = object;
   bake.objectIndex = object->get_device_index();
+  bake.deviceObjects = scene->dscene.objects.size();
+  bake.deviceTriangles = scene->dscene.tri_vindex.size();
   bake.numTriangles = num;
   bake.tfm = object->get_tfm();
   bake.transformApplied = mesh->transform_applied;
@@ -339,6 +341,12 @@ BakeMesh SnapshotBakeMesh(Scene *scene,
     bake.sources = SnapshotBakeSources(scene, settings, sourcePrims, object);
   }
   return bake;
+}
+
+bool BakeMeshCurrent(const BakeMesh &mesh, const Scene *scene)
+{
+  return mesh.deviceObjects == scene->dscene.objects.size() &&
+         mesh.deviceTriangles == scene->dscene.tri_vindex.size();
 }
 
 std::vector<unsigned char> BakeCoverage(const OutputDriver::Tile &tile)

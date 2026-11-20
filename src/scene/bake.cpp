@@ -63,6 +63,8 @@ void BakeManager::device_update(Device * /*device*/,
   memset(kbake, 0, sizeof(*kbake));
 
   kbake->use_camera = use_camera_;
+  kbake->num_objects = int(dscene->objects.size());
+  kbake->num_triangles = int(dscene->tri_vindex.size());
 
   if (use_baking_) {
     const scoped_callback_timer timer([scene](double time) {

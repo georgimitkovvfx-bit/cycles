@@ -1412,6 +1412,12 @@ struct KernelBake {
   int object_index;
   int tri_offset;
   int use_camera;
+  /* Sizes of the object and triangle arrays, to validate the objects and triangles of the bake
+   * object pass, which the application writes. */
+  int num_objects;
+  int num_triangles;
+  int pad1;
+  int pad2;
 };
 static_assert_align(KernelBake, 16);
 
