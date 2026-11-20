@@ -52,7 +52,7 @@ endif()
 cycles_external_libraries_append(LIB)
 
 # With the delegate's own shader nodes, expanded into Cycles nodes by the translator.
-add_executable(shaders_node_dump src/shaders.cpp ../parallax_occlusion.cpp)
+add_executable(shaders_node_dump src/shaders.cpp ../dome_texture.cpp ../parallax_occlusion.cpp)
 target_include_directories(shaders_node_dump PRIVATE ../..)
 target_link_libraries(shaders_node_dump PRIVATE ${LIB})
 target_compile_definitions(shaders_node_dump PRIVATE $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX=1>)

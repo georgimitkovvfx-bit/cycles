@@ -33,6 +33,7 @@ set(SRC_HD_CYCLES_HEADERS
   instancer.h
   bake.h
   cylinder_light.h
+  dome_texture.h
   light.h
   material.h
   mesh.h
@@ -62,6 +63,7 @@ set(SRC_HD_CYCLES
   instancer.cpp
   bake.cpp
   cylinder_light.cpp
+  dome_texture.cpp
   light.cpp
   material.cpp
   mesh.cpp

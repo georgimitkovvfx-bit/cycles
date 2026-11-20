@@ -17,6 +17,8 @@
 #include "scene/light.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
+
+#include "hydra/dome_texture.h"
 #include "session/session.h"
 #include "util/path.h"
 #include "util/string.h"
@@ -611,6 +613,55 @@ void HdCyclesSession::SetWorldSource(Shader *shader, ShaderGraph &graph)
   _worldSources[shader] = {std::move(copy), ++_worldSourceVersion};
   if (!_combinedWorldKey.empty()) {
     lightsChanged = true;
+  }
+  for (const auto &[light, world] : _worldMaterials) {
+    if (world.lightShader == shader && _domeTextureMaterials.count(world.material)) {
+      RequestResync(true, false);
+      break;
+    }
+  }
+}
+
+void HdCyclesSession::ExpandDomeTextures(ShaderGraph *graph, const WorldMaterial &world)
+{
+  std::vector<ShaderNode *> domeTextures;
+  for (ShaderNode *node : graph->nodes) {
+    if (node->type == DomeTextureNode::get_node_type()) {
+      domeTextures.push_back(node);
+    }
+  }
+  if (domeTextures.empty()) {
+    return;
+  }
+  _domeTextureMaterials.insert(world.material);
+
+  /* The Background color of the light's own graph, before the HSV node of AdjustWorld. */
+  ShaderOutput *color = nullptr;
+  float3 constant = zero_float3();
+  const auto source = _worldSources.find(world.lightShader);
+  if (source != _worldSources.end()) {
+    ShaderOutput *surface = CopyGraphNodes(*source->second.graph, graph).first;
+    if (surface && surface->parent->type == BackgroundNode::get_node_type()) {
+      BackgroundNode *background = static_cast<BackgroundNode *>(surface->parent);
+      color = background->input("Color")->link;
+      constant = background->get_color();
+      if (color && color->parent->type == HSVNode::get_node_type()) {
+        constant = static_cast<HSVNode *>(color->parent)->get_color();
+        color = color->parent->input("Color")->link;
+      }
+    }
+  }
+  if (!color) {
+    ColorNode *node = graph->create_node<ColorNode>();
+    node->set_value(constant);
+    color = node->output("Color");
+  }
+  for (ShaderNode *node : domeTextures) {
+    const vector<ShaderInput *> links = node->output("Color")->links;
+    for (ShaderInput *to : links) {
+      graph->disconnect(to);
+      graph->connect(color, to);
+    }
   }
 }
 

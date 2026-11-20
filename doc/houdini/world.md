@@ -27,6 +27,16 @@ physical sun and sky, the **Cycles Sun & Sky** LOP (both below).
    material is found; set the strength on the Background shader instead. If the path is empty or
    no material exists at that path, the dome light renders as usual.
 
+To keep the dome light's own look in a world material, use the **Dome Texture** node (Cycles >
+Input): its Color is the dome light's texture times its Color, Intensity and Exposure (its color
+alone without a texture), oriented like the dome. Mix it with a sky, blur it, or show a different
+background to the camera with a Light Path node, while the dome's HDRI keeps lighting the scene.
+The Cycles tab's Exposure, Saturation and Rotation apply to the world material, not again to the
+Dome Texture. In a material that is not a world, the node is black.
+
+The **Exposure**, **Saturation** and **Rotation** settings in the same World folder adjust the
+world quickly, for the dome's own texture or for its world material: see [lights.md](lights.md).
+
 The dome light still decides everything that is about the light: ray visibility (Diffuse,
 Glossy, Transmission, Volume Scatter on its Cycles tab), Multiple Importance, Max Bounces, its
 light group (which is also the world's light group), light linking, and whether it is visible at

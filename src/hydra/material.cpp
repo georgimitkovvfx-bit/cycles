@@ -10,6 +10,7 @@
 #ifdef WITH_HOUDINI_IMAGES
 #  include "hydra/houdini_image.h"
 #endif
+#include "hydra/dome_texture.h"
 #include "hydra/node_util.h"
 #include "hydra/parallax_occlusion.h"
 #include "hydra/session.h"
@@ -1273,6 +1274,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     if (worldRotation) {
       OrientWorldTextures(graph.get(), *worldRotation);
       HdCyclesSession::AdjustWorld(graph.get(), exp2f(world->exposure), world->saturation);
+      session->ExpandDomeTextures(graph.get(), *world);
     }
     AddIdAOVs(graph.get());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
@@ -1513,7 +1515,9 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(
   _nodes.clear();
 
   unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
-  ParallaxOcclusionNode::get_node_type(); /* Registers the node type for NodeType::find. */
+  /* Register the delegate's node types for NodeType::find. */
+  ParallaxOcclusionNode::get_node_type();
+  DomeTextureNode::get_node_type();
 
   HdMaterialNodeContainerSchema nodes = network.GetNodes();
 

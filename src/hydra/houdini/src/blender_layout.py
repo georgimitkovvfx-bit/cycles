@@ -181,6 +181,7 @@ VARIANT_MENUS = {
     "set_normal": "Utilities/Vector",
     # Delegate node (expanded by the translator), not in Blender.
     "parallax_occlusion": "Vector",
+    "dome_texture": "Input",
 }
 
 

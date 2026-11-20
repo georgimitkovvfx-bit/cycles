@@ -20,6 +20,7 @@
  */
 
 #include "graph/node_type.h"
+#include "hydra/dome_texture.h"
 #include "hydra/parallax_occlusion.h"
 #include "scene/background.h"
 #include "scene/film.h"
@@ -445,6 +446,7 @@ int main()
    * which register themselves on static initialization. */
   PrincipledBsdfNode::get_node_type();
   ParallaxOcclusionNode::get_node_type();
+  DomeTextureNode::get_node_type();
 
   /* Get all registered node type names */
   vector<ustring> names = NodeType::type_names();

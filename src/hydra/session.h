@@ -352,6 +352,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   const WorldMaterial *GetWorldOf(const std::string &material) const;
   // Scales the strength and the saturation of the Background nodes of a world shader graph
   static void AdjustWorld(CCL_NS::ShaderGraph *graph, float strength, float saturation);
+  // Replaces the Dome Texture nodes of a world material's graph by a copy of its dome light's
+  // color (texture times color and intensity, without the quick adjustments)
+  void ExpandDomeTextures(CCL_NS::ShaderGraph *graph, const WorldMaterial &world);
   // Copy of a world shader's graph (a dome light's own shader or a world material) before
   // Cycles finalizes it, to add several dome lights into one world. Called with the scene locked.
   void SetWorldSource(CCL_NS::Shader *shader, CCL_NS::ShaderGraph &graph);
@@ -430,6 +433,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     uint64_t version;
   };
   std::map<const CCL_NS::Shader *, WorldSource> _worldSources;
+  // World materials with Dome Texture nodes: rebuilt when their dome light's shader changes
+  std::set<std::string> _domeTextureMaterials;
   uint64_t _worldSourceVersion = 0;
   std::map<const CCL_NS::Light *, bool> _domeUseMis;
   // Background shader adding the shaders of several dome lights, and what it was built from

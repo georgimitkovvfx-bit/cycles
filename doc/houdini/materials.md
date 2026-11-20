@@ -72,7 +72,7 @@ The Tab menu groups the nodes like Blender's Add menu:
 
 | Tab menu | Nodes |
 |---|---|
-| Cycles > Input | Ambient Occlusion, Attribute, Bevel, Camera Data, Color Attribute, Curves Info, Fresnel, Geometry, Layer Weight, Light Path, Object Info, Particle Info, Point Info, Raycast, Scene Time, Tangent, Texture Coordinate, UV Map, Volume Info, Wireframe |
+| Cycles > Input | Ambient Occlusion, Attribute, Bevel, Camera Data, Color Attribute, Curves Info, Dome Texture (world materials, see [world.md](world.md)), Fresnel, Geometry, Layer Weight, Light Path, Object Info, Particle Info, Point Info, Raycast, Scene Time, Tangent, Texture Coordinate, UV Map, Volume Info, Wireframe |
 | Cycles > Input > Constant | Color, Value |
 | Cycles > Output | AOV Output |
 | Cycles > Shader | Add Shader, Background, Diffuse BSDF, Emission, Glass BSDF, Glossy BSDF, Hair BSDF, Holdout, Metallic BSDF, Mix Closure Weight, Mix Shader, Principled BSDF, Principled Hair BSDF, Principled Volume, Ray Portal BSDF, Refraction BSDF, Sheen BSDF, Subsurface Scattering, Toon BSDF, Translucent BSDF, Transparent BSDF, Volume Absorption, Volume Coefficients, Volume Scatter |
