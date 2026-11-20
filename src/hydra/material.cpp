@@ -1603,12 +1603,20 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(
     UpdateParameters(nodeDesc, nodeSchema.GetParameters(), nodePath);
   }
 
+#ifdef WITH_HYDRA_MATERIALX
+  std::shared_ptr<MaterialXLinkCache> materialXCache;
+#endif
   const auto linkMaterialX =
       [&](const TfToken &upstreamNode, const TfToken &output, ShaderInput *input) {
 #ifdef WITH_HYDRA_MATERIALX
-        return materialXNodes.count(upstreamNode) &&
-               LinkMaterialXNode(
-                   graph.get(), materialId, network, primContainer, upstreamNode, output, input);
+        return materialXNodes.count(upstreamNode) && LinkMaterialXNode(graph.get(),
+                                                                       materialId,
+                                                                       network,
+                                                                       primContainer,
+                                                                       upstreamNode,
+                                                                       output,
+                                                                       input,
+                                                                       materialXCache);
 #else
         (void)upstreamNode, (void)output, (void)input, (void)primContainer, (void)materialId;
         return false;

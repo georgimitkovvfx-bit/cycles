@@ -29,15 +29,20 @@ CCL_NS::unique_ptr<CCL_NS::ShaderGraph> BuildMaterialXShaderGraph(
     const PXR_NS::HdMaterialNetworkSchema &network,
     const PXR_NS::HdContainerDataSourceHandle &primContainer);
 
+/* The MaterialX nodes LinkMaterialXNode translated into one Cycles graph. */
+struct MaterialXLinkCache;
+
 /* Link an output of a MaterialX node of a network of other nodes (with its upstream nodes) to a
  * Cycles input, or set it as constant: MaterialX nodes feeding a Karma Hair (kma_hair) in a Karma
- * Material Builder. Returns false if the output could not be translated. */
+ * Material Builder. Returns false if the output could not be translated. `cache` (empty at first,
+ * one per graph) translates a node feeding several inputs once. */
 bool LinkMaterialXNode(CCL_NS::ShaderGraph *graph,
                        const PXR_NS::SdfPath &materialId,
                        const PXR_NS::HdMaterialNetworkSchema &network,
                        const PXR_NS::HdContainerDataSourceHandle &primContainer,
                        const PXR_NS::TfToken &nodeName,
                        const PXR_NS::TfToken &outputName,
-                       CCL_NS::ShaderInput *input);
+                       CCL_NS::ShaderInput *input,
+                       std::shared_ptr<MaterialXLinkCache> &cache);
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE

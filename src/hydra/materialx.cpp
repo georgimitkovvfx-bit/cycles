@@ -1941,28 +1941,43 @@ unique_ptr<ShaderGraph> BuildMaterialXShaderGraph(const SdfPath &materialId,
   return graph;
 }
 
+struct MaterialXLinkCache {
+  /* Document node and its translator (which caches the outputs) per network node, no
+   * translator when the node has no document. */
+  std::map<TfToken, std::pair<mx::NodePtr, std::unique_ptr<Translator>>> nodes;
+};
+
 bool LinkMaterialXNode(ShaderGraph *graph,
                        const SdfPath &materialId,
                        const HdMaterialNetworkSchema &network,
                        const HdContainerDataSourceHandle &primContainer,
                        const TfToken &nodeName,
                        const TfToken &outputName,
-                       ShaderInput *input)
+                       ShaderInput *input,
+                       std::shared_ptr<MaterialXLinkCache> &cache)
 {
   const mx::DocumentPtr &libraries = HdMtlxStdLibraries();
   if (!libraries) {
     return false;
   }
-  HdDataSourceMaterialNetworkInterface networkInterface(
-      materialId, network.GetContainer(), primContainer);
-  mx::DocumentPtr doc;
-  const mx::NodePtr node = CreateDocument(
-      networkInterface, libraries, materialId, nodeName, nodeName, doc);
-  if (!node) {
+  if (!cache) {
+    cache = std::make_shared<MaterialXLinkCache>();
+  }
+  auto [it, inserted] = cache->nodes.try_emplace(nodeName);
+  auto &[node, translator] = it->second;
+  if (inserted) {
+    HdDataSourceMaterialNetworkInterface networkInterface(
+        materialId, network.GetContainer(), primContainer);
+    mx::DocumentPtr doc;
+    node = CreateDocument(networkInterface, libraries, materialId, nodeName, nodeName, doc);
+    if (node) {
+      translator = make_unique<Translator>(graph, doc, materialId);
+    }
+  }
+  if (!translator) {
     return false;
   }
-  Translator translator(graph, doc, materialId);
-  return translator.LinkOutput(node, outputName.IsEmpty() ? "out" : outputName.GetString(), input);
+  return translator->LinkOutput(node, outputName.IsEmpty() ? "out" : outputName.GetString(), input);
 }
 
 HDCYCLES_NAMESPACE_CLOSE_SCOPE
