@@ -198,7 +198,7 @@ AOV_SHARED_PASS = {
 # Python Script LOP inside the node: authors a render var for every enabled pass and shader AOV
 # and adds it to the render product.
 AOV_SCRIPT = """import hou
-from pxr import Sdf, Tf, UsdRender
+from pxr import Sdf, Tf, UsdGeom, UsdLux, UsdRender
 
 PASSES = %r
 CRYPTOMATTE = %r
@@ -248,9 +248,33 @@ for i in range(1, top.evalParm("primvar_aovs") + 1):
         add_var(name, name, "primvar", "color3f" if color else "float")
 
 # Light groups, with Blender's pass names
-for i in range(1, top.evalParm("lightgroups") + 1):
-    name = top.evalParm("lightgroup_name%%d" %% i)
-    if name:
+groups = [top.evalParm("lightgroup_name%%d" %% i)
+          for i in range(1, top.evalParm("lightgroups") + 1)]
+if top.evalParm("lightgroups_auto"):
+    # A group per light without one, named after the light, dome lights in "Environment", and
+    # the objects without a group in "Rest": a constant primvar on the root prims, inherited by
+    # every object below that has none of its own.
+    group_attr = "inputs:cycles:light:lightgroup"
+    for prim in stage.Traverse():
+        if not (prim.IsA(UsdLux.BoundableLightBase) or prim.IsA(UsdLux.NonboundableLightBase)):
+            continue
+        attr = prim.GetAttribute(group_attr)
+        name = attr.Get() if attr else None
+        if not name:
+            name = ("Environment" if prim.GetTypeName() in ("DomeLight", "DomeLight_1") else
+                    prim.GetName())
+            prim.CreateAttribute(group_attr, Sdf.ValueTypeNames.String).Set(name)
+        groups.append(name)
+    for root in stage.GetPseudoRoot().GetChildren():
+        primvars = UsdGeom.PrimvarsAPI(root)
+        if not primvars.GetPrimvar("cycles:object:lightgroup").HasAuthoredValue():
+            primvars.CreatePrimvar("cycles:object:lightgroup", Sdf.ValueTypeNames.String,
+                                   UsdGeom.Tokens.constant).Set("Rest")
+    groups.append("Rest")
+added = set()
+for name in groups:
+    if name and name not in added:
+        added.add(name)
         add_var("Combined_" + name, "lightgroup:" + name, "raw", "color3f")
 
 # Image filter lists (slap comps) husk applies to the rendered AOVs
@@ -387,6 +411,12 @@ def aov_parameters(passes_folder):
 
     lightgroup = hou.FolderParmTemplate("folder_aov_lightgroup", "Light Groups",
                                         folder_type=hou.folderType.Collapsible)
+    lightgroup.addParmTemplate(hou.ToggleParmTemplate(
+        "lightgroups_auto", "Light Group per Light", default_value=False,
+        help="Put every light without a Light Group in its own group, named after the light "
+             "prim, dome lights in Environment, and every object without a Light Group in Rest "
+             "(emissive objects), and render a Combined_<name> render var for each. Lights "
+             "must be above this node."))
     groups = hou.FolderParmTemplate("lightgroups", "Light Groups",
                                     folder_type=hou.folderType.MultiparmBlock)
     groups.setHelp("A Combined_<name> render var per light group: the light of the lights, "
@@ -627,6 +657,29 @@ def main():
                     "renderproduct_combineddiffuse", "renderproduct_AOV",
                     "renderproduct_Cd", "renderproduct_Combined_key"]:
         raise RuntimeError("Unexpected split render products %r" % products)
+    test.parm("splitrendervars").set(False)
+    lights = stage.createNode("pythonscript")
+    lights.parm("python").set("\n".join([
+        "import hou",
+        "from pxr import UsdGeom, UsdLux",
+        "stage = hou.pwd().editableStage()",
+        "UsdLux.SphereLight.Define(stage, '/lights/key')",
+        "UsdLux.DomeLight.Define(stage, '/lights/dome')",
+        "UsdGeom.Xform.Define(stage, '/geo')"]))
+    test.setInput(0, lights)
+    test.parm("lightgroups_auto").set(True)
+    stage_prims = test.stage()
+    product = stage_prims.GetPrimAtPath("/Render/%s/Products/renderproduct" % test.name())
+    targets = [str(t).rsplit("/", 1)[1]
+               for t in product.GetRelationship("orderedVars").GetTargets()]
+    dome = stage_prims.GetPrimAtPath("/lights/dome").GetAttribute(
+        "inputs:cycles:light:lightgroup").Get()
+    rest = stage_prims.GetPrimAtPath("/geo").GetAttribute("primvars:cycles:object:lightgroup")
+    if targets[5:] != ["Combined_key", "Combined_Environment", "Combined_Rest"] or \
+            dome != "Environment" or rest.Get() != "Rest":
+        raise RuntimeError("Unexpected automatic light groups %r, %r" % (targets, dome))
+    test.setInput(0, None)
+    test.parm("lightgroups_auto").set(False)
     test.parm("blender_defaults").pressButton()
     settings_prim = test.stage().GetPrimAtPath("/Render/%s" % test.name())
     for name, value in rendersettings2ds.BLENDER_DEFAULTS.items():
