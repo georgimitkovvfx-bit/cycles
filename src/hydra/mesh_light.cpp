@@ -202,7 +202,7 @@ void HdCyclesGeometryLightSceneIndex::_PrimsDirtied(
   _SendPrimsDirtied(dirtied);
 }
 
-void HdCyclesGeometryLight::Sync(HdCyclesSession *session,
+bool HdCyclesGeometryLight::Sync(HdCyclesSession *session,
                                  Scene *scene,
                                  HdSceneDelegate *sceneDelegate,
                                  const SdfPath &id,
@@ -327,12 +327,14 @@ void HdCyclesGeometryLight::Sync(HdCyclesSession *session,
   const std::string lightgroup = isLight ? GetTypedValue<std::string>(
                                                lightDs, _tokens->lightgroup, std::string()) :
                                            std::string();
-  if (!lightgroup.empty() || _lightGroup) {
+  const bool restoreObjectSettings = lightgroup.empty() && _lightGroup;
+  if (!lightgroup.empty()) {
     for (Object *instance : instances) {
       instance->set_lightgroup(ustring(lightgroup));
     }
   }
   _lightGroup = !lightgroup.empty();
+  return restoreObjectSettings;
 }
 
 void HdCyclesGeometryLight::Finalize(HdCyclesSession *session, const bool keepNodes)

@@ -61,8 +61,9 @@ class HdCyclesGeometryLightSceneIndex final : public HdSingleInputFilteringScene
 class HdCyclesGeometryLight {
  public:
   /* `primDs` of the gprim `id`. Call every Sync of the gprim, after its geometry and materials
-   * are set. */
-  void Sync(HdCyclesSession *session,
+   * are set. True when the light no longer sets the light group of the instances: the caller
+   * applies the object's own settings again. */
+  bool Sync(HdCyclesSession *session,
             CCL_NS::Scene *scene,
             HdSceneDelegate *sceneDelegate,
             const SdfPath &id,
