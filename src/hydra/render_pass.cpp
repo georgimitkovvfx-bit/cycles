@@ -24,11 +24,63 @@
 
 #include "session/session.h"
 
+#include <pxr/base/tf/stringUtils.h>
+#include <pxr/imaging/hd/collectionExpressionEvaluator.h>
+#include <pxr/imaging/hd/collectionsSchema.h>
 #include <pxr/imaging/hd/renderIndex.h>
 #include <pxr/imaging/hd/renderPassState.h>
 #include <pxr/imaging/hd/utils.h>
 
+#include <cstring>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+/* The rprims of Selected to Active bake sources: prim paths and their descendants (a group), or
+ * USD collections "/prim.collection:name", separated by spaces. */
+std::vector<std::string> ResolveBakeSources(HdRenderIndex *renderIndex, const std::string &sources)
+{
+  static const char *const collectionSeparator = ".collection:";
+  const SdfPathVector rprims = renderIndex->GetRprimIds();
+  const HdSceneIndexBaseRefPtr sceneIndex = renderIndex->GetTerminalSceneIndex();
+  std::vector<std::string> prims;
+  for (const std::string &entry : TfStringTokenize(sources)) {
+    const size_t collection = entry.find(collectionSeparator);
+    if (collection == std::string::npos) {
+      const SdfPath path(entry);
+      if (!path.IsAbsolutePath()) {
+        continue;
+      }
+      for (const SdfPath &id : rprims) {
+        if (id.HasPrefix(path)) {
+          prims.push_back(id.GetString());
+        }
+      }
+      continue;
+    }
+    const SdfPath path(entry.substr(0, collection));
+    if (!sceneIndex || !path.IsAbsolutePath()) {
+      continue;
+    }
+    const HdPathExpressionDataSourceHandle expression =
+        HdCollectionsSchema::GetFromParent(sceneIndex->GetPrim(path).dataSource)
+            .GetCollection(TfToken(entry.substr(collection + std::strlen(collectionSeparator))))
+            .GetMembershipExpression();
+    if (!expression) {
+      continue;
+    }
+    const HdCollectionExpressionEvaluator evaluator(sceneIndex, expression->GetTypedValue(0.0f));
+    for (const SdfPath &id : rprims) {
+      if (evaluator.Match(id)) {
+        prims.push_back(id.GetString());
+      }
+    }
+  }
+  return prims;
+}
+
+}  // namespace
 
 HdCyclesRenderPass::HdCyclesRenderPass(HdRenderIndex *index,
                                        const HdRprimCollection &collection,
@@ -149,6 +201,9 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     const BakeSettings bake = _renderParam->GetBake();
     if (!bake.object.empty() || scene->bake_manager->get_baking()) {
       SetBakeTarget(scene, bake);
+      _renderParam->SetBakeSourcePrims(
+          bake.useSources() ? ResolveBakeSources(renderIndex, bake.sources) :
+                              std::vector<std::string>());
     }
 
     bool displayChanged = false;

@@ -899,14 +899,18 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 
   /* Texture baking reads the bake input passes the output driver writes, and the UV map of the
    * target, which the geometry exports for a UV pass. */
-  if (!GetBakeObject().empty()) {
+  const BakeSettings bake = GetBake();
+  if (!bake.object.empty()) {
     const std::pair<PassType, const char *> bakePasses[] = {
         {PASS_BAKE_PRIMITIVE, kBakePrimitivePass},
         {PASS_BAKE_DIFFERENTIAL, kBakeDifferentialPass},
         {PASS_UV, "BakeUV"},
+        {PASS_BAKE_OBJECT, kBakeObjectPass},
     };
     for (const auto &[type, name] : bakePasses) {
-      if (type == PASS_UV && passOfType.count(PASS_UV)) {
+      if ((type == PASS_UV && passOfType.count(PASS_UV)) ||
+          (type == PASS_BAKE_OBJECT && !bake.useSources()))
+      {
         continue;
       }
       Pass *pass = scene->create_node<Pass>();

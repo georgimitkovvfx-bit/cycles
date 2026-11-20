@@ -373,6 +373,11 @@ The **Texture Cache** toggle in the panel header turns the panel on; the other s
 | Bake Object | `cycles:bake_object` | (empty) | Mesh prim to bake. The render is then the mesh's UV space instead of the camera view, like Blender's Bake: each pixel shades the point of the surface that covers it in the UV map, at the render resolution. Empty renders the camera view. |
 | Instance | `cycles:bake_instance` | 0 | Instance of an instanced Bake Object to bake: its instance index in the point instancer (the `instanceId` AOV). |
 | UV Map | `cycles:bake_uv_map` | (empty) | UV primvar the image maps, like Blender's active UV map (e.g. `uv2`); the mesh exports it for the bake even when no shader reads it. Empty uses the default UV map (`st`, `uv`, then the first texture coordinate primvar). Tangent space normals use per triangle tangents for maps other than the default one. |
+| Selected to Active | `cycles:bake_use_selected_to_active` | off | Bakes the shading of the Source prims onto the Bake Object, like Blender's Selected to Active: a ray from each pixel's point of the Bake Object goes inwards along its normal (smooth faces: the interpolated vertex normal) and the Source surface it hits is shaded. |
+| Source | `cycles:bake_source` | (empty) | Prims baked from (Blender's selected objects): prim paths with the meshes below them, or USD collections (`/prim.collection:name`), separated by spaces. The Bake Object itself is skipped. |
+| Cage Object | `cycles:bake_cage_object` | (empty) | Mesh the rays start from, with the same triangles as the Bake Object; rays go from the cage point to the Bake Object point. Empty uses the Extrusion. |
+| Extrusion | `cycles:bake_cage_extrusion` | 0 | Inflates the Bake Object along its normals by this distance (world units) for the ray starts, so Source surfaces outside it are hit. |
+| Max Ray Distance | `cycles:bake_max_ray_distance` | 0 | Longest distance from the ray start to the Source surface, 0 is no limit. |
 | Normal Space | `cycles:bake_normal_space` | Tangent | Space of baked Normal render vars: Tangent (a normal map: tangent along the UV map's U direction, bitangent along V, normal, mapped from -1..1 to 0..1 like Blender's), Object, or World (Cycles' normal pass). Tangents are MikkTSpace tangents, like Blender's. |
 | Margin | `cycles:bake_margin` | 16 | Extends the baked result around the UV islands, in pixels, so seams do not show (Blender's Extend margin). Applied to the final image (and husk's updates), not to progressive viewport updates. ID AOVs get no margin. |
 
@@ -385,7 +390,7 @@ Glossy Color give albedo maps, Normal gives normals (see Normal Space), Emit, AO
 and light groups work too. Pixels outside the UV islands have zero alpha. Render it with husk or
 the USD Render ROP as usual (the camera is still needed by the render settings but not used).
 
-Limits: no Selected to Active (cage) baking.
+Selected to Active casts the rays on the CPU (Embree) when the render starts, also for GPU renders. Its pixels are not anti-aliased (no ray differentials, like Blender's). The Bake Object stays in the scene: hide it from shadow and indirect rays (Cycles object visibility) when it encloses the Source. Instanced prims under a Source path are matched by their Hydra prim path.
 
 ## Settings without a UI
 

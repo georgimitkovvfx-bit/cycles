@@ -57,7 +57,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     (disableMotionBlur) \
     (instantaneousShutter) \
     (disableDepthOfField) \
-    ((motionSteps, "cycles:motion_steps"))     ((dicingRate, "cycles:dicing_rate"))     ((previewDicingRate, "cycles:preview_dicing_rate"))     ((maxSubdivisions, "cycles:max_subdivisions"))     ((offscreenDicingScale, "cycles:offscreen_dicing_scale"))     ((dicingCamera, "cycles:dicing_camera"))     ((bakeObject, "cycles:bake_object"))     ((bakeInstance, "cycles:bake_instance"))     ((bakeUVMap, "cycles:bake_uv_map"))     ((bakeMargin, "cycles:bake_margin"))     ((bakeNormalSpace, "cycles:bake_normal_space")) \
+    ((motionSteps, "cycles:motion_steps"))     ((dicingRate, "cycles:dicing_rate"))     ((previewDicingRate, "cycles:preview_dicing_rate"))     ((maxSubdivisions, "cycles:max_subdivisions"))     ((offscreenDicingScale, "cycles:offscreen_dicing_scale"))     ((dicingCamera, "cycles:dicing_camera"))     ((bakeObject, "cycles:bake_object"))     ((bakeInstance, "cycles:bake_instance"))     ((bakeUVMap, "cycles:bake_uv_map"))     ((bakeSelectedToActive, "cycles:bake_use_selected_to_active"))     ((bakeSource, "cycles:bake_source"))     ((bakeCageObject, "cycles:bake_cage_object"))     ((bakeCageExtrusion, "cycles:bake_cage_extrusion"))     ((bakeMaxRayDistance, "cycles:bake_max_ray_distance"))     ((bakeMargin, "cycles:bake_margin"))     ((bakeNormalSpace, "cycles:bake_normal_space")) \
     ((abortNoGpu, "cycles:abort_no_gpu")) \
     ((abortMissingTexture, "cycles:abort_missing_texture")) \
     ((materialOverride, "cycles:material_override")) \

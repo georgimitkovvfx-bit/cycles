@@ -1303,17 +1303,32 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeObject ||
            key == HdCyclesRenderSettingsTokens->bakeInstance ||
-           key == HdCyclesRenderSettingsTokens->bakeUVMap)
+           key == HdCyclesRenderSettingsTokens->bakeUVMap ||
+           key == HdCyclesRenderSettingsTokens->bakeSelectedToActive ||
+           key == HdCyclesRenderSettingsTokens->bakeSource ||
+           key == HdCyclesRenderSettingsTokens->bakeCageObject ||
+           key == HdCyclesRenderSettingsTokens->bakeCageExtrusion ||
+           key == HdCyclesRenderSettingsTokens->bakeMaxRayDistance)
   {
     const auto get = [&](const TfToken &setting) {
       const auto it = _settingsMap.find(setting);
       return it == _settingsMap.end() ? VtValue() : it->second;
+    };
+    const auto getFloat = [&](const TfToken &setting) {
+      return std::max(0.0f, VtValue::Cast<float>(get(setting)).GetWithDefault(0.0f));
     };
     BakeSettings bake;
     bake.object = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeObject), "");
     bake.instance = std::max(
         0, VtValue::Cast<int>(get(HdCyclesRenderSettingsTokens->bakeInstance)).GetWithDefault(0));
     bake.uvMap = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeUVMap), "");
+    bake.selectedToActive =
+        VtValue::Cast<bool>(get(HdCyclesRenderSettingsTokens->bakeSelectedToActive))
+            .GetWithDefault(false);
+    bake.sources = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeSource), "");
+    bake.cage = GetStringSetting(get(HdCyclesRenderSettingsTokens->bakeCageObject), "");
+    bake.cageExtrusion = getFloat(HdCyclesRenderSettingsTokens->bakeCageExtrusion);
+    bake.maxRayDistance = getFloat(HdCyclesRenderSettingsTokens->bakeMaxRayDistance);
     _renderParam->SetBake(bake);
   }
   else if (key == HdCyclesRenderSettingsTokens->bakeNormalSpace) {

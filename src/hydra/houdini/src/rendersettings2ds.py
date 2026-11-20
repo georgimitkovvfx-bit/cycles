@@ -95,6 +95,11 @@ SESSION_SETTINGS = {
     "cycles:bake_object": {"type": "string", "default": ""},
     "cycles:bake_instance": {"type": "int", "default": 0},
     "cycles:bake_uv_map": {"type": "string", "default": ""},
+    "cycles:bake_use_selected_to_active": {"type": "boolean", "default": False},
+    "cycles:bake_source": {"type": "string", "default": ""},
+    "cycles:bake_cage_object": {"type": "string", "default": ""},
+    "cycles:bake_cage_extrusion": {"type": "float", "default": 0.0},
+    "cycles:bake_max_ray_distance": {"type": "float", "default": 0.0},
     "cycles:material_override": {"type": "string", "default": ""},
     "cycles:bake_margin": {"type": "int", "default": 16},
     "cycles:bake_normal_space": {"type": "menu", "default": "tangent",
@@ -219,6 +224,13 @@ PRIM_PATH_TAGS = (
     ("script_action_help", "Select a primitive in the Scene Viewer or Scene Graph Tree pane."),
     ("script_action_icon", "BUTTONS_reselect"),
     ("sidefx::usdpathtype", "prim"),
+)
+# Prim list settings: select several prims.
+PRIM_LIST_TAGS = (
+    ("script_action", "import loputils; loputils.selectPrimsInParm(kwargs, True)"),
+    ("script_action_help", "Select primitives in the Scene Viewer or Scene Graph Tree pane."),
+    ("script_action_icon", "BUTTONS_reselect"),
+    ("sidefx::usdpathtype", "primlist"),
 )
 
 
@@ -637,6 +649,31 @@ LAYOUT = [
           "UV primvar of the Bake Object the image maps, like Blender's active UV map "
           "(e.g. uv2). Empty uses the default UV map (st, uv, then the first texture "
           "coordinate primvar)."),
+        P("Selected to Active", [
+            S("cycles:bake_use_selected_to_active", "Selected to Active",
+              "Bake the shading of the Source prims onto the Bake Object, like Blender's "
+              "Selected to Active: rays from each pixel of the Bake Object go inwards along its "
+              "normals and the surface they hit is shaded (e.g. a high poly mesh's details "
+              "baked into a low poly mesh's normal map)."),
+            S("cycles:bake_source", "Source",
+              "Prims baked from (Blender's selected objects): prim paths with the meshes below "
+              "them, or USD collections (/prim.collection:name), separated by spaces. The Bake "
+              "Object itself is skipped.",
+              tags=PRIM_LIST_TAGS),
+            S("cycles:bake_cage_object", "Cage Object",
+              "Mesh the rays start from, with the same triangles as the Bake Object (a copy "
+              "of it pushed out to enclose the Source). Empty uses the Extrusion.",
+              tags=PRIM_PATH_TAGS),
+            S("cycles:bake_cage_extrusion", "Extrusion",
+              "Inflates the Bake Object along its normals by this distance for the ray starts, "
+              "so Source surfaces outside it are hit. Not used with a Cage Object.",
+              range=(0, 1, True, False),
+              disablewhen='{ cycles:bake_cage_object != "" }'),
+            S("cycles:bake_max_ray_distance", "Max Ray Distance",
+              "Longest distance from the ray start to the Source surface; farther surfaces "
+              "are not baked. 0 is no limit.",
+              range=(0, 1, True, False)),
+        ], toggle="cycles:bake_use_selected_to_active"),
         S("cycles:bake_normal_space", "Normal Space",
           "Space of baked Normal render vars: Tangent for normal maps (tangent along the UV "
           "map's U, bitangent along V, mapped to 0..1 like Blender's), Object, or World "

@@ -9,16 +9,24 @@
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/scene.h"
+#include "util/tbb.h"
+
+#ifdef WITH_EMBREE
+#  include <embree4/rtcore.h>
+#endif
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <set>
 #include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 const char *const kBakePrimitivePass = "BakePrimitive";
 const char *const kBakeDifferentialPass = "BakeDifferential";
+const char *const kBakeObjectPass = "BakeObject";
 
 namespace {
 
@@ -55,9 +63,213 @@ float AsFloat(const uint bits)
   return __uint_as_float(bits);
 }
 
+#ifdef WITH_EMBREE
+/* For the rays of Selected to Active, one for the process (Cycles' own is the CPU device's). */
+RTCDevice BakeRayDevice()
+{
+  static const RTCDevice device = rtcNewDevice(nullptr);
+  return device;
+}
+#endif
+
+/* Corner positions of a mesh in world space. */
+std::vector<float3> WorldCorners(const Object *object)
+{
+  const Mesh *const mesh = static_cast<const Mesh *>(object->get_geometry());
+  const Attribute *const attrP = mesh->attributes.find(ATTR_STD_POSITION);
+  if (!attrP) {
+    return {};
+  }
+  const packed_float3 *const P = attrP->data<packed_float3>();
+  const array<int> &triangles = mesh->get_triangles();
+  const Transform tfm = object->get_tfm();
+  std::vector<float3> corners(triangles.size());
+  for (size_t c = 0; c < triangles.size(); ++c) {
+    const float3 p = make_float3(P[triangles[c]]);
+    corners[c] = mesh->transform_applied ? p : transform_point(&tfm, p);
+  }
+  return corners;
+}
+
 }  // namespace
 
-BakeMesh SnapshotBakeMesh(Scene *scene, const BakeSettings &settings)
+struct BakeSources {
+#ifdef WITH_EMBREE
+  RTCScene scene = nullptr;
+#endif
+  /* Device index of the object of each geometry of the scene. */
+  std::vector<int> objects;
+  /* Cage corners in world space, empty without a cage. */
+  std::vector<float3> cage;
+  /* Smooth shading of the target's triangles, which then cast along the vertex normals. */
+  std::vector<unsigned char> smooth;
+  Transform inverseTfm = transform_identity();
+  float extrusion = 0.0f;
+  float maxDistance = 0.0f;
+
+  BakeSources() = default;
+  BakeSources(const BakeSources &) = delete;
+  BakeSources &operator=(const BakeSources &) = delete;
+  ~BakeSources()
+  {
+#ifdef WITH_EMBREE
+    if (scene) {
+      rtcReleaseScene(scene);
+    }
+#endif
+  }
+};
+
+namespace {
+
+/* Selected to Active: the source meshes (but the target) in world space in a BVH, built for
+ * each snapshot.
+ * shortcut: rebuilt per snapshot (each render start and tile); keep it while the sources do not
+ * change if large sources make restarts slow. */
+std::shared_ptr<const BakeSources> SnapshotBakeSources(Scene *scene,
+                                                       const BakeSettings &settings,
+                                                       const std::vector<std::string> &prims,
+                                                       const Object *target)
+{
+  auto sources = std::make_shared<BakeSources>();
+  const Mesh *const targetMesh = static_cast<const Mesh *>(target->get_geometry());
+  sources->inverseTfm = transform_inverse(target->get_tfm());
+  sources->extrusion = settings.cageExtrusion;
+  sources->maxDistance = settings.maxRayDistance;
+  const array<bool> &smooth = targetMesh->get_smooth();
+  sources->smooth.resize(targetMesh->num_triangles(), 1);
+  for (size_t t = 0; t < sources->smooth.size() && t < smooth.size(); ++t) {
+    sources->smooth[t] = smooth[t];
+  }
+  /* Blender's cage: the same triangles as the target, other positions. */
+  if (const Object *cage = FindBakeObject(scene, settings.cage, 0)) {
+    if (static_cast<const Mesh *>(cage->get_geometry())->num_triangles() ==
+        targetMesh->num_triangles())
+    {
+      sources->cage = WorldCorners(cage);
+    }
+  }
+
+#ifdef WITH_EMBREE
+  RTCDevice device = BakeRayDevice();
+  if (!device) {
+    return sources;
+  }
+  const std::set<std::string> names(prims.begin(), prims.end());
+  sources->scene = rtcNewScene(device);
+  for (const Object *object : scene->objects) {
+    if (object == target || !object->get_geometry() || !object->get_geometry()->is_mesh() ||
+        !names.count(object->name.string()))
+    {
+      continue;
+    }
+    const std::vector<float3> corners = WorldCorners(object);
+    if (corners.empty()) {
+      continue;
+    }
+    /* Corners, not shared vertices: as many as the target snapshot keeps. */
+    RTCGeometry geometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+    float *const vertices = static_cast<float *>(rtcSetNewGeometryBuffer(
+        geometry, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(float) * 3, corners.size()));
+    unsigned *const indices = static_cast<unsigned *>(
+        rtcSetNewGeometryBuffer(geometry,
+                                RTC_BUFFER_TYPE_INDEX,
+                                0,
+                                RTC_FORMAT_UINT3,
+                                sizeof(unsigned) * 3,
+                                corners.size() / 3));
+    for (size_t c = 0; c < corners.size(); ++c) {
+      vertices[c * 3 + 0] = corners[c].x;
+      vertices[c * 3 + 1] = corners[c].y;
+      vertices[c * 3 + 2] = corners[c].z;
+      indices[c] = unsigned(c);
+    }
+    rtcCommitGeometry(geometry);
+    rtcAttachGeometryByID(sources->scene, geometry, unsigned(sources->objects.size()));
+    rtcReleaseGeometry(geometry);
+    sources->objects.push_back(object->get_device_index());
+  }
+  rtcCommitScene(sources->scene);
+#else
+  (void)prims;
+#endif
+  return sources;
+}
+
+/* Selected to Active for one pixel of the target: the ray from the cage (or the extruded target)
+ * through the target's point, like Blender's. Replaces the target triangle and barycentrics of
+ * the pixel by those of the source surface it hits, false when it hits none. */
+bool CastBakeRay(const BakeMesh &mesh, float *primitive, float *object)
+{
+#ifdef WITH_EMBREE
+  const BakeSources &sources = *mesh.sources;
+  const size_t c = size_t(__float_as_uint(primitive[2])) * 3;
+  const float w[3] = {primitive[0], primitive[1], 1.0f - primitive[0] - primitive[1]};
+  float3 P = w[0] * mesh.P[c] + w[1] * mesh.P[c + 1] + w[2] * mesh.P[c + 2];
+  float3 N = (!mesh.N.empty() && sources.smooth[c / 3]) ?
+                 w[0] * mesh.N[c] + w[1] * mesh.N[c + 1] + w[2] * mesh.N[c + 2] :
+                 cross(mesh.P[c + 1] - mesh.P[c], mesh.P[c + 2] - mesh.P[c]);
+  if (!mesh.transformApplied) {
+    P = transform_point(&mesh.tfm, P);
+    N = transform_direction_transposed(&sources.inverseTfm, N);
+  }
+  N = safe_normalize(N);
+  /* shortcut: the extrusion is in world units (Blender's in object units), the same without
+   * object scale. */
+  float3 origin = P + N * sources.extrusion;
+  float3 direction = -N;
+  if (!sources.cage.empty()) {
+    origin = w[0] * sources.cage[c] + w[1] * sources.cage[c + 1] + w[2] * sources.cage[c + 2];
+    const float3 toTarget = P - origin;
+    if (len_squared(toTarget) > 0.0f) {
+      direction = normalize(toTarget);
+    }
+  }
+
+  RTCRayHit rayHit;
+  rayHit.ray.org_x = origin.x;
+  rayHit.ray.org_y = origin.y;
+  rayHit.ray.org_z = origin.z;
+  rayHit.ray.dir_x = direction.x;
+  rayHit.ray.dir_y = direction.y;
+  rayHit.ray.dir_z = direction.z;
+  rayHit.ray.tnear = 0.0f;
+  rayHit.ray.tfar = sources.maxDistance > 0.0f ? sources.maxDistance : FLT_MAX;
+  rayHit.ray.time = 0.0f;
+  rayHit.ray.mask = ~0u;
+  rayHit.ray.id = 0;
+  rayHit.ray.flags = 0;
+  rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+  rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+  rtcIntersect1(sources.scene, &rayHit);
+  if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+    return false;
+  }
+  /* Embree's u, v weigh corners 1 and 2, Blender's bake barycentrics corners 0 and 1. */
+  primitive[0] = 1.0f - rayHit.hit.u - rayHit.hit.v;
+  primitive[1] = rayHit.hit.u;
+  primitive[2] = AsFloat(rayHit.hit.primID);
+  *object = AsFloat(uint(sources.objects[rayHit.hit.geomID]));
+  return true;
+#else
+  (void)mesh;
+  (void)primitive;
+  (void)object;
+  return false;
+#endif
+}
+
+/* The target triangle and barycentrics of each pixel of the tile, and their derivatives. */
+void RasterizeBake(const BakeMesh &mesh,
+                   const OutputDriver::Tile &tile,
+                   std::vector<float> &primitive,
+                   std::vector<float> &differential);
+
+}  // namespace
+
+BakeMesh SnapshotBakeMesh(Scene *scene,
+                          const BakeSettings &settings,
+                          const std::vector<std::string> &sourcePrims)
 {
   BakeMesh bake;
   Object *const object = FindBakeObject(scene, settings.object, settings.instance);
@@ -94,6 +306,7 @@ BakeMesh SnapshotBakeMesh(Scene *scene, const BakeSettings &settings)
   const bool cornerUV = attrUV->element == ATTR_ELEMENT_CORNER;
 
   bake.object = object;
+  bake.objectIndex = object->get_device_index();
   bake.numTriangles = num;
   bake.tfm = object->get_tfm();
   bake.transformApplied = mesh->transform_applied;
@@ -117,6 +330,9 @@ BakeMesh SnapshotBakeMesh(Scene *scene, const BakeSettings &settings)
       bake.tangent[c] = make_float3(attrT->data<packed_float3>()[c]);
       bake.sign[c] = attrS->data<float>()[c];
     }
+  }
+  if (settings.useSources()) {
+    bake.sources = SnapshotBakeSources(scene, settings, sourcePrims, object);
   }
   return bake;
 }
@@ -204,6 +420,19 @@ void ConvertBakeNormals(const BakeMesh &mesh,
   if (!tile.get_pass_pixels(kBakePrimitivePass, 3, primitive.data())) {
     return;
   }
+  /* In the target's frame also with Selected to Active, whose pass holds the source triangles:
+   * the pixels the pass covers, at the target triangles of its UV map. */
+  std::vector<float> target;
+  if (mesh.sources) {
+    std::vector<float> differential;
+    RasterizeBake(mesh, tile, target, differential);
+    for (size_t i = 0; i < num; ++i) {
+      if (__float_as_uint(primitive[i * 3 + 2]) == ~0u) {
+        target[i * 3 + 2] = AsFloat(~0u);
+      }
+    }
+    primitive.swap(target);
+  }
 
   for (size_t i = 0; i < num; ++i) {
     const uint prim = __float_as_uint(primitive[i * 3 + 2]);
@@ -283,7 +512,12 @@ void SetBakeTarget(Scene *scene, const BakeSettings &bake)
   }
 }
 
-bool FillBakeTile(const BakeMesh &mesh, const OutputDriver::Tile &tile)
+namespace {
+
+void RasterizeBake(const BakeMesh &mesh,
+                   const OutputDriver::Tile &tile,
+                   std::vector<float> &primitive,
+                   std::vector<float> &differential)
 {
   const int width = tile.size.x;
   const int height = tile.size.y;
@@ -291,8 +525,8 @@ bool FillBakeTile(const BakeMesh &mesh, const OutputDriver::Tile &tile)
   const float fullHeight = float(tile.full_size.y);
   /* Empty pixels have primitive -1 (as bits). Cycles' passes start zeroed, which is triangle 0,
    * so a target without triangles or UVs writes empty passes. */
-  std::vector<float> primitive(size_t(width) * height * 3, 0.0f);
-  std::vector<float> differential(size_t(width) * height * 4, 0.0f);
+  primitive.assign(size_t(width) * height * 3, 0.0f);
+  differential.assign(size_t(width) * height * 4, 0.0f);
   for (size_t i = 0; i < size_t(width) * height; ++i) {
     primitive[i * 3 + 2] = AsFloat(~0u);
   }
@@ -337,6 +571,35 @@ bool FillBakeTile(const BakeMesh &mesh, const OutputDriver::Tile &tile)
         differential[pixel * 4 + 3] = dw1dy;
       }
     }
+  }
+}
+
+}  // namespace
+
+bool FillBakeTile(const BakeMesh &mesh, const OutputDriver::Tile &tile)
+{
+  std::vector<float> primitive, differential;
+  RasterizeBake(mesh, tile, primitive, differential);
+
+  /* The object of each pixel, when the bake object pass exists (Selected to Active): the target,
+   * or the source surface the ray from the target pixel hits. Without differentials (Blender's
+   * are zero too), so those pixels are not anti-aliased. */
+  const size_t num = size_t(tile.size.x) * tile.size.y;
+  std::vector<float> object(num, AsFloat(uint(mesh.objectIndex)));
+  if (mesh.sources) {
+    parallel_for(size_t(0), num, [&](const size_t i) {
+      if (__float_as_uint(primitive[i * 3 + 2]) == ~0u) {
+        return;
+      }
+      std::fill_n(&differential[i * 4], 4, 0.0f);
+      if (!CastBakeRay(mesh, &primitive[i * 3], &object[i])) {
+        primitive[i * 3 + 2] = AsFloat(~0u);
+      }
+    });
+  }
+  if (!tile.set_pass_pixels(kBakeObjectPass, 1, object.data()) && mesh.sources) {
+    /* No object pass yet (passes not rebuilt): source triangles would be read as the target's. */
+    RasterizeBake(BakeMesh(), tile, primitive, differential);
   }
 
   return tile.set_pass_pixels(kBakePrimitivePass, 3, primitive.data()) &&

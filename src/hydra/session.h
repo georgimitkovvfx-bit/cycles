@@ -197,6 +197,17 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     bakeChanged = true;
     RequestResync(false, true);
   }
+  /* Selected to Active: the rprims the bake sources match, resolved by the render pass. */
+  std::vector<std::string> GetBakeSourcePrims() const
+  {
+    const std::lock_guard<std::mutex> lock(_bakeMutex);
+    return _bakeSourcePrims;
+  }
+  void SetBakeSourcePrims(std::vector<std::string> prims)
+  {
+    const std::lock_guard<std::mutex> lock(_bakeMutex);
+    _bakeSourcePrims = std::move(prims);
+  }
   std::atomic<bool> bakeChanged = false;
   /* Bake margin in pixels (Blender's Extend margin). */
   std::atomic<int> bakeMargin = 16;
@@ -437,6 +448,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   DicingSettings _dicing;
   mutable std::mutex _bakeMutex;
   BakeSettings _bake;
+  std::vector<std::string> _bakeSourcePrims;
   mutable std::mutex _materialOverrideMutex;
   std::string _materialOverride;
   float _filmExposure = 1.0f;
