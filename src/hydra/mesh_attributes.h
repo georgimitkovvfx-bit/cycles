@@ -14,8 +14,10 @@
 #include "util/types.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <numeric>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -78,6 +80,103 @@ inline std::vector<float3> polygon_mesh_vertex_normals(const PolygonMesh &mesh)
   return normals;
 }
 
+/* Blender's weld of attr_create_pointiness: each vertex points to the first vertex after it, in
+ * the order of the sum of the coordinates, whose sum is at most 3 * FLT_EPSILON larger and whose
+ * squared distance is below FLT_EPSILON, then to the end of that chain. Blender scans the sorted
+ * vertices, which is quadratic when many have equal sums (flat grids): the candidates come from a
+ * grid of the positions here instead, with the same result. */
+inline std::vector<int> polygon_mesh_weld(const PolygonMesh &mesh)
+{
+  const int num_verts = mesh.num_verts;
+  const auto P = [&](const int v) -> float3 { return mesh.positions[v]; };
+  const auto sum = [](const float3 co) { return co.x + co.y + co.z; };
+
+  std::vector<int> sorted(num_verts);
+  std::iota(sorted.begin(), sorted.end(), 0);
+  std::sort(sorted.begin(), sorted.end(), [&](const int a, const int b) {
+    const float3 va = P(a);
+    const float3 vb = P(b);
+    if (va.x == vb.x && va.y == vb.y && va.z == vb.z) {
+      return a > b; /* Doubles in a fixed order. */
+    }
+    return sum(va) < sum(vb);
+  });
+  std::vector<int> rank(num_verts);
+  for (int s = 0; s < num_verts; ++s) {
+    rank[sorted[s]] = s;
+  }
+
+  /* Cells twice the weld distance (padded for rounding), so a vertex's neighbors are in at most
+   * 2 cells per axis. Non-finite positions never weld. */
+  const double radius = std::sqrt(double(FLT_EPSILON)) * 1.01;
+  const double cell_size = 2.0 * radius;
+  const auto cell = [&](const float x, const double offset) {
+    /* Clamped: far away cells share one, which only adds candidates. */
+    return int64_t(std::clamp(std::floor((double(x) + offset) / cell_size), -4e18, 4e18));
+  };
+  const auto cell_key = [](const int64_t x, const int64_t y, const int64_t z) {
+    return (uint64_t(x) * 73856093u) ^ (uint64_t(y) * 19349663u) ^ (uint64_t(z) * 83492791u);
+  };
+  const auto finite = [](const float3 co) {
+    return std::isfinite(co.x) && std::isfinite(co.y) && std::isfinite(co.z);
+  };
+  /* Vertices of a cell (key collisions only add candidates) as linked lists. */
+  std::unordered_map<uint64_t, int> head;
+  head.reserve(num_verts);
+  std::vector<int> next(num_verts, -1);
+  for (int v = 0; v < num_verts; ++v) {
+    const float3 co = P(v);
+    if (finite(co)) {
+      const auto [it, inserted] = head.try_emplace(
+          cell_key(cell(co.x, 0.0), cell(co.y, 0.0), cell(co.z, 0.0)), v);
+      if (!inserted) {
+        next[v] = it->second;
+        it->second = v;
+      }
+    }
+  }
+
+  std::vector<int> orig(num_verts);
+  for (int v = 0; v < num_verts; ++v) {
+    orig[v] = v;
+    const float3 co = P(v);
+    if (!finite(co)) {
+      continue;
+    }
+    int best = num_verts;
+    for (int64_t x = cell(co.x, -radius); x <= cell(co.x, radius); ++x) {
+      for (int64_t y = cell(co.y, -radius); y <= cell(co.y, radius); ++y) {
+        for (int64_t z = cell(co.z, -radius); z <= cell(co.z, radius); ++z) {
+          const auto it = head.find(cell_key(x, y, z));
+          if (it == head.end()) {
+            continue;
+          }
+          for (int other = it->second; other != -1; other = next[other]) {
+            const float3 other_co = P(other);
+            if (rank[other] > rank[v] && rank[other] < best &&
+                sum(other_co) - sum(co) <= 3 * FLT_EPSILON &&
+                len_squared(other_co - co) < FLT_EPSILON)
+            {
+              best = rank[other];
+            }
+          }
+        }
+      }
+    }
+    if (best < num_verts) {
+      orig[v] = sorted[best];
+    }
+  }
+  for (int v = 0; v < num_verts; ++v) {
+    int o = orig[v];
+    while (o != orig[o]) {
+      o = orig[o];
+    }
+    orig[v] = o;
+  }
+  return orig;
+}
+
 /* Blender's attr_create_pointiness: per vertex, the angle between the vertex normal and the mean
  * direction of its edges (0.5 flat, above convex, below concave), blurred once over the edges.
  * Vertices at the same position are welded, so split seams don't show. */
@@ -90,48 +189,15 @@ inline std::vector<float> compute_pointiness(const PolygonMesh &mesh)
     return data;
   }
 
-  /* Step 1: point duplicated vertices to a single original vertex. Sorted by the sum of the
-   * coordinates, duplicates are within a short window. */
-  std::vector<int> sorted(num_verts);
-  std::iota(sorted.begin(), sorted.end(), 0);
-  std::sort(sorted.begin(), sorted.end(), [&](const int a, const int b) {
-    const float3 va = P(a);
-    const float3 vb = P(b);
-    if (va.x == vb.x && va.y == vb.y && va.z == vb.z) {
-      return a > b; /* Doubles in a fixed order. */
-    }
-    return (va.x + va.y + va.z) < (vb.x + vb.y + vb.z);
-  });
-  std::vector<int> orig(num_verts);
-  for (int s = 0; s < num_verts; ++s) {
-    const int v = sorted[s];
-    const float3 co = P(v);
-    orig[v] = v;
-    for (int o = s + 1; o < num_verts; ++o) {
-      const int other = sorted[o];
-      const float3 other_co = P(other);
-      if ((other_co.x + other_co.y + other_co.z) - (co.x + co.y + co.z) > 3 * FLT_EPSILON) {
-        break;
-      }
-      if (len_squared(other_co - co) < FLT_EPSILON) {
-        orig[v] = other;
-        break;
-      }
-    }
-  }
-  for (int v = 0; v < num_verts; ++v) {
-    int o = orig[v];
-    while (o != orig[o]) {
-      o = orig[o];
-    }
-    orig[v] = o;
-  }
+  /* Step 1: point duplicated vertices to a single original vertex. */
+  const std::vector<int> orig = polygon_mesh_weld(mesh);
 
   /* Step 2: vertex normals of the welded vertices. */
   const std::vector<float3> vert_normals = polygon_mesh_vertex_normals(mesh);
   std::vector<float3> normal(num_verts, zero_float3());
   for (int v = 0; v < num_verts; ++v) {
-    normal[orig[v]] += vert_normals[v];
+    /* Blender's vertex normals are unit length. */
+    normal[orig[v]] += safe_normalize(vert_normals[v]);
   }
 
   /* Step 3: pointiness of the one ring neighborhood. */
