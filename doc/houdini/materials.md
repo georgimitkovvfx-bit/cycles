@@ -80,7 +80,7 @@ The Tab menu groups the nodes like Blender's Add menu:
 | Cycles > Color | Blackbody, Brightness/Contrast, Color Ramp, Combine Color, Gamma, Hue/Saturation/Value, Invert Color, Light Falloff, Mix (color), Mix (Legacy), RGB Curves, RGB to BW, Separate Color, Wavelength |
 | Cycles > Texture | Brick, Checker, Environment, Gabor, Gradient, IES, Image, Magic, Noise, Sky, Voronoi, Wave and White Noise Texture |
 | Cycles > Utilities > Math | Boolean Math, Clamp, Float Curve, Integer Math, Map Range (float), Math, Mix (float) |
-| Cycles > Utilities > Vector | Combine XYZ, Get Vector Component, Map Range (vector), Mapping, Mix (vector, uniform and non-uniform factor), Normal, Radial Tiling, Separate XYZ, Set Normal, Vector Curves, Vector Math, Vector Rotate, Vector Transform |
+| Cycles > Utilities > Vector | Combine XYZ, Get Vector Component, Map Range (vector), Mapping, Mix (vector, uniform and non-uniform factor), Normal, Parallax Occlusion, Radial Tiling, Separate XYZ, Set Normal, Vector Curves, Vector Math, Vector Rotate, Vector Transform |
 | Cycles > Script | Script (OSL), see [osl.md](osl.md) |
 
 Blender's Mix and Map Range nodes switch their data type with a menu. In Cycles each data type is
@@ -145,6 +145,22 @@ type an attribute name into a slot, and the slot's color, factor and alpha outpu
 attribute at the hit point (like the attribute outputs Blender adds to its Raycast node). Objects
 can be hidden from Raycast rays with the **Raycast** toggle of their ray visibility (see
 [objects.md](objects.md)).
+
+### Parallax Occlusion node
+
+The **Parallax Occlusion** node (Cycles > Utilities > Vector, not in Blender) returns the texture
+coordinates where the view ray hits a height map below the surface, for bricks, tiles or cobbles
+that look deep without displacement. Connect the height map (1 = the surface, 0 = the deepest
+point) into **Height** and the node's **Vector** output into the Vector input of the color, normal
+and roughness textures. **Depth** is the depth of the height field in UV units, **Steps** the
+number of layers searched (more is slower but avoids stepping at grazing angles), **UV Map** the
+UV map of the tangent frame (empty: the default UV map, like the Normal Map node).
+
+The delegate expands the node into standard nodes: Steps + 1 copies of the nodes linked to Height,
+each reading the texture coordinates of one layer. In those copies, the inputs that read UVs
+(unlinked texture Vector inputs, links from a Texture Coordinate or UV Map UV output, or from the
+same output as the node's own Vector input) read the shifted coordinates; procedural textures on
+Generated or Object coordinates are not shifted. The silhouette of the mesh does not change.
 
 ### AOV Output node
 

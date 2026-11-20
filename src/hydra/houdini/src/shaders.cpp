@@ -20,6 +20,7 @@
  */
 
 #include "graph/node_type.h"
+#include "hydra/parallax_occlusion.h"
 #include "scene/background.h"
 #include "scene/film.h"
 #include "scene/integrator.h"
@@ -443,6 +444,7 @@ int main()
   /* Reference a shader node so the linker keeps the object file with the shader node types,
    * which register themselves on static initialization. */
   PrincipledBsdfNode::get_node_type();
+  ParallaxOcclusionNode::get_node_type();
 
   /* Get all registered node type names */
   vector<ustring> names = NodeType::type_names();

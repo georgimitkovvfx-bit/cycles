@@ -179,6 +179,8 @@ VARIANT_MENUS = {
     "glossy_bsdf": "Shader",
     "scene_time": "Input",
     "set_normal": "Utilities/Vector",
+    # Delegate node (expanded by the translator), not in Blender.
+    "parallax_occlusion": "Vector",
 }
 
 

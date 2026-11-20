@@ -39,6 +39,7 @@ set(SRC_HD_CYCLES_HEADERS
   mesh_attributes.h
   node_util.h
   output_driver.h
+  parallax_occlusion.h
   pointcloud.h
   render_buffer.h
   render_delegate.h
@@ -66,6 +67,7 @@ set(SRC_HD_CYCLES
   mesh.cpp
   node_util.cpp
   output_driver.cpp
+  parallax_occlusion.cpp
   pointcloud.cpp
   render_buffer.cpp
   render_delegate.cpp

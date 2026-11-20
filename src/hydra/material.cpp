@@ -11,6 +11,7 @@
 #  include "hydra/houdini_image.h"
 #endif
 #include "hydra/node_util.h"
+#include "hydra/parallax_occlusion.h"
 #include "hydra/session.h"
 #include "hydra/util.h"
 #ifdef WITH_OSL
@@ -1510,6 +1511,7 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(
   _nodes.clear();
 
   unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  ParallaxOcclusionNode::get_node_type(); /* Registers the node type for NodeType::find. */
 
   HdMaterialNodeContainerSchema nodes = network.GetNodes();
 
@@ -1811,6 +1813,8 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(
 
     graph->connect(output, input);
   }
+
+  expand_parallax_occlusion(graph.get());
 
   /* Return no graph if nothing got successfully linked due unsupported nodes,
    * avoids the surface becoming transparent then. */
