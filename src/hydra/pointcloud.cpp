@@ -328,7 +328,8 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
 
   /* Motion blur of the scales, orientations and opacities like Karma, at the motion steps of the
    * positions (static positions get steps when only the other splat data are animated). */
-  const std::vector<float> motionTimes = GetObjectMotionTimes();
+  const std::vector<float> motionTimes = GetObjectMotionTimes(
+      primvars.GetPrimvar(_tokens->positions).GetPrimvarValue(), true); /* As SetPositions. */
   const bool scalesMotion = SplatPrimvarIsAnimated(primvars, _tokens->scales, motionTimes);
   const bool orientationsMotion = SplatPrimvarIsAnimated(
       primvars, _tokens->orientations, motionTimes);
@@ -341,7 +342,10 @@ void HdCyclesPoints::PopulateGaussianSplats(HdSceneDelegate *sceneDelegate)
       std::copy_n(attr_P->data<packed_float3>(), n, attr_P->data_for_write<packed_float3>(step));
     }
   }
-  const int numSteps = attr_P->has_motion() ? int(_geom->get_motion_steps()) : 0;
+  const int numSteps = attr_P->has_motion() &&
+                               motionTimes.size() == size_t(_geom->get_motion_steps()) ?
+                           int(_geom->get_motion_steps()) :
+                           0;
 
   const VtVec3fArray sh = ReadSplatFloat3(primvars,
                                           _tokens->radianceSphericalHarmonicsCoefficients);
