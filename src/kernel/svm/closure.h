@@ -211,6 +211,13 @@ ccl_device
       const ccl_global SVMNodePrincipledBsdfData &data = svm_node_get<SVMNodePrincipledBsdfData>(
           kg, &offset);
 
+      const float absolute_ior = fmaxf(stack_load(stack, data.ior), 1e-5f);
+      if (bsdf_dielectric_priority_masked(sd, make_spectrum(mix_weight), path_flag, absolute_ior))
+      {
+        break;
+      }
+      const float ior = absolute_ior / sd->opposite_ior;
+
       float3 N = stack_load_float3_default(stack, data.normal_offset, sd->N);
       N = safe_normalize_fallback(N, sd->N);
 
@@ -220,7 +227,6 @@ ccl_device
       const Spectrum base_color = rgb_to_spectrum(
           max(stack_load(stack, data.base_color), zero_float3()));
       const Spectrum clamped_base_color = min(base_color, white);
-      const float ior = fmaxf(stack_load(stack, data.ior), 1e-5f);
       const float roughness = saturatef(stack_load(stack, data.roughness));
       const float3 valid_reflection_N = maybe_ensure_valid_specular_reflection(sd, N);
       const float anisotropic = saturatef(stack_load(stack, data.anisotropic));
@@ -672,6 +678,12 @@ ccl_device
       const ccl_global SVMNodeRefractionBsdfData &bsdf_data =
           svm_node_get<SVMNodeRefractionBsdfData>(kg, &offset);
 
+      const Spectrum weight = closure_weight * mix_weight;
+      const float absolute_ior = fmaxf(stack_load(stack, bsdf_data.ior), 1e-5f);
+      if (bsdf_dielectric_priority_masked(sd, weight, path_flag, absolute_ior)) {
+        break;
+      }
+
 #ifdef __CAUSTICS_TRICKS__
       if (!kernel_data.integrator.caustics_refractive &&
           (ray_visibility & PATH_RAY_VISIBILITY_DIFFUSE))
@@ -682,7 +694,6 @@ ccl_device
       float3 N = stack_load_float3_default(stack, bsdf_data.normal_offset, sd->N);
       N = safe_normalize_fallback(N, sd->N);
 
-      const Spectrum weight = closure_weight * mix_weight;
       ccl_private MicrofacetBsdf *bsdf = (ccl_private MicrofacetBsdf *)bsdf_alloc(
           sd, sizeof(MicrofacetBsdf), weight);
 
@@ -690,7 +701,7 @@ ccl_device
         bsdf->N = maybe_ensure_valid_specular_reflection(sd, N);
         bsdf->T = zero_float3();
 
-        float eta = fmaxf(stack_load(stack, bsdf_data.ior), 1e-5f);
+        float eta = absolute_ior / sd->opposite_ior;
         eta = (sd->runtime_flag & SR_BACKFACING) ? 1.0f / eta : eta;
 
         /* setup bsdf */
@@ -714,6 +725,12 @@ ccl_device
     case CLOSURE_BSDF_MICROFACET_MULTI_GGX_GLASS_ID: {
       const ccl_global SVMNodeGlassBsdfData &bsdf_data = svm_node_get<SVMNodeGlassBsdfData>(
           kg, &offset);
+
+      const float absolute_ior = fmaxf(stack_load(stack, bsdf_data.ior), 1e-5f);
+      if (bsdf_dielectric_priority_masked(sd, make_spectrum(mix_weight), path_flag, absolute_ior))
+      {
+        break;
+      }
 
 #ifdef __CAUSTICS_TRICKS__
       const bool reflective_caustics = (kernel_data.integrator.caustics_reflective ||
@@ -769,7 +786,7 @@ ccl_device
           }
         }
 
-        const float ior = fmaxf(stack_load(stack, bsdf_data.ior), 1e-5f);
+        const float ior = absolute_ior / sd->opposite_ior;
         bsdf->ior = (sd->runtime_flag & SR_BACKFACING) ? 1.0f / ior : ior;
 
         fresnel->f0 = make_float3(F0_from_ior(ior));

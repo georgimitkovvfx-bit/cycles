@@ -325,6 +325,8 @@ ccl_device_inline Spectrum camera_sample_custom(KernelGlobals kg,
   sd->shader = SHADER_NONE;
   sd->type = PRIMITIVE_NONE;
   sd->runtime_flag = 0;
+  sd->opposite_ior = 1.0f;
+  sd->medium_ior = 1.0f;
   sd->shader_flag = 0;
 
   /* Execute OSL shader to sample position, direction and transmission. */

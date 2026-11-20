@@ -76,6 +76,9 @@ class Shader : public Node {
   unique_ptr<ShaderGraph> graph;
 
   NODE_SOCKET_API(int, pass_id)
+  /* Nested dielectrics: inside a medium of higher priority, the dielectric closures of this
+   * shader are skipped. 0 disables it. */
+  NODE_SOCKET_API(int, volume_stack_priority)
 
   /* sampling */
   NODE_SOCKET_API(EmissionSampling, emission_sampling_method)

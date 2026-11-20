@@ -131,6 +131,14 @@ KERNEL_STRUCT_END_ARRAY(volume_stack,
                         KERNEL_STRUCT_VOLUME_STACK_SIZE,
                         KERNEL_STRUCT_VOLUME_STACK_SIZE)
 
+/***************************** Dielectric Priority Stack **********************/
+
+KERNEL_STRUCT_BEGIN(dielectric_stack)
+KERNEL_STRUCT_ARRAY_MEMBER(dielectric_stack, int, object, KERNEL_FEATURE_DIELECTRIC_PRIORITY)
+KERNEL_STRUCT_ARRAY_MEMBER(dielectric_stack, int, shader, KERNEL_FEATURE_DIELECTRIC_PRIORITY)
+KERNEL_STRUCT_ARRAY_MEMBER(dielectric_stack, float, ior, KERNEL_FEATURE_DIELECTRIC_PRIORITY)
+KERNEL_STRUCT_END_ARRAY(dielectric_stack, MAX_DIELECTRIC_STACK_SIZE, MAX_DIELECTRIC_STACK_SIZE)
+
 /************************************ Path Guiding *****************************/
 KERNEL_STRUCT_BEGIN(guiding)
 #if defined(__PATH_GUIDING__)

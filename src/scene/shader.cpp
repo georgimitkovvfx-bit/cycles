@@ -77,6 +77,7 @@ NODE_DEFINE(Shader)
   SOCKET_ENUM(displacement_method, "Displacement Method", displacement_method_enum, DISPLACE_BUMP);
 
   SOCKET_INT(pass_id, "Pass ID", 0);
+  SOCKET_INT(volume_stack_priority, "Volume Stack Priority", 0);
 
   return type;
 }
@@ -708,6 +709,7 @@ void ShaderManager::device_update_common(Device * /*device*/,
     /* regular shader */
     kshader->flags = flag;
     kshader->pass_id = shader->get_pass_id();
+    kshader->volume_stack_priority = max(shader->get_volume_stack_priority(), 0);
     kshader->constant_emission[0] = shader->emission_estimate.x;
     kshader->constant_emission[1] = shader->emission_estimate.y;
     kshader->constant_emission[2] = shader->emission_estimate.z;
@@ -906,6 +908,9 @@ uint64_t ShaderManager::get_kernel_features(Scene *scene)
      * e.g. an Emission node would slip through the KERNEL_FEATURE_NODE_VOLUME check */
     if (shader->has_volume_connected) {
       kernel_features |= KERNEL_FEATURE_VOLUME;
+    }
+    if (shader->get_volume_stack_priority() > 0) {
+      kernel_features |= KERNEL_FEATURE_DIELECTRIC_PRIORITY;
     }
   }
 

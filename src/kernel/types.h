@@ -892,6 +892,9 @@ struct AttributeMap {
 #  define MAX_VOLUME_STACK_SIZE __MAX_VOLUME_STACK_SIZE__
 #endif
 
+/* Media of nested dielectrics a path can be inside of at once, plus the terminator. */
+#define MAX_DIELECTRIC_STACK_SIZE 4
+
 #define MAX_VOLUME_CLOSURE 8  // NOLINT
 /* Set the maximal resolution to be 128 (2^7) to limit traversing overhead. */
 #define VOLUME_OCTREE_MAX_DEPTH 7
@@ -968,6 +971,9 @@ enum ShaderRuntimeFlag {
   SR_RAY_PORTAL = (1 << 12),
   /* BSDF has dispersion. */
   SR_BSDF_HAS_DISPERSION = (1 << 13),
+  /* Surface is inside a medium of higher volume stack priority, its dielectric closures are
+   * replaced by a transparent one (nested dielectrics). */
+  SR_PRIORITY_MASKED = (1 << 14),
 
   /* Flags that indicate the presence of closures. */
   SR_CLOSURE_FLAG = (SR_EMISSION | SR_BSDF | SR_BSDF_HAS_EVAL | SR_BSSRDF | SR_HOLDOUT |
@@ -1127,6 +1133,11 @@ struct ccl_align(SHADER_DATA_ALIGNMENT) ShaderData {
   /* ray start position, only set for backgrounds */
   float3 ray_P;
   float ray_dP;
+
+  /* Nested dielectrics: IOR of the medium on the other side of the surface, and absolute IOR of
+   * the dielectric closures of this surface (recorded when the path enters it). */
+  float opposite_ior;
+  float medium_ior;
 
   /* LCG state for closures that require additional random numbers. */
   uint lcg_state;
@@ -1733,7 +1744,8 @@ struct KernelShader {
   float cryptomatte_id;
   int flags;
   int pass_id;
-  int pad2, pad3;
+  int volume_stack_priority;
+  int pad3;
 };
 static_assert_align(KernelShader, 16);
 

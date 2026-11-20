@@ -131,6 +131,8 @@ ccl_device_inline void mnee_setup_manifold_vertex(KernelGlobals kg,
 
   sd_vtx->type = isect->type;
   sd_vtx->runtime_flag = 0;
+  sd_vtx->opposite_ior = 1.0f;
+  sd_vtx->medium_ior = 1.0f;
   sd_vtx->shader_flag = 0;
   sd_vtx->object_flag = kernel_data_fetch(object_flag, sd_vtx->object);
 

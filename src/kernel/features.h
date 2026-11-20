@@ -85,6 +85,9 @@ CCL_NAMESPACE_BEGIN
 /* Gaussian splats. */
 #define KERNEL_FEATURE_GSPLATS (1ULL << 32ULL)
 
+/* Nested dielectrics (shaders with a volume stack priority). */
+#define KERNEL_FEATURE_DIELECTRIC_PRIORITY (1ULL << 33ULL)
+
 /* Shader node feature mask, to specialize shader evaluation for kernels. */
 
 #define KERNEL_FEATURE_NODE_MASK_SURFACE_LIGHT \

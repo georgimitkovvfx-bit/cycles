@@ -61,6 +61,22 @@ ccl_device void bsdf_transparent_setup(ccl_private ShaderData *sd,
   }
 }
 
+/* Nested dielectrics: records the absolute IOR of a dielectric closure for the dielectric stack
+ * and, when the surface is masked by a medium of higher priority, replaces the closure by a
+ * transparent one. Unmasked closures refract with `ior / sd->opposite_ior`. */
+ccl_device_inline bool bsdf_dielectric_priority_masked(ccl_private ShaderData *sd,
+                                                       const Spectrum weight,
+                                                       const uint32_t path_flag,
+                                                       const float ior)
+{
+  sd->medium_ior = ior;
+  if (!(sd->runtime_flag & SR_PRIORITY_MASKED)) {
+    return false;
+  }
+  bsdf_transparent_setup(sd, weight, path_flag);
+  return true;
+}
+
 ccl_device Spectrum bsdf_transparent_eval(const ccl_private ShaderClosure * /*sc*/,
                                           const float3 /*wi*/,
                                           const float3 /*wo*/,

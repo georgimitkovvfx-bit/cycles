@@ -270,4 +270,108 @@ ccl_device VolumeSampleMethod volume_stack_sample_method(KernelGlobals kg, Integ
 
 #endif /* __VOLUME__ */
 
+/* Dielectric Priority Stack
+ *
+ * Nested dielectrics like glass, water and ice, modeled with overlapping surfaces: the media a
+ * path entered through surfaces of shaders with a volume stack priority, with their IOR. Inside
+ * a medium of higher priority, the dielectric closures of lower priority surfaces become
+ * transparent, and the other surfaces refract with the IOR relative to the medium on the other
+ * side. Priority 0 (the default) disables this for a shader. This follows Blender PR #118478,
+ * but uses its own small stack instead of the volume stack, so volume rendering is unchanged
+ * (volumes of masked media still render where media overlap). */
+
+ccl_device_inline int dielectric_priority(KernelGlobals kg, const int shader)
+{
+  return kernel_data_fetch(shaders, (shader & SHADER_MASK)).volume_stack_priority;
+}
+
+/* Mask the surface or set the IOR of the medium on its other side, before shader evaluation. */
+ccl_device_inline void dielectric_stack_setup_surface(KernelGlobals kg,
+                                                      ConstIntegratorState state,
+                                                      ccl_private ShaderData *sd)
+{
+  if (!(kernel_data.kernel_features & KERNEL_FEATURE_DIELECTRIC_PRIORITY)) {
+    return;
+  }
+  const int priority = dielectric_priority(kg, sd->shader);
+  if (priority == 0) {
+    return;
+  }
+
+  /* The highest priority medium other than this surface's own is on its other side: the one the
+   * path is in when entering, the one it gets into when leaving. */
+  int active_priority = 0;
+  float active_ior = 1.0f;
+  for (int i = 0; i < MAX_DIELECTRIC_STACK_SIZE; i++) {
+    const int shader = INTEGRATOR_STATE_ARRAY(state, dielectric_stack, i, shader);
+    if (shader == SHADER_NONE) {
+      break;
+    }
+    if (shader == sd->shader &&
+        INTEGRATOR_STATE_ARRAY(state, dielectric_stack, i, object) == sd->object)
+    {
+      continue;
+    }
+    const int entry_priority = dielectric_priority(kg, shader);
+    if (entry_priority > active_priority) {
+      active_priority = entry_priority;
+      active_ior = INTEGRATOR_STATE_ARRAY(state, dielectric_stack, i, ior);
+    }
+  }
+
+  if (priority < active_priority) {
+    sd->runtime_flag |= SR_PRIORITY_MASKED;
+  }
+  else {
+    sd->opposite_ior = active_ior;
+  }
+}
+
+/* Enter or leave the medium of the surface after a transmission bounce. */
+ccl_device void dielectric_stack_enter_exit(KernelGlobals kg,
+                                            IntegratorState state,
+                                            const ccl_private ShaderData *sd)
+{
+  if (!(kernel_data.kernel_features & KERNEL_FEATURE_DIELECTRIC_PRIORITY) ||
+      dielectric_priority(kg, sd->shader) == 0)
+  {
+    return;
+  }
+
+  int found = -1;
+  int size = 0;
+  for (; size < MAX_DIELECTRIC_STACK_SIZE; size++) {
+    const int shader = INTEGRATOR_STATE_ARRAY(state, dielectric_stack, size, shader);
+    if (shader == SHADER_NONE) {
+      break;
+    }
+    if (shader == sd->shader &&
+        INTEGRATOR_STATE_ARRAY(state, dielectric_stack, size, object) == sd->object)
+    {
+      found = size;
+    }
+  }
+
+  if (sd->runtime_flag & SR_BACKFACING) {
+    /* Leave: move the last entry into the found one. Leaving a medium that was never entered
+     * (stack full, or the camera inside) is ignored. */
+    if (found != -1) {
+      const int last = size - 1;
+      INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, found, object) =
+          INTEGRATOR_STATE_ARRAY(state, dielectric_stack, last, object);
+      INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, found, shader) =
+          INTEGRATOR_STATE_ARRAY(state, dielectric_stack, last, shader);
+      INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, found, ior) =
+          INTEGRATOR_STATE_ARRAY(state, dielectric_stack, last, ior);
+      INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, last, shader) = SHADER_NONE;
+    }
+  }
+  else if (found == -1 && size < MAX_DIELECTRIC_STACK_SIZE - 1) {
+    INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, size, object) = sd->object;
+    INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, size, shader) = sd->shader;
+    INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, size, ior) = sd->medium_ior;
+    INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, size + 1, shader) = SHADER_NONE;
+  }
+}
+
 CCL_NAMESPACE_END

@@ -774,6 +774,7 @@ ccl_device int integrate_surface(KernelGlobals kg,
   /* Setup shader data. */
   ShaderData sd;
   integrate_surface_shader_setup(kg, state, &sd);
+  dielectric_stack_setup_surface(kg, state, &sd);
   PROFILING_SHADER(sd.object, sd.shader);
 
   int continue_path_label = 0;
@@ -900,6 +901,10 @@ ccl_device int integrate_surface(KernelGlobals kg,
     volume_stack_enter_exit<false>(kg, state, &sd);
   }
 #endif
+
+  if (continue_path_label & LABEL_TRANSMIT) {
+    dielectric_stack_enter_exit(kg, state, &sd);
+  }
 
   return continue_path_label;
 }

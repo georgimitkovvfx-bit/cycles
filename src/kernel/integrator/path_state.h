@@ -95,6 +95,10 @@ ccl_device_inline void path_state_init_integrator(KernelGlobals kg,
     INTEGRATOR_STATE_ARRAY_WRITE(state, volume_stack, 1, shader) = SHADER_NONE;
   }
 
+  if (kernel_data.kernel_features & KERNEL_FEATURE_DIELECTRIC_PRIORITY) {
+    INTEGRATOR_STATE_ARRAY_WRITE(state, dielectric_stack, 0, shader) = SHADER_NONE;
+  }
+
 #ifdef __DENOISING_FEATURES__
   if (kernel_data.kernel_features & KERNEL_FEATURE_DENOISING) {
     INTEGRATOR_STATE_WRITE(state, path, flag) |= PATH_RAY_DENOISING_FEATURES;
