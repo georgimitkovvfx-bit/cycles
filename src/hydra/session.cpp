@@ -1115,31 +1115,46 @@ void HdCyclesSession::SetRenderSettingsMotionPass(const SdfPath &id,
 
 void HdCyclesSession::UpdateDefaultSurface()
 {
+  UpdateDefaultSurface(nullptr);
+}
+
+void HdCyclesSession::UpdateDefaultSurface(unique_ptr<ShaderGraph> graph)
+{
   if (!_ownCyclesSession) {
     return;  // The application owns the scene and its default shaders
   }
 
   Scene *const scene = session->scene.get();
-  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  if (!graph) {
+    graph = make_unique<ShaderGraph>();
+    DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
+    graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
 
-  // Wire up object color in default surface material
-  ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
+    /* The clay material override is the gray Diffuse BSDF, like in HdCyclesMaterial::Sync. */
+    if (GetMaterialOverride() != "clay") {
+      // Wire up object color in default surface material
+      ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
 
-  /* A displayColor (or Cd) primvar of any interpolation, like Karma and Storm; the object color
-   * (constant or per-instance displayColor, else 0.8 gray) without one. */
-  AttributeNode *colorNode = graph->create_node<AttributeNode>();
-  colorNode->set_attribute(ustring(HdTokens->displayColor.GetString()));
+      /* A displayColor (or Cd) primvar of any interpolation, like Karma and Storm; the object
+       * color (constant or per-instance displayColor, else 0.8 gray) without one. */
+      AttributeNode *colorNode = graph->create_node<AttributeNode>();
+      colorNode->set_attribute(ustring(HdTokens->displayColor.GetString()));
 
-  DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
-
-  graph->connect(objectNode->output("Color"), colorNode->input("Missing"));
-  graph->connect(colorNode->output("Color"), diffuseNode->input("Color"));
-  graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
+      graph->connect(objectNode->output("Color"), colorNode->input("Missing"));
+      graph->connect(colorNode->output("Color"), diffuseNode->input("Color"));
+    }
+  }
 
   HdCyclesMaterial::AddIdAOVs(graph.get());
   HdCyclesMaterial::AddPrimvarAOVs(graph.get(), _primvarAovs);
+  const AttributeRequestSet attributes = scene->default_surface->attributes;
   scene->default_surface->set_graph(std::move(graph));
   scene->default_surface->tag_update(scene);
+
+  /* Geometry only exports the primvars that shaders read when it is synced. */
+  if (scene->default_surface->attributes.modified(attributes)) {
+    RequestResync(false, true);
+  }
 }
 
 string HdCyclesSession::GetPassName(const TfToken &aovName) const

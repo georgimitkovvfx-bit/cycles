@@ -1242,6 +1242,11 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       if (hash != _overrideHash && !session->materialsResyncing) {
         session->RequestResync(true, false);
       }
+      /* Prims without a material too (in the resync after an override change, which reset the
+       * default surface). Its own graph: a graph belongs to one shader. */
+      if (hash != _overrideHash || session->materialsResyncing) {
+        session->UpdateDefaultSurface(buildGraph(id, network, prim.dataSource));
+      }
       _overrideHash = hash;
     }
     ShaderInput *const surface = graph->output()->input("Surface");
@@ -1862,6 +1867,7 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
   /* Materials rendered as this override material go back to their own. */
   if (session->GetMaterialOverride() == GetId().GetString()) {
     session->RequestResync(true, false);
+    session->UpdateDefaultSurface();
   }
 
   if (!keep_nodes) {

@@ -228,6 +228,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
       }
       _materialOverride = materialOverride;
     }
+    {
+      /* Prims without a material render with the default surface (the override material's sync
+       * sets its graph there). */
+      const SceneLock lock(this);
+      UpdateDefaultSurface();
+    }
     RequestResync(true, false);
   }
   std::string GetMaterialOverride() const
@@ -319,8 +325,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
       bool active,
       std::vector<std::pair<std::string, std::string>> &&primvarAovs);
 
-  // Rebuild the default surface shader with the primvar AOVs, with the scene locked
+  // Rebuild the default surface shader with the primvar AOVs, with the scene locked: the graph
+  // of the material override if given, else clay for the "clay" override, else displayColor
   void UpdateDefaultSurface();
+  void UpdateDefaultSurface(std::unique_ptr<CCL_NS::ShaderGraph> graph);
 
   // Whether a render settings prim has a motion pass render var, synced before geometry so that
   // it is sampled at the motion pass times, with the scene locked. Like the primvar AOVs, only the
