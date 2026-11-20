@@ -275,6 +275,9 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
     if (chosen.empty()) {
       TF_WARN("Cycles: no GPU matches cycles:gpu_devices \"%s\", using all of them",
               gpuDevices.c_str());
+      /* husk hides TF warnings, the Cycles log reaches its output. */
+      LOG_WARNING << "No GPU matches cycles:gpu_devices \"" << gpuDevices
+                  << "\", using all of them";
     }
     else {
       devices = chosen;
