@@ -133,6 +133,8 @@ with a Sky Texture through a Background shader, like Blender's default sky setup
 | Date (Y M D), Local Time | 2026 6 21, 12 | Local clock time in hours (13.5 = 1:30 pm) |
 | UTC Offset | 2 | Time zone of the local time, daylight saving included |
 | North Offset | 0 | Rotates the compass around +Y |
+| Distant Light | Off | Also creates a Distant Light shining from the sun, with Sun Size as its angle; it follows the sun position parameters. It adds to the sun disc: turn Sun Disc off for a single sun (e.g. to light link the sun or use it in a light group) |
+| Light Path, Intensity, Color | `/lights/$OS_sun`, 1, white | The distant light. It does not follow a transform of the dome light or its Cycles Rotation |
 | **Fog** | | |
 | Fog | Off | Fills a box around the scene with a scattering volume, lit by the sky and sun through its sides |
 | Fog Path | `/fog/$OS` | The fog box (its material is `<path>_material`) |

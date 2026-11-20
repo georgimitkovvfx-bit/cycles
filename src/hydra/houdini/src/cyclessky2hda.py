@@ -97,8 +97,8 @@ def sun_position(latitude, longitude, utc_offset, year, month, day, hours):
     return elevation, azimuth % 360.0
 
 
-def sun_angles(node):
-    """Sky Texture sun elevation and rotation (radians) from the node's parameters."""
+def sun_compass(node):
+    """Sun elevation and azimuth (degrees, North Offset included) from the node's parameters."""
     if node.parm("sunmode").evalAsString() == "location":
         year, month, day = (int(v) for v in node.evalParmTuple("date"))
         elevation, azimuth = sun_position(node.evalParm("latitude"), node.evalParm("longitude"),
@@ -106,10 +106,22 @@ def sun_angles(node):
                                           node.evalParm("time"))
     else:
         elevation, azimuth = node.evalParm("elevation"), node.evalParm("azimuth")
+    return elevation, azimuth + node.evalParm("northoffset")
+
+
+def sun_light_rotation(elevation, azimuth):
+    """rotateXYZ (degrees) of a distant light shining from the sun: its +Z toward the sun at
+    (sin(az) cos(el), sin(el), -cos(az) cos(el)), Y-up with north on -Z and east on +X."""
+    return (-elevation, 180.0 - azimuth, 0.0)
+
+
+def sun_angles(node):
+    """Sky Texture sun elevation and rotation (radians) from the node's parameters."""
+    elevation, azimuth = sun_compass(node)
     # Sky space is (z, x, y) of the light (OrientWorldTextures) and Cycles negates the rotation
     # (SkyTextureNode::simplify_settings): rotation 0 points along +X, 90 along +Z, so azimuth 0
     # (north) is -Z.
-    rotation = azimuth - 90.0 + node.evalParm("northoffset")
+    rotation = azimuth - 90.0
     return math.radians(elevation), math.radians(rotation)
 '''
 
@@ -166,6 +178,17 @@ background = shader("background", "cycles_background_shader", [
 background.CreateInput("color", T.Color3f).ConnectToSource(sky_color)
 material.CreateOutput("cycles:surface", T.Token).ConnectToSource(
     background.CreateOutput("background", T.Token))
+
+# A Distant Light shining from the sky's sun, e.g. for light linking or a sharper sun than the
+# disc. It adds to the sun disc like in Blender: turn Sun Disc off for a single sun.
+if top.evalParm("sunlight"):
+    sun = UsdLux.DistantLight.Define(stage, top.evalParm("sunlightpath"))
+    sun.CreateIntensityAttr(top.evalParm("sunlightintensity"))
+    sun.CreateColorAttr(tuple(top.evalParmTuple("sunlightcolor")))
+    sun.CreateAngleAttr(top.evalParm("sunsize"))
+    xform = UsdGeom.Xformable(sun.GetPrim())
+    xform.ClearXformOpOrder()
+    xform.AddRotateXYZOp().Set(top.hdaModule().sun_light_rotation(*top.hdaModule().sun_compass(top)))
 
 # Fog in a box around the scene, not as the world volume: Cycles fully absorbs the sky and sun
 # (infinitely far) in a world volume, they light the fog through the box's sides.
@@ -288,6 +311,22 @@ def parameters():
     sun.addParmTemplate(float_parm(
         "northoffset", "North Offset", 0.0, -180, 180, "Rotates the compass around +Y, in "
         "degrees: 0 has north on -Z."))
+    sun.addParmTemplate(hou.ToggleParmTemplate(
+        "sunlight", "Distant Light", default_value=False,
+        help="Also author a Distant Light shining from the sun's direction, with the Sun Size "
+             "as its angle. It follows the sun position parameters. It adds to the Sun Disc: "
+             "turn Sun Disc off for a single sun."))
+    no_light = "{ sunlight == 0 }"
+    sun.addParmTemplate(hou.StringParmTemplate(
+        "sunlightpath", "Light Path", 1, default_value=("/lights/$OS_sun",),
+        disable_when=no_light, help="Distant light primitive."))
+    sun.addParmTemplate(float_parm(
+        "sunlightintensity", "Intensity", 1.0, 0, 10, "Intensity of the distant light.",
+        strict_low=True, disable_when=no_light))
+    sun.addParmTemplate(hou.FloatParmTemplate(
+        "sunlightcolor", "Color", 3, default_value=(1, 1, 1), min=0, max=1,
+        look=hou.parmLook.ColorSquare, naming_scheme=hou.parmNamingScheme.RGBA,
+        disable_when=no_light, help="Color of the distant light."))
     group.append(sun)
 
     fog = hou.FolderParmTemplate("fog_folder", "Fog", folder_type=hou.folderType.Simple)
@@ -398,6 +437,15 @@ def main():
     fog_box = usd.GetPrimAtPath("/fog/%s" % test.name())
     if not fog_box or fog_box.GetTypeName() != "Cube":
         raise RuntimeError("Fog box not created")
+    test.parm("sunlight").set(True)
+    sun = test.stage().GetPrimAtPath("/lights/%s_sun" % test.name())
+    if not sun or sun.GetTypeName() != "DistantLight":
+        raise RuntimeError("Distant light not created")
+    from pxr import Gf, UsdGeom
+    to_sun = UsdGeom.Xformable(sun).ComputeLocalToWorldTransform(0).TransformDir(Gf.Vec3d(0, 0, 1))
+    # Elevation 30, azimuth 90 (east): toward (cos 30, sin 30, 0).
+    if (to_sun - Gf.Vec3d(math.cos(math.radians(30)), 0.5, 0)).GetLength() > 1e-4:
+        raise RuntimeError("Distant light not shining from the sun: +Z %s" % to_sun)
     test.parm("sunmode").set(1)
     test.parm("time").set(14.0)
     if test.stage().GetPrimAtPath(material_path + "/sky").GetAttribute(
