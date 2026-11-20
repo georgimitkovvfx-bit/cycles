@@ -131,10 +131,9 @@ std::string ConvertOpImage(const std::string &path)
                               ".tif");
   /* Houdini's image library has no op: format, the COP resolver cooks the node (only inside
    * Houdini, husk has no resolver). Through the resolver cache, whose COPs Houdini's viewport
-   * watches to set houdini:cop_texture_changed; without its stale entries. */
+   * watches to set houdini:cop_texture_changed; ForgetHoudiniOpImages clears its stale entries. */
   int opid = -1;
   bool saved = false;
-  TIL_CopResolver::clearResolverCache(false);
   const TIL_CopResolver::autoEnableCache cache(true);
   if (TIL_Raster *raster = TIL_CopResolver::getRaster(path.c_str(), opid)) {
     /* Named by the cooked pixels: an unchanged image (every material/light sync) is not saved
@@ -229,6 +228,19 @@ void ForgetHoudiniOpImages()
 {
   const std::lock_guard<std::mutex> lock(ConvertMutex());
   opImages.clear();
+  /* Only here, not on every conversion: the resolver cache is Houdini's (its viewport watches
+   * it) and its HDK documents no thread safety for clearing it from a sync thread. */
+  TIL_CopResolver::clearResolverCache(false);
+}
+
+bool IsHoudiniOpImage(const std::string &filename)
+{
+  if (filename.rfind("op:", 0) == 0) {
+    return true;
+  }
+  const std::lock_guard<std::mutex> lock(sourcesMutex);
+  const auto it = sources.find(filename);
+  return it != sources.end() && it->second.rfind("op:", 0) == 0;
 }
 
 std::string ResolveHoudiniImage(const std::string &filename)

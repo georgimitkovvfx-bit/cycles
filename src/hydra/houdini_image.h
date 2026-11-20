@@ -20,4 +20,7 @@ std::string ResolveHoudiniImage(const std::string &filename);
  * keep their version on frame changes). */
 void ForgetHoudiniOpImages();
 
+/* An op: path, or the converted file of one. */
+bool IsHoudiniOpImage(const std::string &filename);
+
 }  // namespace HdCycles

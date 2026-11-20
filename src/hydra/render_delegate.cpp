@@ -1110,39 +1110,39 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
 #ifdef WITH_HOUDINI_IMAGES
   /* Houdini's viewport sets this when a COP read by an op: image changed (or the frame of a time
    * dependent one), which syncs no material (KNOWN_ISSUES #55): convert the images again and
-   * update the shaders whose image file changed. */
+   * update the shaders whose image file changed. Only the op: images: this is set every frame of
+   * a time dependent COP, other images would stat files and list UDIM directories each time. */
   if (key == _tokens->houdiniCopTextureChanged) {
     HdCycles::ForgetHoudiniOpImages();
-    const auto imageFiles = [](const ShaderGraph *graph) {
-      vector<ustring> files;
-      for (const ShaderNode *node : graph->nodes) {
-        if (node->type == ImageTextureNode::get_node_type()) {
-          files.push_back(static_cast<const ImageTextureNode *>(node)->get_filename());
-        }
-        else if (node->type == EnvironmentTextureNode::get_node_type()) {
-          files.push_back(static_cast<const EnvironmentTextureNode *>(node)->get_filename());
-        }
+    const auto convertAgain = [](auto *image) {
+      const ustring file = image->get_filename();
+      if (!HdCycles::IsHoudiniOpImage(file.string())) {
+        return false;
       }
-      return files;
+      const ustring resolved(HdCycles::ResolveHoudiniImage(file.string()));
+      if (resolved == file) {
+        return false;
+      }
+      image->set_filename(resolved);
+      image->handle.clear();
+      return true;
     };
     const SceneLock lock(_renderParam.get());
     bool changed = false;
     for (Shader *shader : lock.scene->shaders) {
-      const vector<ustring> files = imageFiles(shader->graph.get());
-      if (files.empty()) {
-        continue;
-      }
-      HdCyclesMaterial::SetUdimTiles(shader->graph.get());
-      if (imageFiles(shader->graph.get()) == files) {
-        continue;
-      }
+      bool shaderChanged = false;
       for (ShaderNode *node : shader->graph->nodes) {
-        if (node->special_type == SHADER_SPECIAL_TYPE_IMAGE_SLOT) {
-          static_cast<ImageSlotTextureNode *>(node)->handle.clear();
+        if (node->type == ImageTextureNode::get_node_type()) {
+          shaderChanged |= convertAgain(static_cast<ImageTextureNode *>(node));
+        }
+        else if (node->type == EnvironmentTextureNode::get_node_type()) {
+          shaderChanged |= convertAgain(static_cast<EnvironmentTextureNode *>(node));
         }
       }
-      shader->tag_update(lock.scene);
-      changed = true;
+      if (shaderChanged) {
+        shader->tag_update(lock.scene);
+        changed = true;
+      }
     }
     if (changed) {
       ++_settingsVersion;
