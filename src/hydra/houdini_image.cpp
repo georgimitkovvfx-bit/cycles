@@ -116,7 +116,32 @@ std::string ConvertOpImage(const std::string &path)
   int opid = -1;
   bool saved = false;
   if (TIL_Raster *raster = TIL_CopResolver::getRaster(path.c_str(), opid)) {
-    saved = IMG_File::saveRasterAsFile(temporary.string().c_str(), raster);
+    /* Named by the cooked pixels: an unchanged image (every material/light sync) is not saved
+     * and hashed again (KNOWN_ISSUES #55). */
+    const std::string header = std::to_string(raster->getXres()) + "x" +
+                               std::to_string(raster->getYres()) + "|" +
+                               std::to_string(int(raster->getFormat())) + "|" +
+                               std::to_string(int(raster->getPacking())) + "|";
+    const void *pixels = raster->getPixels();
+    const size_t hash = std::hash<std::string_view>()(std::string_view(
+        static_cast<const char *>(pixels), pixels ? size_t(raster->getSize()) : 0));
+    const fs::path destination = CacheDirectory() /
+                                 (name + "_r" +
+                                  Hex(hash ^ (std::hash<std::string>()(header) << 1)) + ".tif");
+    if (pixels && fs::exists(destination, ec)) {
+      TIL_CopResolver::doneWithRaster(raster);
+      return destination.string();
+    }
+    if (pixels && IMG_File::saveRasterAsFile(temporary.string().c_str(), raster)) {
+      TIL_CopResolver::doneWithRaster(raster);
+      fs::rename(temporary, destination, ec);
+      if (ec) {
+        fs::remove(temporary, ec);
+        return fs::exists(destination, ec) ? destination.string() : path;
+      }
+      return destination.string();
+    }
+    saved = !pixels && IMG_File::saveRasterAsFile(temporary.string().c_str(), raster);
     TIL_CopResolver::doneWithRaster(raster);
   }
   if (!saved && !IMG_File::copyToFile(path.c_str(), temporary.string().c_str())) {
