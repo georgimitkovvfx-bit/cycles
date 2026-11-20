@@ -6,6 +6,7 @@
 #include "hydra/plugin.h"
 #include "hydra/implicit_mesh.h"
 #include "hydra/render_delegate.h"
+#include "hydra/render_pass_scene_index.h"
 #include "hydra/resync_scene_index.h"
 #include "util/log.h"
 #include "util/path.h"
@@ -21,6 +22,7 @@
 #  include <pxr/imaging/hd/tokens.h>
 #  include <pxr/imaging/hdGp/generativeProceduralResolvingSceneIndex.h>
 #  include <pxr/imaging/hdsi/lightLinkingSceneIndex.h>
+#  include <pxr/imaging/hdsi/renderPassPruneSceneIndex.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -100,6 +102,22 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
       nullptr,
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+
+  /* The active UsdRenderPass (husk --pass): husk only makes it the scene globals'
+   * activeRenderPassPrim, the render delegate applies its prune, renderVisibility,
+   * cameraVisibility and matte collections. After the procedurals, so their prims are in the
+   * pass. */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HD_CYCLES_NS::HdCyclesRenderPassSceneIndex::New(
+            HdsiRenderPassPruneSceneIndex::New(inputScene));
+      },
+      nullptr,
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
 
   /* Light and shadow linking: categories of the light linking collections on lights, and the
    * categories each geometry prim belongs to. */
