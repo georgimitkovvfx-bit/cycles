@@ -30,6 +30,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   void UpdateScene();
 
+  /* The surface of geometry without a material: Blender's default (a Principled BSDF, as native Cycles renders an
+   * object without a material) with the object's colour (``displayColor``, else 0.8) as its base colour. Set by the
+   * session that owns its Cycles session; ``cycles_usd_render`` sets it on its own. */
+  static void SetDefaultSurface(CCL_NS::Scene *scene);
+
   double GetStageMetersPerUnit() const
   {
     return _stageMetersPerUnit;

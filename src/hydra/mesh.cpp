@@ -401,6 +401,13 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
   if (auto ds = displayStyleSchema.GetFlatShadingEnabled()) {
     flatShadingEnabled = ds->GetTypedValue(0.0f);
   }
+  /* Uniform normals are one per face: the faces are flat, as USD means and Storm draws them. Smoothing them
+   * averaged a cube's corners (an implicit Cube made a mesh) and darkened every face. */
+  if (ReadPrimvarInterpolation(HdPrimvarsSchema::GetFromParent(prim.dataSource), HdTokens->normals) ==
+      HdInterpolationUniform)
+  {
+    flatShadingEnabled = true;
+  }
 
   const HdMeshSchema meshSchema = HdMeshSchema::GetFromParent(prim.dataSource);
   const HdMeshTopologySchema topoSchema = meshSchema.GetTopology();

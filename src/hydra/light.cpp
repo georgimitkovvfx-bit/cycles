@@ -149,7 +149,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
         spot_light->set_radius(0.0f);
       }
       else if (auto ds = GetTypedDataSource<float>(lightDs, HdLightTokens->radius)) {
-        spot_light->set_radius(ds->GetTypedValue(0.0f));
+        /* In metres like the light's transform: a centimetre stage's radius was taken as metres, 100 times too
+         * big, so the light swallowed what it lit. */
+        spot_light->set_radius(ds->GetTypedValue(0.0f) *
+                               static_cast<HdCyclesSession *>(renderParam)->GetStageMetersPerUnit());
       }
 
       bool shaping = false;

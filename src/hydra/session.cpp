@@ -96,31 +96,34 @@ HdCyclesSession::HdCyclesSession(const SessionParams &params)
     scene->default_background->tag_update(scene);
   }
 
-  // Wire up object color in default surface material
-  {
-    unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  SetDefaultSurface(scene);
+}
 
-    ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
+void HdCyclesSession::SetDefaultSurface(Scene *scene)
+{
+  /* A diffuse BSDF before: without the Principled BSDF's specular layer, objects without a material rendered 6-8 %
+   * brighter in the Blender runner than in cycles_usd_render and native Cycles. */
+  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
 
-    DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
+  ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
+  PrincipledBsdfNode *bsdfNode = graph->create_node<PrincipledBsdfNode>();
 
-    graph->connect(objectNode->output("Color"), diffuseNode->input("Color"));
-    graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
+  graph->connect(objectNode->output("Color"), bsdfNode->input("Base Color"));
+  graph->connect(bsdfNode->output("BSDF"), graph->output()->input("Surface"));
 
-    // Create the instanceId AOV output
-    const ustring instanceId(HdAovTokens->instanceId.GetString());
+  // Create the instanceId AOV output
+  const ustring instanceId(HdAovTokens->instanceId.GetString());
 
-    OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
-    aovNode->set_name(instanceId);
+  OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
+  aovNode->set_name(instanceId);
 
-    AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
-    instanceIdNode->set_attribute(instanceId);
+  AttributeNode *instanceIdNode = graph->create_node<AttributeNode>();
+  instanceIdNode->set_attribute(instanceId);
 
-    graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
+  graph->connect(instanceIdNode->output("Fac"), aovNode->input("Value"));
 
-    scene->default_surface->set_graph(std::move(graph));
-    scene->default_surface->tag_update(scene);
-  }
+  scene->default_surface->set_graph(std::move(graph));
+  scene->default_surface->tag_update(scene);
 }
 
 HdCyclesSession::~HdCyclesSession()
@@ -138,13 +141,10 @@ void HdCyclesSession::UpdateScene()
   if (scene->light_manager->need_update() || _backgroundDirty) {
     _backgroundDirty = false;
     Light *background_light = nullptr;
-    bool have_lights = false;
     for (Object *object : scene->objects) {
       if (!object->get_geometry()->is_light()) {
         continue;
       }
-
-      have_lights = true;
 
       Light *light = static_cast<Light *>(object->get_geometry());
       if (light->is_background_light()) {
@@ -157,12 +157,11 @@ void HdCyclesSession::UpdateScene()
       scene->background->set_shader(scene->default_background);
       scene->background->set_transparent(true);
 
-      /* Set background color depending to non-zero value if there are no
-       * lights in the scene, to match behavior of other renderers. */
+      /* No dome light: a black background, as native Cycles and cycles_usd_render render it. A grey ambient for
+       * stages without lights (usdview's habit) made the Blender runner light what the others leave dark. */
       for (ShaderNode *node : scene->default_background->graph->nodes) {
         if (node->is_a(BackgroundNode::get_node_type())) {
-          BackgroundNode *bgNode = static_cast<BackgroundNode *>(node);
-          bgNode->set_color((have_lights) ? zero_float3() : make_float3(0.5f));
+          static_cast<BackgroundNode *>(node)->set_color(zero_float3());
         }
       }
     }
