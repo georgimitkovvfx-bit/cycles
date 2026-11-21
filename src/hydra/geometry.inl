@@ -320,6 +320,8 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       instance->set_is_shadow_catcher(flags.holdout == 2);
       instance->set_lightgroup(flags.lightgroup);
     }
+    /* Light and shadow linking (patch 0018): which linked lights reach this prim is decided in HdCyclesSession. */
+    static_cast<HdCyclesSession *>(renderParam)->SetLinkGeometry(this, id, &_instances);
   }
 
   /* A static BVH (sequences too, cycles_usd_render) lets Cycles bake a single-user geometry's transform into its
@@ -370,6 +372,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
 
+  static_cast<HdCyclesSession *>(renderParam)->RemoveLinkGeometry(this);
   /* Delete the instances before the geometry, since the objects reference the geometry. */
   if (!keep_nodes) {
     lock.scene->delete_nodes(set<Object *>(_instances.begin(), _instances.end()));

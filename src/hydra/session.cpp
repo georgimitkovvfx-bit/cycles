@@ -17,7 +17,11 @@
 #include "session/session.h"
 #include "util/string.h"
 
+#include <pxr/base/tf/diagnostic.h>
+#include <pxr/imaging/hd/collectionExpressionEvaluator.h>
+
 #include <algorithm>
+#include <map>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -133,9 +137,165 @@ HdCyclesSession::~HdCyclesSession()
   }
 }
 
+void HdCyclesSession::SetLinkGeometry(const void *owner,
+                                      const SdfPath &id,
+                                      const std::vector<Object *> *objects)
+{
+  const std::lock_guard<std::mutex> guard(_linksMutex);
+  _linkedGeometry[owner] = LinkedGeometry{id, objects};
+  /* new or changed instances need their sets: only when links are in use */
+  _linksDirty = _linksDirty || !_lightLinks.empty();
+}
+
+void HdCyclesSession::RemoveLinkGeometry(const void *owner)
+{
+  const std::lock_guard<std::mutex> guard(_linksMutex);
+  _linksDirty = (_linkedGeometry.erase(owner) > 0 && !_lightLinks.empty()) || _linksDirty;
+}
+
+void HdCyclesSession::SetLightLinks(Object *light,
+                                    const HdSceneIndexBaseRefPtr &sceneIndex,
+                                    const SdfPath &prefix,
+                                    const SdfPathExpression &lightLink,
+                                    const SdfPathExpression &shadowLink)
+{
+  const std::lock_guard<std::mutex> guard(_linksMutex);
+  _linkSceneIndex = sceneIndex;
+  _linkPrefix = prefix;
+  const auto found = _lightLinks.find(light);
+  if (lightLink.IsEmpty() && shadowLink.IsEmpty()) {
+    if (found != _lightLinks.end()) {
+      _lightLinks.erase(found);
+      _linksDirty = true;
+    }
+    return;
+  }
+  if (found != _lightLinks.end() && found->second.light == lightLink && found->second.shadow == shadowLink) {
+    return;
+  }
+  _lightLinks[light] = LightLinks{lightLink, shadowLink};
+  _linksDirty = true;
+}
+
+void HdCyclesSession::RemoveLightLinks(Object *light)
+{
+  const std::lock_guard<std::mutex> guard(_linksMutex);
+  _linksDirty = _lightLinks.erase(light) > 0 || _linksDirty;
+}
+
+void HdCyclesSession::UpdateLinks()
+{
+  _linksDirty = false;
+  if (_lightLinks.empty()) {
+    if (_linksApplied) { /* the last link went: back to Cycles' defaults */
+      for (const auto &[owner, geometry] : _linkedGeometry) {
+        for (Object *object : *geometry.objects) {
+          object->set_receiver_light_set(0);
+          object->set_blocker_shadow_set(0);
+        }
+      }
+      _linksApplied = false;
+    }
+    return;
+  }
+  /* Lights no longer linked keep a mask until here: reset every light, then set the linked ones. */
+  for (Object *object : session->scene->objects) {
+    if (object->get_geometry() && object->get_geometry()->is_light()) {
+      object->set_light_set_membership(LIGHT_LINK_MASK_ALL);
+      object->set_shadow_set_membership(LIGHT_LINK_MASK_ALL);
+    }
+  }
+  std::vector<const LinkedGeometry *> geometry;
+  geometry.reserve(_linkedGeometry.size());
+  for (const auto &[owner, entry] : _linkedGeometry) {
+    geometry.push_back(&entry);
+  }
+  for (const bool shadow : {false, true}) {
+    /* Which geometry each linked light reaches; one that reaches all is no link. */
+    std::vector<std::pair<Object *, std::vector<bool>>> linked;
+    for (const auto &[light, links] : _lightLinks) {
+      const SdfPathExpression &expression = shadow ? links.shadow : links.light;
+      if (expression.IsEmpty()) {
+        continue;
+      }
+      const HdCollectionExpressionEvaluator evaluator(_linkSceneIndex, expression);
+      std::vector<bool> reached(geometry.size());
+      bool all = true;
+      for (size_t i = 0; i < geometry.size(); ++i) {
+        reached[i] = bool(evaluator.Match(_linkPrefix.IsAbsoluteRootPath() ?
+                                              geometry[i]->id :
+                                              geometry[i]->id.ReplacePrefix(_linkPrefix,
+                                                                            SdfPath::AbsoluteRootPath())));
+        all = all && reached[i];
+      }
+      if (!all) {
+        linked.emplace_back(light, std::move(reached));
+      }
+    }
+    /* Set 0: geometry no linked light reaches (every unlinked light does). */
+    std::map<std::vector<size_t>, uint> sets;
+    bool overflow = false;
+    for (size_t i = 0; i < geometry.size(); ++i) {
+      std::vector<size_t> signature;
+      for (size_t l = 0; l < linked.size(); ++l) {
+        if (linked[l].second[i]) {
+          signature.push_back(l);
+        }
+      }
+      uint index = 0;
+      if (!signature.empty()) {
+        const auto found = sets.find(signature);
+        if (found != sets.end()) {
+          index = found->second;
+        }
+        else if (sets.size() + 1 < LIGHT_LINK_SET_MAX) {
+          index = uint(sets.size() + 1);
+          sets.emplace(signature, index);
+        }
+        else {
+          overflow = true;
+        }
+      }
+      for (Object *object : *geometry[i]->objects) {
+        if (shadow) {
+          object->set_blocker_shadow_set(index);
+        }
+        else {
+          object->set_receiver_light_set(index);
+        }
+      }
+    }
+    if (overflow) {
+      TF_WARN("Hydra Cycles: more than %d different %s link combinations; the rest use the default set",
+              LIGHT_LINK_SET_MAX - 1,
+              shadow ? "shadow" : "light");
+    }
+    for (size_t l = 0; l < linked.size(); ++l) {
+      uint64_t mask = 0;
+      for (const auto &[signature, index] : sets) {
+        if (std::binary_search(signature.begin(), signature.end(), l)) {
+          mask |= uint64_t(1) << index;
+        }
+      }
+      if (shadow) {
+        linked[l].first->set_shadow_set_membership(mask);
+      }
+      else {
+        linked[l].first->set_light_set_membership(mask);
+      }
+    }
+  }
+  _linksApplied = true;
+}
+
 void HdCyclesSession::UpdateScene()
 {
   Scene *const scene = session->scene.get();
+
+  if (_linksDirty) {
+    const std::lock_guard<std::mutex> guard(_linksMutex);
+    UpdateLinks();
+  }
 
   // Update background depending on presence of a background light
   if (scene->light_manager->need_update() || _backgroundDirty) {

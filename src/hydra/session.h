@@ -8,7 +8,15 @@
 #include "hydra/config.h"
 #include "util/thread.h"
 
+#include <mutex>
+
 #include <pxr/imaging/hd/renderDelegate.h>
+#include <pxr/imaging/hd/sceneIndex.h>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/sdf/pathExpression.h>
+
+#include <unordered_map>
+#include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
@@ -126,10 +134,43 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return steps > 1 ? _shutterOpen + (_shutterClose - _shutterOpen) * float(step) / float(steps - 1) : 0.0f;
   }
 
+  /* Light and shadow linking (patch 0018): USD's collection:lightLink / shadowLink, a membership expression per light,
+   * matched against every geometry prim's path. A link that reaches all geometry is no link. Every distinct set of
+   * linked lights reaching a prim becomes a Cycles receiver (blocker) set; a linked light reaches its sets. The sets
+   * are recomputed in UpdateScene when lights or geometry changed. ``objects``: the prim's instance objects (its own
+   * vector, read at UpdateScene). */
+  void SetLinkGeometry(const void *owner, const PXR_NS::SdfPath &id, const std::vector<CCL_NS::Object *> *objects);
+  void RemoveLinkGeometry(const void *owner);
+  /* ``prefix``: where the host put the stage in Hydra (Blender: /usd_scene); the expressions are in USD paths. */
+  void SetLightLinks(CCL_NS::Object *light,
+                     const PXR_NS::HdSceneIndexBaseRefPtr &sceneIndex,
+                     const PXR_NS::SdfPath &prefix,
+                     const PXR_NS::SdfPathExpression &lightLink,
+                     const PXR_NS::SdfPathExpression &shadowLink);
+  void RemoveLightLinks(CCL_NS::Object *light);
+
   CCL_NS::Session *session;
   bool keep_nodes;
 
  private:
+  void UpdateLinks();
+
+  struct LinkedGeometry {
+    PXR_NS::SdfPath id;
+    const std::vector<CCL_NS::Object *> *objects;
+  };
+  struct LightLinks {
+    PXR_NS::SdfPathExpression light;
+    PXR_NS::SdfPathExpression shadow;
+  };
+  std::unordered_map<const void *, LinkedGeometry> _linkedGeometry;
+  std::unordered_map<CCL_NS::Object *, LightLinks> _lightLinks;
+  PXR_NS::HdSceneIndexBaseRefPtr _linkSceneIndex;
+  PXR_NS::SdfPath _linkPrefix = PXR_NS::SdfPath::AbsoluteRootPath();
+  bool _linksDirty = false;
+  bool _linksApplied = false; /* some object or light holds a non-default set */
+  std::mutex _linksMutex; /* rprims sync in parallel (ExclusiveSync) */
+
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;

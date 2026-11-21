@@ -18,6 +18,8 @@
 #include "util/transform.h"
 
 #include <pxr/imaging/hd/lightSchema.h>
+#include <pxr/imaging/hd/collectionsSchema.h>
+#include <pxr/imaging/hd/primOriginSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/visibilitySchema.h>
 #include <pxr/imaging/hd/xformSchema.h>
@@ -63,6 +65,39 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
   const HdContainerDataSourceHandle lightDs = HdLightSchema::GetFromParent(primDs).GetContainer();
+
+  {
+    /* Light and shadow linking (patch 0018): USD's collection:lightLink / shadowLink as UsdImaging gives them (a
+     * membership expression each); HdCyclesSession matches them against the geometry. Every sync: a changed
+     * collection need not dirty the light's parameters. */
+    const HdCollectionsSchema collections = HdCollectionsSchema::GetFromParent(primDs);
+    const auto expression = [&](const TfToken &name) {
+      if (auto ds = collections.GetCollection(name).GetMembershipExpression()) {
+        return ds->GetTypedValue(0.0f);
+      }
+      return SdfPathExpression();
+    };
+    /* The stage's place in Hydra: this light's id without its USD path (its prim origin). */
+    SdfPath prefix = id;
+    const SdfPath origin = HdPrimOriginSchema::GetFromParent(primDs).GetOriginPath(
+        HdPrimOriginSchemaTokens->scenePath);
+    if (!origin.IsEmpty() && origin.IsAbsolutePath() && id.GetPathElementCount() >= origin.GetPathElementCount() &&
+        id.GetNameToken() == origin.GetNameToken())
+    {
+      for (size_t i = 0; i < origin.GetPathElementCount(); ++i) {
+        prefix = prefix.GetParentPath();
+      }
+    }
+    else {
+      prefix = SdfPath::AbsoluteRootPath();
+    }
+    static_cast<HdCyclesSession *>(renderParam)
+        ->SetLightLinks(_object,
+                        sceneDelegate->GetRenderIndex().GetTerminalSceneIndex(),
+                        prefix,
+                        expression(HdTokens->lightLink),
+                        expression(HdTokens->shadowLink));
+  }
 
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     const float metersPerUnit =
@@ -194,6 +229,8 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       }
     }
     _object->set_lightgroup(ustring(lightgroup));
+
+
     if (_lightType == HdPrimTypeTokens->domeLight) {
       lock.scene->background->set_lightgroup(ustring(lightgroup));
       lock.scene->background->tag_update(lock.scene);
@@ -377,6 +414,7 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   const SceneLock lock(renderParam);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
 
+  static_cast<HdCyclesSession *>(renderParam)->RemoveLightLinks(_object);
   if (!keep_nodes) {
     /* Delete the object before the light, since the object references the light. */
     lock.scene->delete_node(_object);
