@@ -109,6 +109,8 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       }
     }
 
+    _renderParam->SetProjectionMatrix(renderPassState->GetProjectionMatrix());
+
     // Update camera dimensions to the viewport size
     CameraUtilFraming framing = renderPassState->GetFraming();
     if (!framing.IsValid()) {

@@ -441,6 +441,9 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     _renderParam->SetStageMetersPerUnit(
         VtValue::Cast<double>(value).GetWithDefault(_renderParam->GetStageMetersPerUnit()));
   }
+  else if (key == HdCyclesRenderSettingsTokens->windowDepth) {
+    _renderParam->SetDepthToWindow(VtValue::Cast<bool>(value).GetWithDefault(false));
+  }
   else if (key == HdCyclesRenderSettingsTokens->timeLimit) {
     session->set_time_limit(
         VtValue::Cast<double>(value).GetWithDefault(session->params.time_limit));

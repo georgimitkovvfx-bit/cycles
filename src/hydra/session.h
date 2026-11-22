@@ -49,6 +49,32 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _stageMetersPerUnit;
   }
 
+  /* `cycles:viewport:window_depth`: the `depth` AOV as window depth (0..1, like an OpenGL depth buffer), which a
+   * viewport compositing Hydra's depth reads (UsdImagingGL). Off by default: final renders keep Cycles' distance
+   * (Blender's Z pass). After hdCycles-h22 (Houdini's viewport), commit 14fb1d2c8. */
+  bool GetDepthToWindow() const
+  {
+    return _depthToWindow;
+  }
+
+  void SetDepthToWindow(const bool depthToWindow)
+  {
+    _depthToWindow = depthToWindow;
+  }
+
+  /* The projection of the camera being rendered, to convert the depth pass (set by the render pass). */
+  PXR_NS::GfMatrix4d GetProjectionMatrix() const
+  {
+    const std::lock_guard<std::mutex> lock(_projectionMutex);
+    return _projectionMatrix;
+  }
+
+  void SetProjectionMatrix(const PXR_NS::GfMatrix4d &projectionMatrix)
+  {
+    const std::lock_guard<std::mutex> lock(_projectionMutex);
+    _projectionMatrix = projectionMatrix;
+  }
+
   void SetStageMetersPerUnit(const double stageMetersPerUnit)
   {
     _stageMetersPerUnit = stageMetersPerUnit;
@@ -174,6 +200,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;
+  bool _depthToWindow = false;
+  PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
+  mutable std::mutex _projectionMutex; /* written by the render pass, read by the output driver's thread */
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   PXR_NS::HdRenderPassAovBinding _displayAovBinding;
   float _shutterOpen = 0.0f;

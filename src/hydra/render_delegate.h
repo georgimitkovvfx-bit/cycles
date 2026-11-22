@@ -19,7 +19,8 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((threads, "cycles:threads")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \
-    ((sampleOffset, "cycles:sample_offset"))
+    ((sampleOffset, "cycles:sample_offset")) \
+    ((windowDepth, "cycles:viewport:window_depth"))
 // clang-format on
 
 TF_DECLARE_PUBLIC_TOKENS(HdCyclesRenderSettingsTokens, HD_CYCLES_RENDER_SETTINGS_TOKENS);
