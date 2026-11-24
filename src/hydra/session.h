@@ -78,6 +78,18 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   /* Set by a host that never renders while Hydra syncs (cycles_usd_render): each rprim then fills its own geometry
    * outside the scene lock, so Hydra's parallel sync is parallel. Interactive hosts (Blender's viewport) leave it
    * off: the session thread may update the scene meanwhile. */
+  /* Hydra's `instanceId` AOV: an attribute on every instance object and an AOV output in every material. Hosts that
+   * never read it (cycles_usd_render) turn it off: with millions of instances the per-object attributes cost
+   * memory and an attribute repack on every change. */
+  void SetInstanceIdAov(const bool enabled)
+  {
+    _instanceIdAov = enabled;
+  }
+  bool InstanceIdAov() const
+  {
+    return _instanceIdAov;
+  }
+
   void SetExclusiveSync(const bool exclusive)
   {
     _exclusiveSync = exclusive;
@@ -121,6 +133,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   float _shutterClose = 0.0f;
   bool _motionBlurAllowed = true;
   bool _exclusiveSync = false;
+  bool _instanceIdAov = true;
   int _transparentBackground = -1;
   bool _backgroundDirty = false; /* the setting changed: update the background once */
 };

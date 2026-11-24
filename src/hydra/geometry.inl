@@ -12,6 +12,7 @@
 #include "scene/geometry.h"
 #include "scene/object.h"
 #include "scene/scene.h"
+#include "scene/mesh.h"
 #include "scene/volume.h"
 #include "session/session.h"
 
@@ -302,7 +303,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
     /* After the resize: every instance can be masked out (invisibleIds, culled native instances), leaving none —
      * the next sync must not touch _instances[0] then (it was read out of bounds: heap corruption, crashes). */
-    if (!_instances.empty()) {
+    if (!_instances.empty() && _instanceIdAttribute) {
       // Make sure the first object attribute is the instanceId
       assert(_instances[0]->attributes.size() >= 1 &&
              _instances[0]->attributes.front().name() == HdAovTokens->instanceId.GetString());
@@ -321,15 +322,31 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     }
   }
 
+  /* A static BVH (sequences too, cycles_usd_render) lets Cycles bake a single-user geometry's transform into its
+   * data (ObjectManager::apply_static_transforms). When the object moves, restore the object-space data — points,
+   * normals, widths, primvars — and let Cycles bake the new transform; the baked normals go, so they are read again
+   * or recomputed. Without this a moved object stayed where it was first rendered. */
+  HdDirtyBits populateBits = *dirtyBits;
+  if (transformsDirty && _geom->transform_applied) {
+    if constexpr (std::is_same_v<CyclesBase, Mesh>) {
+      _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
+      _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
+      _geom->attributes.remove(ATTR_STD_NORMAL_UNDISPLACED);
+    }
+    populateBits |= HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyNormals | HdChangeTracker::DirtyWidths |
+                    HdChangeTracker::DirtyPrimvar;
+    _geom->transform_applied = false;
+  }
+
   // Must happen after material ID update, so that attribute decisions can be made
   // based on it (e.g. check whether an attribute is actually needed)
   if (exclusive) {
     lock_holder.reset();
-    Populate(sceneDelegate, *dirtyBits, rebuild);
+    Populate(sceneDelegate, populateBits, rebuild);
     lock_holder.emplace(renderParam);
   }
   else {
-    Populate(sceneDelegate, *dirtyBits, rebuild);
+    Populate(sceneDelegate, populateBits, rebuild);
   }
 
   if (_geom->is_modified() || rebuild) {
@@ -373,6 +390,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Initialize(HdRenderParam *renderParam)
     return;
   }
 
+  _instanceIdAttribute = static_cast<HdCyclesSession *>(renderParam)->InstanceIdAov();
   const SceneLock lock(renderParam);
 
   // Create geometry
@@ -392,8 +410,10 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
   /* The prim path: Cryptomatte object IDs hash the object name (all objects hashed "" before). */
   instance->name = _geom->name;
 
-  instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(),
-                                    _instances.size() == 1 ? -1.0f : static_cast<float>(index));
+  if (_instanceIdAttribute) {
+    instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(),
+                                      _instances.size() == 1 ? -1.0f : static_cast<float>(index));
+  }
 
   instance->set_color(make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));

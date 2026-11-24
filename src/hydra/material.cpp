@@ -264,6 +264,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       network = matSchema.GetMaterialNetwork();
     }
 
+    _instanceIdAov = static_cast<HdCyclesSession *>(renderParam)->InstanceIdAov();
     const SceneLock lock(renderParam);
 
     if (network && !_nodes.empty() && !dirtyResource) {
@@ -289,7 +290,9 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
         graph->connect(bsdf->output("BSDF"), graph->output()->input("Surface"));
       }
 
-      AddInstanceIdAOV(graph.get());
+      if (_instanceIdAov) { /* unless the host never reads it */
+        AddInstanceIdAOV(graph.get());
+      }
 
       if (!_shader) {
         _shader = lock.scene->create_node<Shader>();

@@ -54,6 +54,7 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
   unique_ptr<CCL_NS::ShaderGraph> BuildShaderGraph(PXR_NS::HdMaterialNetworkSchema network);
 
   CCL_NS::Shader *_shader = nullptr;
+  bool _instanceIdAov = true; /* HdCyclesSession::InstanceIdAov */
   std::unordered_map<PXR_NS::SdfPath, NodeDesc, PXR_NS::SdfPath::Hash> _nodes;
 };
 

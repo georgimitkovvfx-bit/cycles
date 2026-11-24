@@ -34,6 +34,7 @@ template<typename Base, typename CyclesBase> class HdCyclesGeometry : public Bas
                         bool &rebuild) = 0;
 
   CyclesBase *_geom = nullptr;
+  bool _instanceIdAttribute = true; /* HdCyclesSession::InstanceIdAov */
   /* Motion blur for this sync (HdCyclesSession): steps evenly over the shutter, 0 = none. */
   int _motionSteps = 0;
   float _shutterOpen = 0.0f;
