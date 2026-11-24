@@ -67,8 +67,46 @@ TF_DEFINE_PRIVATE_TOKENS(CyclesMaterialTokens,
     (wrapS)
     (wrapT)
     (periodic)
+    (specularColor)
+    (useSpecularWorkflow)
+    (metallic)
+    (ior)
+    (opacityThreshold)
+    (scale)
+    (bias)
+    (fallback)
 );
 // clang-format on
+
+template<typename T>
+static T GetParameter(const HdMaterialNodeParameterContainerSchema &params,
+                      const TfToken &name,
+                      const T &fallback)
+{
+  const HdSampledDataSourceHandle ds = params.Get(name).GetValue();
+  return ds ? VtValue::Cast<T>(ds->GetValue(0.0f)).GetWithDefault(fallback) : fallback;
+}
+
+/* USD's fallback input of texture readers (float, float2, float3 or float4), as a color and alpha, or `value` when it
+ * is not authored. */
+static GfVec4f GetFallback(const HdMaterialNodeParameterContainerSchema &params, const GfVec4f &value)
+{
+  const HdSampledDataSourceHandle ds = params.Get(CyclesMaterialTokens->fallback).GetValue();
+  const VtValue fallback = ds ? ds->GetValue(0.0f) : VtValue();
+  if (fallback.IsHolding<float>() || fallback.IsHolding<int>()) {
+    const float f = VtValue::Cast<float>(fallback).Get<float>();
+    return GfVec4f(f, f, f, 1.0f);
+  }
+  if (fallback.IsHolding<GfVec2f>()) {
+    const GfVec2f v = fallback.UncheckedGet<GfVec2f>();
+    return GfVec4f(v[0], v[1], 0.0f, 1.0f);
+  }
+  if (fallback.IsHolding<GfVec3f>()) {
+    const GfVec3f v = fallback.UncheckedGet<GfVec3f>();
+    return GfVec4f(v[0], v[1], v[2], 1.0f);
+  }
+  return VtValue::Cast<GfVec4f>(fallback).GetWithDefault(value);
+}
 
 /* Simple class to handle remapping of USDPreviewSurface nodes and parameters to Cycles
  * equivalents. */
@@ -89,6 +127,22 @@ class UsdToCyclesMapping {
   bool hasParameterMapping(const TfToken &name) const
   {
     return _paramMap.find(name) != _paramMap.end();
+  }
+
+  /* Set the values where the USD and Cycles defaults differ, on a new node. */
+  virtual void initialize(ShaderNode * /*node*/) const {}
+
+  /* Whether a USD input applies, given the other parameters of the node. */
+  virtual bool isInputUsed(const TfToken & /*name*/, const HdMaterialNodeParameterContainerSchema & /*params*/) const
+  {
+    return true;
+  }
+
+  /* Add the nodes that an input needs besides its socket, once the graph is linked. */
+  virtual void finalize(ShaderGraph * /*graph*/,
+                        ShaderNode * /*node*/,
+                        const HdMaterialNodeParameterContainerSchema & /*params*/) const
+  {
   }
 
   virtual std::string parameterName(const TfToken &name,
@@ -166,20 +220,172 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
 
     return UsdToCyclesMapping::parameterName(name, inputConnection, value);
   }
+
+  void initialize(ShaderNode *node) const override
+  {
+    ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+    /* USD's default sourceColorSpace is "auto"; Cycles' image node defaults to scene linear. */
+    image->set_colorspace(u_colorspace_auto);
+    /* USD's default wrap (useMetadata) is black outside the image, as Karma; Cycles' repeats. */
+    image->set_extension(EXTENSION_CLIP);
+  }
+
+  bool isInputUsed(const TfToken &name, const HdMaterialNodeParameterContainerSchema & /*params*/) const override
+  {
+    /* Applied to the outputs in finalize(), they are not the texture mapping "Scale". */
+    return name != CyclesMaterialTokens->scale && name != CyclesMaterialTokens->bias &&
+           name != CyclesMaterialTokens->fallback;
+  }
+
+  void finalize(ShaderGraph *graph, ShaderNode *node, const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* A missing file or UDIM tile reads the fallback, (0, 0, 0, 1) by default, like in Karma and Storm, instead of
+     * Cycles' pink. */
+    ImageTextureNode *image = static_cast<ImageTextureNode *>(node);
+    const GfVec4f fallback = GetFallback(params, GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+    image->set_missing(make_float3(fallback[0], fallback[1], fallback[2]));
+    image->set_missing_alpha(fallback[3]);
+
+    /* The outputs are the texture values times scale plus bias, e.g. to unpack normal maps. Authored values only: a
+     * connected scale or bias is ignored. */
+    const GfVec4f scale = GetParameter(params, CyclesMaterialTokens->scale, GfVec4f(1.0f));
+    const GfVec4f bias = GetParameter(params, CyclesMaterialTokens->bias, GfVec4f(0.0f));
+    if (scale == GfVec4f(1.0f) && bias == GfVec4f(0.0f)) {
+      return;
+    }
+    ShaderOutput *color = node->output("Color");
+    if (!color->links.empty()) {
+      VectorMathNode *math = graph->create_node<VectorMathNode>();
+      math->set_math_type(NODE_VECTOR_MATH_MULTIPLY_ADD);
+      math->set_vector2(make_float3(scale[0], scale[1], scale[2]));
+      math->set_vector3(make_float3(bias[0], bias[1], bias[2]));
+      graph->relink(color, math->output("Vector"));
+      graph->connect(color, math->input("Vector1"));
+    }
+    ShaderOutput *alpha = node->output("Alpha");
+    if (!alpha->links.empty()) {
+      MathNode *math = graph->create_node<MathNode>();
+      math->set_math_type(NODE_MATH_MULTIPLY_ADD);
+      math->set_value2(scale[3]);
+      math->set_value3(bias[3]);
+      graph->relink(alpha, math->output("Value"));
+      graph->connect(alpha, math->input("Value1"));
+    }
+  }
+};
+
+/* UsdPreviewSurface on Cycles' Principled BSDF, from hdCycles-h22 (Apache-2.0): USD's defaults, the specular
+ * workflow, opacityThreshold cut-outs and tangent-space normal maps. */
+class UsdToCyclesPreviewSurface : public UsdToCyclesMapping {
+ public:
+  using UsdToCyclesMapping::UsdToCyclesMapping;
+
+  void initialize(ShaderNode *node) const override
+  {
+    /* USD's diffuseColor default (Cycles 0.8). emissiveColor is the emitted radiance and defaults to black. */
+    PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
+    bsdf->set_base_color(make_float3(0.18f));
+    bsdf->set_emission_color(zero_float3());
+    bsdf->set_emission_strength(1.0f);
+    /* USD's clearcoatRoughness default, Cycles' is 0.03. */
+    bsdf->set_coat_roughness(0.01f);
+  }
+
+  static bool isSpecularWorkflow(const HdMaterialNodeParameterContainerSchema &params)
+  {
+    return GetParameter(params, CyclesMaterialTokens->useSpecularWorkflow, 0) != 0;
+  }
+
+  bool isInputUsed(const TfToken &name, const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    /* specularColor only applies in the specular workflow, like in USD and Karma. There metallic does not apply, and
+     * the IOR only shapes the Fresnel curve: keep the default, so that the Specular Tint scale in finalize() is
+     * fixed. */
+    if (name == CyclesMaterialTokens->specularColor) {
+      return isSpecularWorkflow(params);
+    }
+    if (name == CyclesMaterialTokens->ior || name == CyclesMaterialTokens->metallic) {
+      return !isSpecularWorkflow(params);
+    }
+    /* Applied to the opacity in finalize(); useSpecularWorkflow decides the inputs above. */
+    return name != CyclesMaterialTokens->opacityThreshold && name != CyclesMaterialTokens->useSpecularWorkflow &&
+           name != HdMaterialTerminalTokens->displacement;
+  }
+
+  void finalize(ShaderGraph *graph, ShaderNode *node, const HdMaterialNodeParameterContainerSchema &params) const override
+  {
+    PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(node);
+    if (isSpecularWorkflow(params)) {
+      /* specularColor is the reflectance at normal incidence. Cycles reflects the Specular Tint times the reflectance
+       * of the IOR (0.04 for 1.5), so scale it by the inverse. */
+      const float ior = bsdf->get_ior();
+      const float scale = 1.0f / sqr((ior - 1.0f) / (ior + 1.0f));
+      ShaderInput *tint = bsdf->input("Specular Tint");
+      if (ShaderOutput *link = tint->link) {
+        VectorMathNode *math = graph->create_node<VectorMathNode>();
+        math->set_math_type(NODE_VECTOR_MATH_SCALE);
+        math->set_scale(scale);
+        graph->disconnect(tint);
+        graph->connect(link, math->input("Vector1"));
+        graph->connect(math->output("Vector"), tint);
+      }
+      else {
+        /* An unauthored specularColor is black, unlike the white Specular Tint default. */
+        const bool authored = bool(params.Get(CyclesMaterialTokens->specularColor).GetValue());
+        bsdf->set_specular_tint(authored ? bsdf->get_specular_tint() * scale : zero_float3());
+      }
+    }
+
+    /* An opacityThreshold above 0 makes a cutout: opacity below it is transparent, the rest opaque. */
+    const float threshold = GetParameter(params, CyclesMaterialTokens->opacityThreshold, 0.0f);
+    if (threshold > 0.0f) {
+      ShaderInput *alpha = bsdf->input("Alpha");
+      if (ShaderOutput *link = alpha->link) {
+        MathNode *below = graph->create_node<MathNode>();
+        below->set_math_type(NODE_MATH_LESS_THAN);
+        below->set_value2(threshold);
+        MathNode *opaque = graph->create_node<MathNode>();
+        opaque->set_math_type(NODE_MATH_SUBTRACT);
+        opaque->set_value1(1.0f);
+        graph->disconnect(alpha);
+        graph->connect(link, below->input("Value1"));
+        graph->connect(below->output("Value"), opaque->input("Value2"));
+        graph->connect(opaque->output("Value"), alpha);
+      }
+      else {
+        bsdf->set_alpha(bsdf->get_alpha() < threshold ? 0.0f : 1.0f);
+      }
+    }
+
+    /* normal is in tangent space in [-1, 1] (a normal map unpacked with the texture's scale and bias), the Principled
+     * Normal in world space: convert with a Normal Map node, which reads the normal packed into [0, 1]. */
+    ShaderInput *normal = bsdf->input("Normal");
+    if (ShaderOutput *link = normal->link) {
+      VectorMathNode *pack = graph->create_node<VectorMathNode>();
+      pack->set_math_type(NODE_VECTOR_MATH_MULTIPLY_ADD);
+      pack->set_vector2(make_float3(0.5f));
+      pack->set_vector3(make_float3(0.5f));
+      NormalMapNode *normalMap = graph->create_node<NormalMapNode>();
+      graph->disconnect(normal);
+      graph->connect(link, pack->input("Vector1"));
+      graph->connect(pack->output("Vector"), normalMap->input("Color"));
+      graph->connect(normalMap->output("Normal"), normal);
+    }
+  }
 };
 
 namespace {
 
 class UsdToCycles {
-  const UsdToCyclesMapping UsdPreviewSurface = {
+  const UsdToCyclesPreviewSurface UsdPreviewSurface = {
       "principled_bsdf",
       {
           {TfToken("diffuseColor"), ustring("base_color")},
           {TfToken("emissiveColor"), ustring("emission_color")},
-          {TfToken("specularColor"), ustring("specular")},
+          {CyclesMaterialTokens->specularColor, ustring("specular_tint")},
+          {TfToken("clearcoat"), ustring("coat_weight")},
           {TfToken("clearcoatRoughness"), ustring("coat_roughness")},
           {TfToken("opacity"), ustring("alpha")},
-          /* opacityThreshold */
           /* occlusion */
           /* displacement */
       }};
@@ -296,7 +502,10 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 #endif
 
-    if (!graph && network && !_nodes.empty() && !dirtyResource) {
+    /* USD preview nodes add nodes for some inputs (finalize()): those networks are rebuilt. */
+    const bool mapped = std::any_of(
+        _nodes.begin(), _nodes.end(), [](const auto &node) { return node.second.mapping != nullptr; });
+    if (!graph && network && !_nodes.empty() && !dirtyResource && !mapped) {
       UpdateParameters(network);
       _shader->tag_update(lock.scene);
     }
@@ -412,6 +621,9 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     VtValue value = valueDs->GetValue(0.0f);
     /* See if the parameter name is in USDPreviewSurface terms, and needs to be converted .*/
     const UsdToCyclesMapping *inputMapping = nodeDesc.mapping;
+    if (inputMapping && !inputMapping->isInputUsed(paramName, params)) {
+      continue;
+    }
     const std::string inputName = inputMapping ?
                                       inputMapping->parameterName(paramName, nullptr, &value) :
                                       paramName.GetString();
@@ -492,6 +704,9 @@ void HdCyclesMaterial::UpdateConnections(NodeDesc &nodeDesc,
     }
 
     const UsdToCyclesMapping *inputMapping = nodeDesc.mapping;
+    if (inputMapping && !inputMapping->isInputUsed(dstSocketName, nodeSchema.GetParameters())) {
+      continue;
+    }
     const std::string inputName = inputMapping ?
                                       inputMapping->parameterName(dstSocketName, nullptr) :
                                       dstSocketName.GetString();
@@ -613,21 +828,8 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
       /* If it's a native Cycles' node-type, just do the lookup now. */
       if (const NodeType *nodeType = NodeType::find(cyclesType)) {
         nodeDesc.node = graph->create_node(nodeType);
-        if (nodeTypeIdToken == CyclesMaterialTokens->UsdUVTexture) {
-          /* USD's default sourceColorSpace is "auto"; Cycles' image node defaults to scene linear. */
-          ApplyColorSpace(nodeDesc.node, TfToken("auto"));
-          /* USD's default wrap (useMetadata) is black outside the image, as Karma; Cycles' repeats. */
-          static_cast<ImageTextureNode *>(nodeDesc.node)->set_extension(EXTENSION_CLIP);
-        }
-        else if (nodeTypeIdToken == CyclesMaterialTokens->UsdPreviewSurface) {
-          /* USD's defaults where Cycles' Principled BSDF has others (as hdCycles-h22): diffuseColor 0.18 (Cycles 0.8),
-           * clearcoatRoughness 0.01; emissiveColor is the emitted radiance, so the emission strength is 1 (Cycles'
-           * default 0, and emissiveColor went to a socket the node does not have: nothing emitted). */
-          PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(nodeDesc.node);
-          bsdf->set_base_color(make_float3(0.18f));
-          bsdf->set_emission_color(zero_float3());
-          bsdf->set_emission_strength(1.0f);
-          bsdf->set_coat_roughness(0.01f);
+        if (nodeDesc.mapping) {
+          nodeDesc.mapping->initialize(nodeDesc.node);
         }
         _nodes.emplace(nodePath, nodeDesc);
       }
@@ -652,6 +854,14 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
     }
 
     UpdateConnections(nodeIt->second, nodes.Get(nodeName), nodePath, graph.get());
+  }
+
+  /* USD inputs that need more nodes than the one their node maps to. */
+  for (const TfToken &nodeName : nodes.GetNames()) {
+    const auto nodeIt = _nodes.find(MaterialNodeNameToSdfPath(nodeName));
+    if (nodeIt != _nodes.end() && nodeIt->second.mapping) {
+      nodeIt->second.mapping->finalize(graph.get(), nodeIt->second.node, nodes.Get(nodeName).GetParameters());
+    }
   }
 
   /* Finally connect the terminals to the graph output (Surface, Volume, Displacement). */
