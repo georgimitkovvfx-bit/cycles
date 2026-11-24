@@ -299,6 +299,33 @@ void HdCyclesMesh::PopulateNormals(HdSceneDelegate *sceneDelegate)
   }
 }
 
+namespace {
+
+/* Cycles reads the UV map as float2 per face corner (mikktspace tangents for normal maps, primitive_uv), so UVs at
+ * other interpolations are expanded to face-varying (from hdCycles-h22). Empty when the indices do not fit. */
+VtVec2fArray ComputeFaceVaryingUV(const VtVec2fArray &uv, const HdInterpolation interpolation, const HdMeshTopology &topology)
+{
+  const VtIntArray &counts = topology.GetFaceVertexCounts();
+  const VtIntArray &indices = topology.GetFaceVertexIndices();
+  VtVec2fArray result;
+  result.reserve(indices.size());
+  for (size_t face = 0, corner = 0; face < counts.size(); ++face) {
+    for (int i = 0; i < counts[face]; ++i, ++corner) {
+      const size_t index = (interpolation == HdInterpolationUniform)  ? face :
+                           (interpolation == HdInterpolationConstant) ? 0 :
+                           (corner < indices.size())                  ? size_t(indices[corner]) :
+                                                                        uv.size();
+      if (index >= uv.size()) {
+        return {};
+      }
+      result.push_back(uv[index]);
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
 void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
 {
   Scene *const scene = (Scene *)_geom->get_owner();
@@ -361,16 +388,29 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
           _geom->need_attribute(scene, name))
       {
         const HdType valueType = HdGetValueTupleType(value).type;
+        HdInterpolation interp = interpolation.first;
+        AttributeElement element = interpolation.second;
+
+        if (!subdivision && std == ATTR_STD_UV && interp != HdInterpolationFaceVarying &&
+            value.IsHolding<VtVec2fArray>())
+        {
+          VtVec2fArray cornerUV = ComputeFaceVaryingUV(value.UncheckedGet<VtVec2fArray>(), interp, _topology);
+          if (!cornerUV.empty()) {
+            value = VtValue(std::move(cornerUV));
+            interp = HdInterpolationFaceVarying;
+            element = ATTR_ELEMENT_CORNER;
+          }
+        }
 
         if (!subdivision) {
           // Adjust attributes for polygons that were triangulated
-          if (interpolation.first == HdInterpolationUniform) {
+          if (interp == HdInterpolationUniform) {
             value = ComputeTriangulatedUniformPrimvar(value, valueType, _primitiveParams);
             if (value.IsEmpty()) {
               continue;
             }
           }
-          else if (interpolation.first == HdInterpolationFaceVarying) {
+          else if (interp == HdInterpolationFaceVarying) {
             value = ComputeTriangulatedFaceVaryingPrimvar(value, valueType, _util);
             if (value.IsEmpty()) {
               continue;
@@ -378,7 +418,7 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
           }
         }
 
-        ApplyPrimvars(attributes, name, value, interpolation.second, std);
+        ApplyPrimvars(attributes, name, value, element, std);
       }
     }
   }
