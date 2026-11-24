@@ -171,7 +171,7 @@ class UsdToCycles {
       "principled_bsdf",
       {
           {TfToken("diffuseColor"), ustring("base_color")},
-          {TfToken("emissiveColor"), ustring("emission")},
+          {TfToken("emissiveColor"), ustring("emission_color")},
           {TfToken("specularColor"), ustring("specular")},
           {TfToken("clearcoatRoughness"), ustring("coat_roughness")},
           {TfToken("opacity"), ustring("alpha")},
@@ -607,6 +607,16 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
         if (nodeTypeIdToken == CyclesMaterialTokens->UsdUVTexture) {
           /* USD's default sourceColorSpace is "auto"; Cycles' image node defaults to scene linear. */
           ApplyColorSpace(nodeDesc.node, TfToken("auto"));
+        }
+        else if (nodeTypeIdToken == CyclesMaterialTokens->UsdPreviewSurface) {
+          /* USD's defaults where Cycles' Principled BSDF has others (as hdCycles-h22): diffuseColor 0.18 (Cycles 0.8),
+           * clearcoatRoughness 0.01; emissiveColor is the emitted radiance, so the emission strength is 1 (Cycles'
+           * default 0, and emissiveColor went to a socket the node does not have: nothing emitted). */
+          PrincipledBsdfNode *bsdf = static_cast<PrincipledBsdfNode *>(nodeDesc.node);
+          bsdf->set_base_color(make_float3(0.18f));
+          bsdf->set_emission_color(zero_float3());
+          bsdf->set_emission_strength(1.0f);
+          bsdf->set_coat_roughness(0.01f);
         }
         _nodes.emplace(nodePath, nodeDesc);
       }
