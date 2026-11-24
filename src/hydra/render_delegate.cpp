@@ -6,6 +6,7 @@
 #include "hydra/render_delegate.h"
 #include "hydra/camera.h"
 #include "hydra/curves.h"
+#include "hydra/cylinder_light.h"
 #include "hydra/field.h"
 #include "hydra/instancer.h"
 #include "hydra/light.h"
@@ -262,9 +263,12 @@ HdSprim *HdCyclesDelegate::CreateSprim(const TfToken &typeId, const SdfPath &spr
   }
   if (typeId == HdPrimTypeTokens->diskLight || typeId == HdPrimTypeTokens->distantLight ||
       typeId == HdPrimTypeTokens->domeLight || typeId == HdPrimTypeTokens->rectLight ||
-      typeId == HdPrimTypeTokens->sphereLight || typeId == HdPrimTypeTokens->cylinderLight)
+      typeId == HdPrimTypeTokens->sphereLight)
   {
     return new HdCyclesLight(sprimId, typeId);
+  }
+  if (typeId == HdPrimTypeTokens->cylinderLight) {
+    return new HdCyclesCylinderLight(sprimId);
   }
 
   TF_CODING_ERROR("Unknown Sprim type %s", typeId.GetText());

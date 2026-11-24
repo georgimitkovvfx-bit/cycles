@@ -12,6 +12,13 @@
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
+/* Light and shadow linking of a light (patch 0018), shared with the cylinder light (a mesh light, patch 0029). */
+void SyncLightLinks(PXR_NS::HdSceneDelegate *sceneDelegate,
+                    PXR_NS::HdRenderParam *renderParam,
+                    const PXR_NS::SdfPath &id,
+                    const PXR_NS::HdContainerDataSourceHandle &primDs,
+                    CCL_NS::Object *object);
+
 class HdCyclesLight final : public PXR_NS::HdLight {
  public:
   HdCyclesLight(const PXR_NS::SdfPath &sprimId, const PXR_NS::TfToken &lightType);

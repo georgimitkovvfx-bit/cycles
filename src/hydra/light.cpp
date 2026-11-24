@@ -37,6 +37,44 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
 );
 // clang-format on
 
+void SyncLightLinks(HdSceneDelegate *sceneDelegate,
+                    HdRenderParam *renderParam,
+                    const SdfPath &id,
+                    const HdContainerDataSourceHandle &primDs,
+                    Object *object)
+{
+  /* Light and shadow linking (patch 0018): USD's collection:lightLink / shadowLink as UsdImaging gives them (a
+   * membership expression each); HdCyclesSession matches them against the geometry. Every sync: a changed
+   * collection need not dirty the light's parameters. */
+  const HdCollectionsSchema collections = HdCollectionsSchema::GetFromParent(primDs);
+  const auto expression = [&](const TfToken &name) {
+    if (auto ds = collections.GetCollection(name).GetMembershipExpression()) {
+      return ds->GetTypedValue(0.0f);
+    }
+    return SdfPathExpression();
+  };
+  /* The stage's place in Hydra: this light's id without its USD path (its prim origin). */
+  SdfPath prefix = id;
+  const SdfPath origin = HdPrimOriginSchema::GetFromParent(primDs).GetOriginPath(
+      HdPrimOriginSchemaTokens->scenePath);
+  if (!origin.IsEmpty() && origin.IsAbsolutePath() && id.GetPathElementCount() >= origin.GetPathElementCount() &&
+      id.GetNameToken() == origin.GetNameToken())
+  {
+    for (size_t i = 0; i < origin.GetPathElementCount(); ++i) {
+      prefix = prefix.GetParentPath();
+    }
+  }
+  else {
+    prefix = SdfPath::AbsoluteRootPath();
+  }
+  static_cast<HdCyclesSession *>(renderParam)
+      ->SetLightLinks(object,
+                      sceneDelegate->GetRenderIndex().GetTerminalSceneIndex(),
+                      prefix,
+                      expression(HdTokens->lightLink),
+                      expression(HdTokens->shadowLink));
+}
+
 HdCyclesLight::HdCyclesLight(const SdfPath &sprimId, const TfToken &lightType)
     : HdLight(sprimId), _lightType(lightType)
 {
@@ -66,38 +104,7 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
   const HdContainerDataSourceHandle lightDs = HdLightSchema::GetFromParent(primDs).GetContainer();
 
-  {
-    /* Light and shadow linking (patch 0018): USD's collection:lightLink / shadowLink as UsdImaging gives them (a
-     * membership expression each); HdCyclesSession matches them against the geometry. Every sync: a changed
-     * collection need not dirty the light's parameters. */
-    const HdCollectionsSchema collections = HdCollectionsSchema::GetFromParent(primDs);
-    const auto expression = [&](const TfToken &name) {
-      if (auto ds = collections.GetCollection(name).GetMembershipExpression()) {
-        return ds->GetTypedValue(0.0f);
-      }
-      return SdfPathExpression();
-    };
-    /* The stage's place in Hydra: this light's id without its USD path (its prim origin). */
-    SdfPath prefix = id;
-    const SdfPath origin = HdPrimOriginSchema::GetFromParent(primDs).GetOriginPath(
-        HdPrimOriginSchemaTokens->scenePath);
-    if (!origin.IsEmpty() && origin.IsAbsolutePath() && id.GetPathElementCount() >= origin.GetPathElementCount() &&
-        id.GetNameToken() == origin.GetNameToken())
-    {
-      for (size_t i = 0; i < origin.GetPathElementCount(); ++i) {
-        prefix = prefix.GetParentPath();
-      }
-    }
-    else {
-      prefix = SdfPath::AbsoluteRootPath();
-    }
-    static_cast<HdCyclesSession *>(renderParam)
-        ->SetLightLinks(_object,
-                        sceneDelegate->GetRenderIndex().GetTerminalSceneIndex(),
-                        prefix,
-                        expression(HdTokens->lightLink),
-                        expression(HdTokens->shadowLink));
-  }
+  SyncLightLinks(sceneDelegate, renderParam, id, primDs, _object);
 
   if (*dirtyBits & DirtyBits::DirtyTransform) {
     const float metersPerUnit =
@@ -172,12 +179,6 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
       if (auto ds = GetTypedDataSource<float>(lightDs, HdLightTokens->height)) {
         area_light->set_sizev(ds->GetTypedValue(0.0f));
       }
-    }
-    else if (_lightType == HdPrimTypeTokens->cylinderLight) {
-      /* Cycles has no line light: a point light with the same intensity, as Blender's USD importer makes it (radius
-       * 0, so the same brightness with or without normalize). Without this the light was not created at all. */
-      static_cast<SpotLight *>(_light)->set_radius(0.0f);
-      _light->set_light_type(LIGHT_POINT);
     }
     else if (_lightType == HdPrimTypeTokens->sphereLight) {
       SpotLight *spot_light = static_cast<SpotLight *>(_light);
@@ -480,7 +481,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
     _light = lock.scene->create_node<AreaLight>();
     static_cast<AreaLight *>(_light)->set_ellipse(false);
   }
-  else if (_lightType == HdPrimTypeTokens->sphereLight || _lightType == HdPrimTypeTokens->cylinderLight) {
+  else if (_lightType == HdPrimTypeTokens->sphereLight) {
     /* We can't know in advance if this is spot light or point light, so we set to derived class
      * SpotLight and change the type later. */
     _light = lock.scene->create_node<SpotLight>();
