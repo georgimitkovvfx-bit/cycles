@@ -32,6 +32,7 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((visibleVolumeScatter, "inputs:cycles:light:visible_volume_scatter"))
     ((useMis, "inputs:cycles:light:use_mis"))
     ((lightgroup, "inputs:cycles:light:lightgroup"))
+    ((karmaLpeTag, "inputs:karma:light:lpetag"))
 );
 // clang-format on
 
@@ -201,7 +202,10 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
     }
     _object->set_visibility(visibility);
     _object->set_lightgroup(
-        ustring(GetTypedValue<std::string>(lightDs, _tokens->lightgroup, std::string())));
+        ustring(GetTypedValue<std::string>(
+            lightDs,
+            _tokens->lightgroup,
+            GetTypedValue<std::string>(lightDs, _tokens->karmaLpeTag, std::string()))));
   }
 
   if (_mesh->is_modified()) {

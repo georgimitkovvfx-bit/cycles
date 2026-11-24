@@ -464,6 +464,18 @@ void HdCyclesGeometry<Base, CyclesBase>::UpdateObjectSettings(
     values.emplace_back(Object::get_node_type()->find_input(ustring("is_shadow_catcher")),
                         VtValue(true));
   }
+  /* Karma's LPE tag (light group AOVs of emissive objects) when there is no Cycles light group. */
+  static const TfToken karmaLpeTag("karma:object:lpetag");
+  if (!authored("lightgroup")) {
+    const VtValue tag = ReadPrimvar(primvars, karmaLpeTag);
+    const std::string name = tag.IsHolding<TfToken>() ? tag.UncheckedGet<TfToken>().GetString() :
+                             tag.IsHolding<std::string>() ? tag.UncheckedGet<std::string>() :
+                                                            std::string();
+    if (!name.empty()) {
+      values.emplace_back(Object::get_node_type()->find_input(ustring("lightgroup")),
+                          VtValue(name));
+    }
+  }
 
   /* Selected to Active, like Blender: the bake target (the baked instance) and the cage are
    * hidden from all rays, so they do not shadow or occlude the sources. The kernel shades the

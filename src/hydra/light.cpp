@@ -51,6 +51,7 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
     ((useCaustics, "inputs:cycles:light:use_caustics"))
     ((maxBounces, "inputs:cycles:light:max_bounces"))
     ((lightgroup, "inputs:cycles:light:lightgroup"))
+    ((karmaLpeTag, "inputs:karma:light:lpetag"))
     ((worldMaterial, "inputs:cycles:light:world_material"))
     ((spread, "inputs:cycles:light:spread"))
     ((isPortal, "inputs:cycles:light:is_portal"))
@@ -196,7 +197,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     _light->set_use_caustics(GetTypedValue<bool>(lightDs, _tokens->useCaustics, false));
     _light->set_max_bounces(GetTypedValue<int>(lightDs, _tokens->maxBounces, 1024));
 
-    const ustring lightgroup(GetTypedValue<std::string>(lightDs, _tokens->lightgroup, ""));
+    // Karma's LPE tag (light group AOVs) when there is no Cycles light group, as Karma's other light
+    // settings
+    const ustring lightgroup(GetTypedValue<std::string>(
+        lightDs, _tokens->lightgroup, GetTypedValue<std::string>(lightDs, _tokens->karmaLpeTag, "")));
     _object->set_lightgroup(lightgroup);
     /* UpdateScene() gives the world the light group of the first dome light. */
 
