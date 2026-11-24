@@ -67,6 +67,34 @@ const std::string kLightgroupPrefix = "lightgroup_";
 const std::pair<const char *, CryptomatteType> kCryptomatteTypes[] = {
     {"CryptoObject", CRYPT_OBJECT}, {"CryptoMaterial", CRYPT_MATERIAL}, {"CryptoAsset", CRYPT_ASSET}};
 
+std::string AovSetting(const HdRenderPassAovBinding &aovBinding, const char *name)
+{
+  const auto it = aovBinding.aovSettings.find(TfToken(name));
+  if (it == aovBinding.aovSettings.end()) {
+    return std::string();
+  }
+  if (it->second.IsHolding<std::string>()) {
+    return it->second.UncheckedGet<std::string>();
+  }
+  if (it->second.IsHolding<TfToken>()) {
+    return it->second.UncheckedGet<TfToken>().GetString();
+  }
+  return std::string();
+}
+
+/* What an AOV shows: husk and usdview name it after its RenderVar and give the RenderVar's sourceName in the AOV
+ * settings (as hdCycles-h22 reads it); Blender's add-on names it after the source itself (`aovToken:`). Only a raw
+ * source names a pass: husk's default AOV `color` has the LPE source "C.*[LO]", which stays the beauty. */
+std::string AovSource(const HdRenderPassAovBinding &aovBinding)
+{
+  const std::string sourceType = AovSetting(aovBinding, "sourceType");
+  const std::string source = AovSetting(aovBinding, "sourceName");
+  if (source.empty() || !(sourceType.empty() || sourceType == "raw")) {
+    return aovBinding.aovName.GetString();
+  }
+  return source;
+}
+
 }  // namespace
 
 SceneLock::SceneLock(const HdRenderParam *renderParam, const bool holdRender)
@@ -390,19 +418,21 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
   int cryptomatteDepth = 0;
   std::vector<std::pair<int, std::string>> cryptomatteLayers;
   for (const HdRenderPassAovBinding &aovBinding : aovBindings) {
+    /* The pass is named after the AOV (the render buffers find it by that), its type comes from the source. */
     const std::string &name = aovBinding.aovName.GetString();
-    if (string_startswith(name, kLightgroupPrefix)) {
+    const std::string source = AovSource(aovBinding);
+    if (string_startswith(source, kLightgroupPrefix)) {
       Pass *pass = scene->create_node<Pass>();
       pass->set_type(PASS_COMBINED);
       pass->set_mode(PassMode::NOISY); /* as Blender's sync: light groups are not denoised */
       pass->set_name(ustring(name));
-      pass->set_lightgroup(ustring(name.substr(kLightgroupPrefix.size())));
+      pass->set_lightgroup(ustring(source.substr(kLightgroupPrefix.size())));
       continue;
     }
     bool isCryptomatte = false;
     for (int rank = 0; rank < 3; ++rank) {
       const std::string prefix = kCryptomatteTypes[rank].first;
-      if (string_startswith(name, prefix)) {
+      if (string_startswith(source, prefix)) {
         cryptomatteType |= kCryptomatteTypes[rank].second;
         cryptomatteLayers.emplace_back(rank, name);
         isCryptomatte = true;
@@ -411,10 +441,13 @@ void HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     if (isCryptomatte) {
       continue;
     }
-    const auto cyclesAov = kAovToPass.find(aovBinding.aovName);
+    auto cyclesAov = kAovToPass.find(TfToken(source));
+    if (cyclesAov == kAovToPass.end()) {
+      cyclesAov = kAovToPass.find(aovBinding.aovName); /* e.g. a raw source named after a RenderMan or Karma pass */
+    }
     if (cyclesAov == kAovToPass.end()) {
       // TODO: Use PASS_AOV_COLOR and PASS_AOV_VALUE for these?
-      TF_WARN("Unknown pass %s", aovBinding.aovName.GetText());
+      TF_WARN("Unknown pass %s", source.c_str());
       continue;
     }
 
