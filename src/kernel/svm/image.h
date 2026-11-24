@@ -26,7 +26,10 @@ ccl_device float4 svm_image_texture(KernelGlobals kg,
                                     const uint flags,
                                     const float4 missing_rgba)
 {
-  float4 r = kernel_image_interp_with_udim(kg, sd, id, uv, missing_rgba);
+  /* The Missing color is scene linear: encode it as the image's pixels, so that the sRGB decode below gives it back
+   * (it was decoded too: a missing sRGB image read darker than its Missing color). */
+  const float4 missing = (flags & NODE_IMAGE_COMPRESS_AS_SRGB) ? color_linear_to_srgb_v4(missing_rgba) : missing_rgba;
+  float4 r = kernel_image_interp_with_udim(kg, sd, id, uv, missing);
   const float alpha = r.w;
 
   if ((flags & NODE_IMAGE_ALPHA_UNASSOCIATE) && alpha != 1.0f && alpha != 0.0f) {
