@@ -12,6 +12,10 @@
 #  include "hydra/session.h"
 #  include "scene/image_vdb.h"
 #  include "scene/scene.h"
+
+#  include <map>
+#  include <memory>
+#  include <mutex>
 #endif
 
 #include <pxr/imaging/hd/sceneDelegate.h>
@@ -26,6 +30,23 @@ class HdCyclesVolumeLoader : public VDBImageLoader {
   HdCyclesVolumeLoader(const std::string &filePath, const std::string &gridName)
       : VDBImageLoader(gridName)
   {
+    grid = shared_grid(filePath, gridName);
+  }
+
+ private:
+  /* Fields naming the same file and grid share one grid: Cycles' image manager tells VDB images apart by their grid
+   * pointer, so a VDB used by many Volumes (smoke puffs, a fog bank per shot) is then read and stored once, not once
+   * per Volume. Weak: a grid no loader holds any more is read again. */
+  static openvdb::GridBase::ConstPtr shared_grid(const std::string &filePath, const std::string &gridName)
+  {
+    static std::mutex mutex;
+    static std::map<std::pair<std::string, std::string>, std::weak_ptr<const openvdb::GridBase>> grids;
+    const std::lock_guard<std::mutex> lock(mutex);
+    std::weak_ptr<const openvdb::GridBase> &cached = grids[{filePath, gridName}];
+    if (openvdb::GridBase::ConstPtr found = cached.lock()) {
+      return found;
+    }
+    openvdb::GridBase::ConstPtr loaded;
     /* Disable delay loading and file copying, this has poor performance on network drives. */
     const bool delay_load = false;
     try {
@@ -34,7 +55,7 @@ class HdCyclesVolumeLoader : public VDBImageLoader {
       file.setCopyMaxBytes(0);
 #  endif
       if (file.open(delay_load)) {
-        grid = file.readGrid(gridName);
+        loaded = file.readGrid(gridName);
       }
     }
     catch (const openvdb::IoError &e) {
@@ -43,6 +64,8 @@ class HdCyclesVolumeLoader : public VDBImageLoader {
     catch (...) {
       LOG_ERROR << "Error loading OpenVDB file: Unknown error";
     }
+    cached = loaded;
+    return loaded;
   }
 };
 #endif
