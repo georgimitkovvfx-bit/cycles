@@ -7,6 +7,7 @@
 #include "hydra/session.h"
 #include "hydra/util.h"
 #include "kernel/types.h"
+#include "scene/background.h"
 #include "scene/light.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -171,6 +172,22 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
 
     _light->set_strength(strength);
     _light->set_is_enabled(visible);
+
+    /* Karma's LPE tag (`inputs:karma:light:lpetag`, what USD Nodes writes for Blender's light groups) → the Cycles
+     * light group: a dome light's goes on the background. */
+    std::string lightgroup;
+    for (const TfToken &name : {TfToken("karma:light:lpetag"), TfToken("inputs:karma:light:lpetag")}) {
+      if (lightDs) {
+        if (auto ds = HdStringDataSource::Cast(lightDs->Get(name))) {
+          lightgroup = ds->GetTypedValue(0.0f);
+        }
+      }
+    }
+    _object->set_lightgroup(ustring(lightgroup));
+    if (_lightType == HdPrimTypeTokens->domeLight) {
+      lock.scene->background->set_lightgroup(ustring(lightgroup));
+      lock.scene->background->tag_update(lock.scene);
+    }
 
     PopulateShaderGraph(lightDs);
   }

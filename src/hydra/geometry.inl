@@ -8,13 +8,16 @@
 #include "hydra/material.h"
 #include "hydra/session.h"
 #include "hydra/util.h"
+#include "kernel/types.h"
 #include "scene/geometry.h"
 #include "scene/object.h"
 #include "scene/scene.h"
 #include "util/hash.h"
 
 #include <pxr/imaging/hd/materialBindingSchema.h>
+#include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
+#include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hd/xformSchema.h>
@@ -22,6 +25,69 @@
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 extern Transform convert_transform(const GfMatrix4d &matrix);
+
+/* Per-object render flags from Karma's constant primvars (inherited down the hierarchy), the names Houdini's
+ * Render Geometry Settings LOP writes and USD Nodes uses for view-layer passes: holdout, ray visibility and the
+ * light group (LPE tag). Cycles has no USD schema for these. */
+struct HdCyclesRenderFlags {
+  uint visibility = PATH_RAY_VISIBILITY_OBJECT_ALL;
+  int holdout = 0; /* 1 matte, 2 background (a shadow catcher) */
+  ustring lightgroup;
+};
+
+/* Karma ray mask (`*`, `primary|shadow`, `-primary&-shadow`…) → Cycles ray visibility: `|` unions terms, `&`
+ * intersects, `-x` is every ray but x. Karma's `sss` has no Cycles ray. */
+inline uint karma_mask_to_visibility(const std::string &mask)
+{
+  static const std::pair<const char *, uint> kRays[] = {{"primary", PATH_RAY_VISIBILITY_CAMERA},
+                                                        {"shadow", PATH_RAY_VISIBILITY_SHADOW},
+                                                        {"diffuse", PATH_RAY_VISIBILITY_DIFFUSE},
+                                                        {"reflect", PATH_RAY_VISIBILITY_GLOSSY},
+                                                        {"refract", PATH_RAY_VISIBILITY_TRANSMIT},
+                                                        {"volume", PATH_RAY_VISIBILITY_VOLUME_SCATTER},
+                                                        {"sss", 0}};
+  auto ray_bits = [](const std::string &name) -> uint {
+    for (const auto &ray : kRays) {
+      if (name == ray.first) {
+        return ray.second;
+      }
+    }
+    return 0;
+  };
+  uint visibility = 0;
+  for (const std::string &term : TfStringSplit(mask, "|")) {
+    uint bits = PATH_RAY_VISIBILITY_ALL;
+    for (std::string atom : TfStringSplit(term, "&")) {
+      atom = TfStringTrim(atom);
+      if (atom.empty() || atom == "*") {
+        continue;
+      }
+      bits &= (atom[0] == '-') ? (PATH_RAY_VISIBILITY_ALL & ~ray_bits(atom.substr(1))) : ray_bits(atom);
+    }
+    visibility |= bits;
+  }
+  return visibility;
+}
+
+inline HdCyclesRenderFlags ReadRenderFlags(const HdContainerDataSourceHandle &primDs)
+{
+  HdCyclesRenderFlags flags;
+  const HdPrimvarsSchema primvars = HdPrimvarsSchema::GetFromParent(primDs);
+  const VtValue holdout = ReadPrimvar(primvars, TfToken("karma:object:holdoutmode"));
+  if (holdout.IsHolding<int>()) {
+    flags.holdout = holdout.UncheckedGet<int>();
+  }
+  const VtValue mask = ReadPrimvar(primvars, TfToken("karma:object:rendervisibility"));
+  if (mask.IsHolding<std::string>()) {
+    /* Karma has no Raycast node rays: those keep Cycles' default (visible). */
+    flags.visibility = karma_mask_to_visibility(mask.UncheckedGet<std::string>()) | PATH_RAY_VISIBILITY_RAYCAST;
+  }
+  const VtValue tag = ReadPrimvar(primvars, TfToken("karma:object:lpetag"));
+  if (tag.IsHolding<std::string>()) {
+    flags.lightgroup = ustring(tag.UncheckedGet<std::string>());
+  }
+  return flags;
+}
 
 template<typename Base, typename CyclesBase>
 HdCyclesGeometry<Base, CyclesBase>::HdCyclesGeometry(const SdfPath &rprimId)
@@ -161,9 +227,14 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     }
   }
 
-  if (HdChangeTracker::IsVisibilityDirty(*dirtyBits, id)) {
+  {
+    /* Every sync: the flags are primvars, and new instances need them too. Unchanged values do not tag. */
+    const HdCyclesRenderFlags flags = ReadRenderFlags(primDs);
     for (Object *instance : _instances) {
-      instance->set_visibility(Base::IsVisible() ? PATH_RAY_VISIBILITY_OBJECT_ALL : 0);
+      instance->set_visibility(Base::IsVisible() ? flags.visibility : 0);
+      instance->set_use_holdout(flags.holdout == 1);
+      instance->set_is_shadow_catcher(flags.holdout == 2);
+      instance->set_lightgroup(flags.lightgroup);
     }
   }
 
