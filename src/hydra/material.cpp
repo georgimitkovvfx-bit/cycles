@@ -155,6 +155,10 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
         if (valueString == "repeat") {
           *value = VtValue(CyclesMaterialTokens->periodic);
         }
+        /* USD's default: the image's own wrap mode, black without one (Karma). Cycles reads none. */
+        else if (valueString == "useMetadata") {
+          *value = VtValue(TfToken("black"));
+        }
 
         return "extension";
       }
@@ -348,6 +352,11 @@ void ApplyColorSpace(Node *node, const TfToken &space)
   ustring cyclesSpace(space.GetString());
   if (space == "auto") {
     cyclesSpace = u_colorspace_auto;
+  }
+  else if (space == "sRGB") {
+    /* UsdUVTexture's sRGB: Cycles' built-in one, which any OCIO config has (Houdini's has no "sRGB": the name
+     * was taken for an unknown space and read as linear). */
+    cyclesSpace = u_colorspace_srgb;
   }
   else if (space == "raw") {
     cyclesSpace = u_colorspace_data;
@@ -607,6 +616,8 @@ unique_ptr<ShaderGraph> HdCyclesMaterial::BuildShaderGraph(HdMaterialNetworkSche
         if (nodeTypeIdToken == CyclesMaterialTokens->UsdUVTexture) {
           /* USD's default sourceColorSpace is "auto"; Cycles' image node defaults to scene linear. */
           ApplyColorSpace(nodeDesc.node, TfToken("auto"));
+          /* USD's default wrap (useMetadata) is black outside the image, as Karma; Cycles' repeats. */
+          static_cast<ImageTextureNode *>(nodeDesc.node)->set_extension(EXTENSION_CLIP);
         }
         else if (nodeTypeIdToken == CyclesMaterialTokens->UsdPreviewSurface) {
           /* USD's defaults where Cycles' Principled BSDF has others (as hdCycles-h22): diffuseColor 0.18 (Cycles 0.8),
