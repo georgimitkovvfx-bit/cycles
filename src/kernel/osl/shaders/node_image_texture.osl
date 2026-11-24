@@ -66,7 +66,8 @@ color image_texture_lookup(string filename,
                              "alpha",
                              Alpha,
                              "missingcolor",
-                             Missing,
+                             /* Scene linear: encoded as the pixels, so the decode below gives it back. */
+                             compress_as_srgb ? color_scene_linear_to_srgb(Missing) : Missing,
                              "missingalpha",
                              MissingAlpha);
 
