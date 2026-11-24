@@ -491,6 +491,10 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
       _renderParam->SetMotionBlurAllowed(VtValue::Cast<bool>(value).GetWithDefault(true));
       ++_settingsVersion;
     }
+    else if (keyString == "cycles:light:sun_intensity_scale") {
+      _renderParam->SetSunIntensityScale(VtValue::Cast<float>(value).GetWithDefault(1.0f));
+      ++_settingsVersion;
+    }
     else if (keyString == "cycles:background:camera_visible_default") {
       _renderParam->SetDomeCameraVisibleDefault(VtValue::Cast<bool>(value).GetWithDefault(false));
       ++_settingsVersion;

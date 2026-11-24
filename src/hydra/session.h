@@ -76,6 +76,18 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _projectionMatrix = projectionMatrix;
   }
 
+  /* `cycles:light:sun_intensity_scale`: 1 = USD's units (Karma); Blender's own USD and Hydra export divide a sun's
+   * strength by 4, so its add-on asks for 4. */
+  float GetSunIntensityScale() const
+  {
+    return _sunIntensityScale;
+  }
+
+  void SetSunIntensityScale(const float scale)
+  {
+    _sunIntensityScale = scale;
+  }
+
   void SetStageMetersPerUnit(const double stageMetersPerUnit)
   {
     _stageMetersPerUnit = stageMetersPerUnit;
@@ -238,6 +250,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool _instanceIdAov = true;
   int _transparentBackground = -1;
   std::optional<bool> _domeCameraVisible;
+  float _sunIntensityScale = 1.0f;
   bool _domeCameraVisibleDefault = false;
   bool _backgroundDirty = false; /* the setting changed: update the background once */
 };

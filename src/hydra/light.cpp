@@ -125,8 +125,10 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     strength *= GetTypedValue<float>(lightDs, HdLightTokens->intensity, 1.0f);
 
     if (_lightType == HdPrimTypeTokens->distantLight) {
-      /* Unclear why, but approximately matches Karma. */
-      strength *= 4.0f;
+      /* USD's units, as Karma renders them (light_units_test.sh in hdcycles-blender): upstream's factor 4 was 4 times
+       * Karma's. Blender's USD exporter and Hydra export divide a sun's strength by 4: the host asks for that factor
+       * back with cycles:light:sun_intensity_scale. */
+      strength *= static_cast<HdCyclesSession *>(renderParam)->GetSunIntensityScale();
     }
     else if (_lightType != HdPrimTypeTokens->domeLight) {
       /* Convert from intensity to radiant flux. A dome light's intensity is already the background's radiance
