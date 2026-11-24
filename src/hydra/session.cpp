@@ -419,10 +419,13 @@ void HdCyclesSession::UpdateScene()
         scene->light_manager->tag_update(scene, LightManager::SHADER_MODIFIED);
       }
       scene->background->set_shader(shader);
-      scene->background->set_transparent(_transparentBackground.value_or(false));
       /* Cycles takes the world's ray visibility from the background, not the light object. The
-       * camera always sees the world, film transparency hides it. */
-      scene->background->set_visibility(firstDome->get_visibility() | PATH_RAY_VISIBILITY_CAMERA);
+       * camera sees the world as it sees any light (light.cpp: the Cycles tab's Camera, else Karma's
+       * Render Light Geometry, else not, as in Karma). A hidden world leaves the background
+       * transparent, as in Karma; film transparency, when set, wins. */
+      const bool seen = (firstDome->get_visibility() & PATH_RAY_VISIBILITY_CAMERA) != 0;
+      scene->background->set_transparent(_transparentBackground.value_or(!seen));
+      scene->background->set_visibility(firstDome->get_visibility());
       scene->background->set_lightgroup(firstDome->get_lightgroup());
     }
 

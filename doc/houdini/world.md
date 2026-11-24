@@ -42,8 +42,11 @@ world quickly, for the dome's own texture or for its world material: see [lights
 The dome light still decides everything that is about the light: ray visibility (Diffuse,
 Glossy, Transmission, Volume Scatter on its Cycles tab), Multiple Importance, Max Bounces, its
 light group (which is also the world's light group), light linking, and whether it is visible at
-all. The camera always sees the world; turn on film transparency (Render Settings > Film) to hide
-it.
+all. Whether the **camera** sees the world is its Camera visibility, as for any light: the Cycles
+tab's Camera, else Karma's **Render Light Geometry**, else not — a plain dome light is hidden from
+the camera, as in Karma. The Cycles World and Cycles Sun & Sky LOPs turn it on (**Visible to
+Camera**, like a Blender world). A world the camera does not see leaves the background transparent;
+film transparency (Render Settings > Film), when set, decides that instead.
 
 Instead of the World Material setting, you can also bind the material to the dome light with an
 Assign Material LOP. The World Material setting wins when both are set. Only a Cycles material
@@ -92,6 +95,8 @@ It starts with an HDRI; other setups are one preset away.
   scene.
 - **Apply Preset** replaces the world nodes with the chosen **Preset**. If you edited the nodes,
   it asks first.
+- **Visible to Camera** (on): the camera sees the world, like Blender's World > Ray Visibility >
+  Camera. Off: the world only lights the scene and the background is transparent.
 
 | Preset | World nodes |
 |---|---|
@@ -128,6 +133,7 @@ with a Sky Texture through a Background shader, like Blender's default sky setup
 |---|---|---|
 | Light Path | `/lights/$OS` | The dome light. Its Cycles World Material points at the material below |
 | Material Path | `/materials/$OS` | The world material (Sky Texture + Background) |
+| Visible to Camera | On | The camera sees the sky (Blender's World > Ray Visibility > Camera). Off: it only lights the scene, the background is transparent |
 | **Sky** | | |
 | Sky Type | Multiple Scattering | Multiple Scattering and Single Scattering are physically based (Nishita) skies with a sun disc; Hosek / Wilkie and Preetham are analytic models without one |
 | Strength | 1 | Background strength. Physical skies are bright: lower the strength or the exposure (Render Settings > Film > Exposure) for a darker image |
@@ -159,7 +165,7 @@ Blender's Sun Position add-on.
 
 **Brightness:** a physical sky with the sun is bright. The sun disc has very high values: where
 the camera sees it, a 16-bit (half float) image overflows to infinity. Lower Strength or the film exposure, or turn
-off the Camera visibility of the dome light (its Cycles tab) and use a separate backdrop.
+off **Visible to Camera** (or the Camera visibility of the dome light, its Cycles tab) and use a separate backdrop.
 
 ## World volumes
 

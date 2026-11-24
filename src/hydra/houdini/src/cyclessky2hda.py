@@ -143,6 +143,8 @@ light = UsdLux.DomeLight.Define(stage, light_path)
 light.CreateIntensityAttr(1.0)
 light.GetPrim().CreateAttribute("inputs:cycles:light:world_material",
                                 Sdf.ValueTypeNames.String).Set(material_path)
+light.GetPrim().CreateAttribute("inputs:cycles:light:visible_camera",
+                                Sdf.ValueTypeNames.Bool).Set(bool(top.evalParm("visible_camera")))
 
 material = UsdShade.Material.Define(stage, material_path)
 
@@ -231,6 +233,10 @@ def parameters():
     group.append(hou.StringParmTemplate(
         "materialpath", "Material Path", 1, default_value=("/materials/$OS",),
         help="World material with the Sky Texture (and the fog)."))
+    group.append(hou.ToggleParmTemplate(
+        "visible_camera", "Visible to Camera", default_value=True,
+        help="The camera sees the sky, like Blender's World > Ray Visibility > Camera. Off: it only "
+             "lights the scene, and the background is transparent."))
 
     sky = hou.FolderParmTemplate("sky_folder", "Sky", folder_type=hou.folderType.Simple)
     sky.addParmTemplate(hou.MenuParmTemplate(
@@ -426,6 +432,8 @@ def main():
     material_path = "/materials/%s" % test.name()
     if light.GetAttribute("inputs:cycles:light:world_material").Get() != material_path:
         raise RuntimeError("World material not set on the dome light")
+    if light.GetAttribute("inputs:cycles:light:visible_camera").Get() is not True:
+        raise RuntimeError("The sky is not visible to the camera by default")
     sky = usd.GetPrimAtPath(material_path + "/sky")
     if abs(sky.GetAttribute("inputs:sun_elevation").Get() - math.radians(30.0)) > 1e-5:
         raise RuntimeError("Sun elevation not authored in radians")

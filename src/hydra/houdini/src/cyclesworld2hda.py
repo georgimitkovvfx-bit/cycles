@@ -241,6 +241,8 @@ light = UsdLux.DomeLight.Define(stage, top.evalParm("lightpath"))
 light.CreateIntensityAttr(1.0)
 light.GetPrim().CreateAttribute("inputs:cycles:light:world_material",
                                 Sdf.ValueTypeNames.String).Set(top.evalParm("materialpath"))
+light.GetPrim().CreateAttribute("inputs:cycles:light:visible_camera",
+                                Sdf.ValueTypeNames.Bool).Set(bool(top.evalParm("visible_camera")))
 xform = UsdGeom.Xformable(light)
 xform.ClearXformOpOrder()
 xform.AddRotateXYZOp().Set(Gf.Vec3f(*top.evalParmTuple("r")))
@@ -255,6 +257,12 @@ def parameters(module):
     group.append(hou.StringParmTemplate(
         "materialpath", "Material Path", 1, default_value=("/materials/$OS",),
         help="World material built from the world nodes."))
+    group.append(hou.ToggleParmTemplate(
+        "visible_camera", "Visible to Camera", default_value=True,
+        help="The camera sees the world, like Blender's World > Ray Visibility > Camera. Off: it "
+             "only lights the scene, and the background is transparent (a plain dome light is "
+             "hidden from the camera unless its Cycles tab or Karma's Render Light Geometry says "
+             "otherwise, as in Karma)."))
     group.append(hou.SeparatorParmTemplate("sep1"))
 
     group.append(hou.MenuParmTemplate(
@@ -411,6 +419,8 @@ def main():
         raise RuntimeError("World material not set on the dome light")
     if tuple(light.GetAttribute("xformOp:rotateXYZ").Get()) != (0.0, 30.0, 0.0):
         raise RuntimeError("Rotation not authored on the dome light")
+    if light.GetAttribute("inputs:cycles:light:visible_camera").Get() is not True:
+        raise RuntimeError("The world is not visible to the camera by default")
     material = usd.GetPrimAtPath(material_path)
     if not material or not material.GetAttribute("outputs:cycles:surface").HasAuthoredConnections():
         raise RuntimeError("World material %s has no connected outputs:cycles:surface"
