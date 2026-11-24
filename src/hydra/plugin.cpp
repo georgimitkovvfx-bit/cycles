@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "hydra/plugin.h"
+#include "hydra/implicit_mesh.h"
 #include "hydra/render_delegate.h"
 #include "util/log.h"
 #include "util/path.h"
@@ -13,6 +14,9 @@
 #include <pxr/base/plug/thisPlugin.h>
 #include <pxr/base/tf/envSetting.h>
 #include <pxr/imaging/hd/rendererPluginRegistry.h>
+#if PXR_VERSION >= 2408
+#  include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -61,6 +65,31 @@ void HdCyclesPlugin::DeleteRenderDelegate(HdRenderDelegate *renderDelegate)
 {
   delete renderDelegate;
 }
+
+#if PXR_VERSION >= 2408
+TF_REGISTRY_FUNCTION(TfType)
+{
+  HdSceneIndexPluginRegistry::Define<PXR_NS::HdCycles_ImplicitSurfaceSceneIndexPlugin>();
+}
+
+HdSceneIndexBaseRefPtr HdCycles_ImplicitSurfaceSceneIndexPlugin::_AppendSceneIndex(
+    const HdSceneIndexBaseRefPtr &inputScene, const HdContainerDataSourceHandle & /*inputArgs*/)
+{
+  return HD_CYCLES_NS::HdCyclesImplicitMeshSceneIndex::New(inputScene);
+}
+
+/* Cycles has no implicit surfaces: Sphere, Cube, Cone, Cylinder, Capsule and Plane become meshes before they reach
+ * the render delegate. At the start of the chain, so every later scene index sees meshes. */
+TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
+{
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      TfToken("HdCycles_ImplicitSurfaceSceneIndexPlugin"),
+      nullptr,
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+}
+#endif
 
 // USD's type system accounts for namespace, so we'd have to register our name as
 // HdCycles::HdCyclesPlugin in plugInfo.json, which isn't all that bad for JSON,

@@ -7,8 +7,21 @@
 
 #include "hydra/config.h"
 #include <pxr/imaging/hd/rendererPlugin.h>
+#if PXR_VERSION >= 2408
+#  include <pxr/imaging/hd/sceneIndexPlugin.h>
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+#if PXR_VERSION >= 2408
+/* USD's implicit shapes as meshes (implicit_mesh.h, patch 0026). Hosts that build the scene index chain for the
+ * renderer (Houdini, usdview) use it; Blender does not ask for renderer scene indices. */
+class HdCycles_ImplicitSurfaceSceneIndexPlugin final : public PXR_NS::HdSceneIndexPlugin {
+ protected:
+  HdSceneIndexBaseRefPtr _AppendSceneIndex(const HdSceneIndexBaseRefPtr &inputScene,
+                                           const HdContainerDataSourceHandle &inputArgs) override;
+};
+#endif
 
 class HdCyclesPlugin final : public PXR_NS::HdRendererPlugin {
  public:
