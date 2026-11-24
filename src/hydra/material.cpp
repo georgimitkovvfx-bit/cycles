@@ -491,6 +491,12 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
  public:
   using UsdToCyclesMapping::UsdToCyclesMapping;
 
+  void initialize(ShaderNode *node) const override
+  {
+    /* USD's default wrap (useMetadata) is black outside the image, as Karma; Cycles' repeats. */
+    static_cast<ImageTextureNode *>(node)->set_extension(EXTENSION_CLIP);
+  }
+
   std::string parameterName(const TfToken &name,
                             const ShaderInput *inputConnection,
                             VtValue *value) const override
@@ -503,6 +509,10 @@ class UsdToCyclesTexture : public UsdToCyclesMapping {
         /* A value of 'repeat' in USD is equivalent to 'periodic' in Cycles. */
         if (valueString == "repeat") {
           *value = VtValue(CyclesMaterialTokens->periodic);
+        }
+        /* The image's own wrap mode, black without one (Karma). Cycles reads none. */
+        else if (valueString == "useMetadata") {
+          *value = VtValue(TfToken("black"));
         }
 
         return "extension";
@@ -1385,13 +1395,15 @@ void HdCyclesMaterial::UpdateParameters(NodeDesc &nodeDesc,
     }
 
     /* An empty color space (and UsdUVTexture's "auto") is automatic detection, not a color
-     * space of that name. Automatic detection reads 8-bit images as UsdUVTexture's "sRGB".
-     * shortcut: a float image marked "sRGB" is read as linear; map "sRGB" to the color space of
-     * the OCIO config when assets need it. */
+     * space of that name. UsdUVTexture's "sRGB" is Cycles' built-in sRGB, which every OCIO
+     * config has (Houdini's has no color space of that name), also for float images. */
     if (input->type == SocketType::STRING && input->name == "colorspace") {
       const ustring colorspace = nodeDesc.node->get_string(*input);
-      if (colorspace.empty() || colorspace == "auto" || colorspace == "sRGB") {
+      if (colorspace.empty() || colorspace == "auto") {
         nodeDesc.node->set(*input, u_colorspace_auto);
+      }
+      else if (colorspace == "sRGB") {
+        nodeDesc.node->set(*input, u_colorspace_srgb);
       }
       else if (colorspace == "raw") {
         nodeDesc.node->set(*input, u_colorspace_data);
