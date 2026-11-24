@@ -787,11 +787,12 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
 
   /* The projection at the first and last motion step: the Cycles field of view is the vertical
    * one, its tangent scales with the inverse focal length. */
-  if (cam->get_camera_type() == CAMERA_PERSPECTIVE) {
-    const float tanHalfFov = tanf(cam->get_fov() * 0.5f);
-    cam->set_fov_pre(2.0f * atanf(tanHalfFov * _zoomPre));
-    cam->set_fov_post(2.0f * atanf(tanHalfFov * _zoomPost));
-  }
+  /* Without zoom exactly the field of view: 2 atan(tan(fov / 2)) is not always fov in floats. */
+  const float fov = cam->get_fov();
+  const float tanHalfFov = tanf(fov * 0.5f);
+  const bool perspective = cam->get_camera_type() == CAMERA_PERSPECTIVE;
+  cam->set_fov_pre(perspective && _zoomPre != 1.0f ? 2.0f * atanf(tanHalfFov * _zoomPre) : fov);
+  cam->set_fov_post(perspective && _zoomPost != 1.0f ? 2.0f * atanf(tanHalfFov * _zoomPost) : fov);
   cam->set_use_perspective_motion(cam->get_fov_pre() != cam->get_fov() ||
                                   cam->get_fov_post() != cam->get_fov());
 
@@ -845,10 +846,10 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
     focalLength = data.GetFocalLength() * GfCamera::FOCAL_LENGTH_UNIT;
 
     cam->set_fov(GfDegreesToRadians(data.GetFieldOfView(GfCamera::FOVVertical)));
-    /* The motion pass projects with these at the previous and next frame, motion blur at the
-     * shutter ends: no zoom here, a camera prim sets its zoom after this. */
-    cam->set_fov_pre(cam->get_fov());
-    cam->set_fov_post(cam->get_fov());
+    /* fov_pre / fov_post (the projection at the previous and next frame, motion blur at the
+     * shutter ends) are set once by the callers: setting them here and again after the zoom
+     * changed them twice per render pass, so the camera was modified at every pass and the
+     * render restarted forever (husk never finished for most apertures). */
   }
 
   /* Lens properties are in tenths of a scene unit, convert sensor size to meters. Panoramic
@@ -897,6 +898,8 @@ void HdCyclesCamera::ApplyCameraSettings(HdRenderParam *renderParam,
   // No camera prim: no motion blur, not the transforms and shutter of the camera rendered before
   array<Transform> motion;
   cam->set_motion(motion);
+  cam->set_fov_pre(cam->get_fov());
+  cam->set_fov_post(cam->get_fov());
   cam->set_use_perspective_motion(false);
   cam->set_shuttertime(1.0f);
   cam->set_motion_position(MOTION_POSITION_CENTER);
