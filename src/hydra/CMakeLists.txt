@@ -175,6 +175,24 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     set(CYCLES_HYDRA_INSTALL_PATH ${CMAKE_INSTALL_PREFIX}/hydra)
   endif()
 
+  # The plugin is installed as a copy of the built file (delayed_install), so it never gets CMake's install rpath
+  # and kept the build machine's library folders, where e.g. Embree's libsycl is not next to Embree: it failed to
+  # load. Look next to the installed plugin first, where the bundled libraries are installed.
+  if(UNIX AND NOT APPLE AND NOT WITH_CYCLES_BLENDER)
+    if(HOUDINI_FOUND)
+      set(_hydra_lib_rpath "$ORIGIN/../../lib")
+    else()
+      set(_hydra_lib_rpath "$ORIGIN/../lib")
+    endif()
+    get_target_property(_hydra_build_rpath ${HdCyclesPluginName} BUILD_RPATH)
+    if(NOT _hydra_build_rpath)
+      set(_hydra_build_rpath "")
+    endif()
+    set_target_properties(${HdCyclesPluginName} PROPERTIES BUILD_RPATH "${_hydra_lib_rpath};${_hydra_build_rpath}")
+    unset(_hydra_lib_rpath)
+    unset(_hydra_build_rpath)
+  endif()
+
   if(HOUDINI_FOUND)
     delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins)
     delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
