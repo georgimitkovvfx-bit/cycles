@@ -321,7 +321,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       }
 
       if (!_shader) {
-        _shader = lock.scene->create_node<Shader>();
+        _shader = static_cast<HdCyclesSession *>(renderParam)->TakeShader(lock.scene);
       }
 
       _shader->set_graph(std::move(graph));
@@ -734,7 +734,7 @@ void HdCyclesMaterial::Finalize(HdRenderParam *renderParam)
   _nodes.clear();
 
   if (!keep_nodes) {
-    lock.scene->delete_node(_shader);
+    static_cast<HdCyclesSession *>(renderParam)->RetireShader(lock.scene, _shader);
   }
   _shader = nullptr;
 }

@@ -176,10 +176,19 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
                      const PXR_NS::SdfPathExpression &shadowLink);
   void RemoveLightLinks(CCL_NS::Object *light);
 
+  /* Cycles never deletes a Shader (Scene::delete_node: "not supported", shader ids are baked into the kernel's
+   * data). A host that re-creates its prims on every sync (Blender's Stage View) added a shader with its whole graph
+   * per material and light each time: memory grew with every edit. A retired shader gets an empty graph and its
+   * defaults back and is handed out again. Call both under the scene lock. */
+  CCL_NS::Shader *TakeShader(CCL_NS::Scene *scene);
+  void RetireShader(CCL_NS::Scene *scene, CCL_NS::Shader *shader);
+
   CCL_NS::Session *session;
   bool keep_nodes;
 
  private:
+  std::vector<CCL_NS::Shader *> _retiredShaders;
+
   void UpdateLinks();
 
   struct LinkedGeometry {

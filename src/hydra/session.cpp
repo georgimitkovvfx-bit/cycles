@@ -138,6 +138,33 @@ void HdCyclesSession::SetDefaultSurface(Scene *scene)
   scene->default_surface->tag_update(scene);
 }
 
+Shader *HdCyclesSession::TakeShader(Scene *scene)
+{
+  if (_retiredShaders.empty()) {
+    return scene->create_node<Shader>();
+  }
+  Shader *const shader = _retiredShaders.back();
+  _retiredShaders.pop_back();
+  return shader;
+}
+
+void HdCyclesSession::RetireShader(Scene *scene, Shader *shader)
+{
+  if (shader == nullptr || keep_nodes) {
+    return;
+  }
+  scene->delete_node(shader); /* Only clears its users: Cycles keeps it. */
+  for (const SocketType &socket : shader->type->inputs) {
+    shader->set_default_value(socket);
+  }
+  shader->set_graph(make_unique<ShaderGraph>()); /* Frees the old graph's nodes. */
+  shader->has_surface_spatial_varying = false;
+  shader->tag_update(scene);
+  if (std::find(_retiredShaders.begin(), _retiredShaders.end(), shader) == _retiredShaders.end()) {
+    _retiredShaders.push_back(shader);
+  }
+}
+
 HdCyclesSession::~HdCyclesSession()
 {
   if (_ownCyclesSession) {

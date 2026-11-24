@@ -416,9 +416,11 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
 
   static_cast<HdCyclesSession *>(renderParam)->RemoveLightLinks(_object);
   if (!keep_nodes) {
+    Shader *const shader = _light->get_shader();
     /* Delete the object before the light, since the object references the light. */
     lock.scene->delete_node(_object);
     lock.scene->delete_node(_light);
+    static_cast<HdCyclesSession *>(renderParam)->RetireShader(lock.scene, shader);
   }
 
   _light = nullptr;
@@ -463,7 +465,7 @@ void HdCyclesLight::Initialize(HdRenderParam *renderParam)
   _object->set_random_id(hash_uint2(hash_string(_light->name.c_str()), 0));
   _object->set_visibility(PATH_RAY_VISIBILITY_ALL & ~PATH_RAY_VISIBILITY_CAMERA);
 
-  Shader *const shader = lock.scene->create_node<Shader>();
+  Shader *const shader = static_cast<HdCyclesSession *>(renderParam)->TakeShader(lock.scene);
   array<Node *> used_shaders;
   used_shaders.push_back_slow(shader);
   _light->set_used_shaders(used_shaders);
