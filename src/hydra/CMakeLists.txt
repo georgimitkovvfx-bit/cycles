@@ -72,6 +72,14 @@ if(EXISTS ${USD_INCLUDE_DIR}/pxr/imaging/hgiGL)
   list(APPEND SRC_HD_CYCLES_HEADERS display_driver.h)
 endif()
 
+# MaterialX materials (patch 0021, from hdCycles-h22): HdMtlx is in Blender's USD, MaterialX in its libraries.
+if(WITH_MATERIALX)
+  add_definitions(-DWITH_HYDRA_MATERIALX)
+  list(APPEND SRC_HD_CYCLES materialx.cpp)
+  list(APPEND SRC_HD_CYCLES_HEADERS materialx.h)
+  list(APPEND LIB MaterialXCore MaterialXFormat)
+endif()
+
 # Silence warning from USD headers using deprecated TBB header.
 add_definitions(
   -D__TBB_show_deprecation_message_atomic_H
