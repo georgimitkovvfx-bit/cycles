@@ -123,15 +123,23 @@ if(HOUDINI_FOUND)
   elseif(APPLE)
     list(APPEND _hdk_definitions MBSD MBSD_COCOA MBSD_INTEL)
   else()
-    list(APPEND _hdk_definitions LINUX AMD64 _GNU_SOURCE)
+    # As Houdini's toolkit/cmake/HoudiniConfig.cmake on Linux (UT_Thread needs the pthread ones).
+    list(APPEND _hdk_definitions LINUX AMD64 _GNU_SOURCE GCC3 GCC4 ENABLE_THREADS USE_PTHREADS _REENTRANT
+         _FILE_OFFSET_BITS=64 _GLIBCXX_PERMIT_BACKWARD_HASH)
   endif()
   set_source_files_properties(${_hdk_sources} PROPERTIES COMPILE_DEFINITIONS "${_hdk_definitions}")
   unset(_hdk_definitions)
   unset(_hdk_sources)
   # Houdini libraries used by the VDB and volume primitives, image files, op: images (TIL, PXL) and
   # their headers.
-  foreach(_hdk_lib GT GU GEO UT CE IMG TIL PXL)
-    find_library(_hdk_library NAMES lib${_hdk_lib} HOUDINI_${_hdk_lib}
+  # Linux ships them combined: GT, GU and GEO in libHoudiniGEO, UT, CE, IMG, TIL and PXL in libHoudiniUT.
+  if(UNIX AND NOT APPLE)
+    set(_hdk_libs HoudiniGEO HoudiniUT)
+  else()
+    set(_hdk_libs GT GU GEO UT CE IMG TIL PXL)
+  endif()
+  foreach(_hdk_lib ${_hdk_libs})
+    find_library(_hdk_library NAMES lib${_hdk_lib} ${_hdk_lib} HOUDINI_${_hdk_lib}
       PATHS ${HOUDINI_ROOT}/custom/houdini/dsolib ${HOUDINI_ROOT}/dsolib
       ${HOUDINI_ROOT}/Frameworks/Houdini.framework/Libraries NO_DEFAULT_PATH)
     list(APPEND LIB ${_hdk_library})
@@ -249,6 +257,27 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   else()
     # Install next to cycles executable
     set(CYCLES_HYDRA_INSTALL_PATH ${CMAKE_INSTALL_PREFIX}/hydra)
+  endif()
+
+  # The plugins are installed as copies of the built files (delayed_install), so they never get CMake's install
+  # rpath and kept the build machine's library folders, where e.g. Embree's libsycl is not next to Embree: they
+  # failed to load on Linux. Look next to the installed plugins first (hdcycles-blender patch 0025).
+  if(UNIX AND NOT APPLE AND NOT WITH_CYCLES_BLENDER)
+    if(HOUDINI_FOUND)
+      set(_hydra_lib_rpath "$ORIGIN/../../lib")
+    else()
+      set(_hydra_lib_rpath "$ORIGIN/../lib")
+    endif()
+    foreach(_hydra_target ${HdCyclesPluginName} ${HdCyclesImagingName})
+      get_target_property(_hydra_build_rpath ${_hydra_target} BUILD_RPATH)
+      if(NOT _hydra_build_rpath)
+        set(_hydra_build_rpath "")
+      endif()
+      set_target_properties(${_hydra_target} PROPERTIES BUILD_RPATH "${_hydra_lib_rpath};${_hydra_build_rpath}")
+    endforeach()
+    unset(_hydra_target)
+    unset(_hydra_lib_rpath)
+    unset(_hydra_build_rpath)
   endif()
 
   if(HOUDINI_FOUND)

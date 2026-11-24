@@ -137,7 +137,11 @@ bool HdCyclesDisplayDriver::update_needed()
 {
   // No color AOV bound (dome lights, other first AOV): the output driver writes the AOVs.
   // No context before the first draw: update_begin() would fail and log an error.
+#ifdef _WIN32
   return gl_context_ && _renderParam->GetDisplayAovBinding().renderBuffer != nullptr;
+#else
+  return false; /* No GL context outside Windows (gl_context_enable): the output driver shows the render. */
+#endif
 }
 
 bool HdCyclesDisplayDriver::update_begin(const Params &params,

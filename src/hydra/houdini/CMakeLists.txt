@@ -65,7 +65,10 @@ if(WIN32)
 elseif(APPLE)
   set(_shaders_node_dump_env "DYLD_LIBRARY_PATH=${HOUDINI_ROOT}/Frameworks/Houdini.framework/Libraries")
 else()
-  set(_shaders_node_dump_env "LD_LIBRARY_PATH=${HOUDINI_ROOT}/dsolib:$ENV{LD_LIBRARY_PATH}")
+  # Houdini's libraries and the bundled ones (Embree needs the SYCL runtime next to it).
+  list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS ":" _bundled_dirs)
+  set(_shaders_node_dump_env "LD_LIBRARY_PATH=${HOUDINI_ROOT}/dsolib:${_bundled_dirs}:$ENV{LD_LIBRARY_PATH}")
+  unset(_bundled_dirs)
 endif()
 
 add_custom_command(

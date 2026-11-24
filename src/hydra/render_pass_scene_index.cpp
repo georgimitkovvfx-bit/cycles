@@ -4,6 +4,8 @@
 
 #include "hydra/render_pass_scene_index.h"
 
+#include <mutex>
+
 #include <pxr/imaging/hd/collectionSchema.h>
 #include <pxr/imaging/hd/collectionsSchema.h>
 #include <pxr/imaging/hd/overlayContainerDataSource.h>
