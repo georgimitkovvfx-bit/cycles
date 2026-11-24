@@ -164,7 +164,7 @@ void PathTrace::render(const RenderWork &render_work)
   /* Indicate that rendering has started and that it can be requested to cancel. */
   {
     const thread_scoped_lock lock(render_cancel_.mutex);
-    if (render_cancel_.is_requested) {
+    if (render_cancel_.is_requested || render_cancel_.is_held) {
       return;
     }
     render_cancel_.is_rendering = true;
@@ -177,7 +177,8 @@ void PathTrace::render(const RenderWork &render_work)
   {
     const thread_scoped_lock lock(render_cancel_.mutex);
     render_cancel_.is_rendering = false;
-    render_cancel_.condition.notify_one();
+    /* `cancel()` and `hold()` may both wait. */
+    render_cancel_.condition.notify_all();
   }
 }
 
@@ -967,6 +968,46 @@ void PathTrace::cancel()
   if (display_) {
     display_->reset();
   }
+}
+
+void PathTrace::hold()
+{
+  thread_scoped_lock lock(render_cancel_.mutex);
+
+  render_cancel_.is_held = true;
+  render_cancel_.is_requested = true;
+
+  while (render_cancel_.is_rendering) {
+    render_cancel_.condition.wait(lock);
+  }
+
+  render_cancel_.is_requested = false;
+}
+
+void PathTrace::release_hold()
+{
+  {
+    const thread_scoped_lock lock(render_cancel_.mutex);
+    if (!render_cancel_.is_held) {
+      return;
+    }
+    render_cancel_.is_held = false;
+  }
+  render_cancel_.hold_condition.notify_all();
+}
+
+void PathTrace::wait_while_held()
+{
+  thread_scoped_lock lock(render_cancel_.mutex);
+  while (render_cancel_.is_held) {
+    render_cancel_.hold_condition.wait(lock);
+  }
+}
+
+bool PathTrace::is_held()
+{
+  const thread_scoped_lock lock(render_cancel_.mutex);
+  return render_cancel_.is_held;
 }
 
 int PathTrace::get_num_samples_in_buffer()

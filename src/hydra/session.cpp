@@ -69,10 +69,18 @@ const std::pair<const char *, CryptomatteType> kCryptomatteTypes[] = {
 
 }  // namespace
 
-SceneLock::SceneLock(const HdRenderParam *renderParam)
+SceneLock::SceneLock(const HdRenderParam *renderParam, const bool holdRender)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),
       sceneLock(scene->mutex)
 {
+  /* Hydra deletes or rewrites geometry while the session thread renders (the viewport), and the CPU BVH reads the
+   * meshes' arrays in place: stop rendering until the render pass resets the session. Only for geometry: holding
+   * cancels the samples in flight, and every frame takes the lock (CommitResources). Hosts with an exclusive sync
+   * never render meanwhile. */
+  const HdCyclesSession *session = static_cast<const HdCyclesSession *>(renderParam);
+  if (holdRender && !session->ExclusiveSync()) {
+    session->session->hold_render();
+  }
 }
 
 SceneLock::~SceneLock() = default;

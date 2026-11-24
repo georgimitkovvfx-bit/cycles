@@ -134,6 +134,12 @@ class Session {
    * for the buffer to be uniformly sampled. */
   void cancel(bool quick = false);
 
+  /* Keep the session thread from rendering (and from updating the device scene) while the host changes the scene,
+   * until `release_render_hold()`: see `PathTrace::hold()`. */
+  void hold_render();
+  void release_render_hold();
+  bool render_held();
+
   void draw();
   void wait();
 

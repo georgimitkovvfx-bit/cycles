@@ -128,6 +128,9 @@ void Session::start()
 
 void Session::cancel(bool quick)
 {
+  /* A held session thread must wake up to see the cancel. */
+  release_render_hold();
+
   /* Cancel any long running device operations (e.g. shader compilations). */
   device->cancel();
 
@@ -155,6 +158,25 @@ void Session::cancel(bool quick)
   }
 }
 
+void Session::hold_render()
+{
+  if (path_trace_) {
+    path_trace_->hold();
+  }
+}
+
+void Session::release_render_hold()
+{
+  if (path_trace_) {
+    path_trace_->release_hold();
+  }
+}
+
+bool Session::render_held()
+{
+  return path_trace_ && path_trace_->is_held();
+}
+
 bool Session::ready_to_reset()
 {
   return path_trace_->ready_to_reset();
@@ -165,6 +187,9 @@ void Session::run_main_render_loop()
   path_trace_->zero_display();
 
   while (true) {
+    /* The device scene is updated only once the host has finished changing the scene. */
+    path_trace_->wait_while_held();
+
     RenderWork render_work = run_update_for_next_iteration();
 
     const bool did_cancel = progress.get_cancel();

@@ -133,7 +133,9 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     }
 
     // Reset session if the session, scene, camera or AOV bindings changed
-    if (scene->need_reset() || settingsVersion != _lastSettingsVersion) {
+    // A hold (geometry changed) cancelled the samples in flight: reset so they are rendered again
+    const bool held = session->render_held();
+    if (scene->need_reset() || settingsVersion != _lastSettingsVersion || held) {
       _lastSettingsVersion = settingsVersion;
 
       // Reset convergence state of all render buffers
@@ -154,6 +156,11 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       buffer_params.height = buffer_params.window_height;
 
       session->reset(session->params, buffer_params);
+    }
+
+    // Hydra's sync for this frame is done: the session thread updates the device scene, then renders
+    if (held) {
+      session->release_render_hold();
     }
 
     scene->mutex.unlock();
