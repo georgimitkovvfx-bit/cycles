@@ -230,6 +230,29 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
     }
     _object->set_lightgroup(ustring(lightgroup));
 
+    /* Karma's `renderlightgeo` (USD Nodes writes it from Blender's camera visibility, ADR 0070 there): the light's
+     * own shape, a dome's sky, seen by the camera. Unsaid: hidden, as in Karma; a dome asks the host's default. */
+    std::optional<bool> renderGeometry;
+    for (const TfToken &name :
+         {TfToken("karma:light:renderlightgeo"), TfToken("inputs:karma:light:renderlightgeo")})
+    {
+      if (lightDs) {
+        const HdSampledDataSourceHandle ds = HdSampledDataSource::Cast(lightDs->Get(name));
+        const VtValue value = ds ? ds->GetValue(0.0f) : VtValue();
+        if (value.IsHolding<bool>() || value.IsHolding<int>()) {
+          renderGeometry = VtValue::Cast<bool>(value).Get<bool>();
+        }
+      }
+    }
+    if (_lightType == HdPrimTypeTokens->domeLight) {
+      static_cast<HdCyclesSession *>(renderParam)->SetDomeCameraVisible(renderGeometry);
+    }
+    else {
+      const uint visibility = _object->get_visibility();
+      _object->set_visibility(renderGeometry.value_or(false) ? (visibility | PATH_RAY_VISIBILITY_CAMERA) :
+                                                               (visibility & ~PATH_RAY_VISIBILITY_CAMERA));
+    }
+
 
     if (_lightType == HdPrimTypeTokens->domeLight) {
       lock.scene->background->set_lightgroup(ustring(lightgroup));
@@ -415,6 +438,9 @@ void HdCyclesLight::Finalize(HdRenderParam *renderParam)
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
 
   static_cast<HdCyclesSession *>(renderParam)->RemoveLightLinks(_object);
+  if (_lightType == HdPrimTypeTokens->domeLight) {
+    static_cast<HdCyclesSession *>(renderParam)->SetDomeCameraVisible(std::nullopt);
+  }
   if (!keep_nodes) {
     Shader *const shader = _light->get_shader();
     /* Delete the object before the light, since the object references the light. */

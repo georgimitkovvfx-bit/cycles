@@ -9,6 +9,7 @@
 #include "util/thread.h"
 
 #include <mutex>
+#include <optional>
 
 #include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hd/sceneIndex.h>
@@ -103,6 +104,22 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     _backgroundDirty = _backgroundDirty || transparent != _transparentBackground;
     _transparentBackground = transparent;
+  }
+
+  /* Karma's `renderlightgeo` on the dome light: the sky seen by the camera (nullopt = the stage does not say). A
+   * hidden dome leaves the background transparent, as in Karma. */
+  void SetDomeCameraVisible(const std::optional<bool> visible)
+  {
+    _backgroundDirty = _backgroundDirty || visible != _domeCameraVisible;
+    _domeCameraVisible = visible;
+  }
+
+  /* `cycles:background:camera_visible_default`: when the dome does not say. Karma's default (hidden) unless the host
+   * asks for its own: the Blender add-on asks for Blender's (a World is seen by the camera). */
+  void SetDomeCameraVisibleDefault(const bool visible)
+  {
+    _backgroundDirty = _backgroundDirty || visible != _domeCameraVisibleDefault;
+    _domeCameraVisibleDefault = visible;
   }
 
   void RemoveAovBinding(PXR_NS::HdRenderBuffer *renderBuffer);
@@ -220,6 +237,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool _exclusiveSync = false;
   bool _instanceIdAov = true;
   int _transparentBackground = -1;
+  std::optional<bool> _domeCameraVisible;
+  bool _domeCameraVisibleDefault = false;
   bool _backgroundDirty = false; /* the setting changed: update the background once */
 };
 

@@ -362,7 +362,11 @@ void HdCyclesSession::UpdateScene()
     }
     else {
       scene->background->set_shader(background_light->get_shader());
-      scene->background->set_transparent(false);
+      const bool seen = _domeCameraVisible.value_or(_domeCameraVisibleDefault);
+      const uint visibility = scene->background->get_visibility();
+      scene->background->set_visibility(seen ? (visibility | PATH_RAY_VISIBILITY_CAMERA) :
+                                               (visibility & ~PATH_RAY_VISIBILITY_CAMERA));
+      scene->background->set_transparent(!seen);
     }
     if (_transparentBackground >= 0) {
       scene->background->set_transparent(_transparentBackground != 0);
