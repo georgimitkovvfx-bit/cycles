@@ -837,6 +837,8 @@ int render(const Options &o)
         {"cycles:integrator:adaptive_threshold", VtValue(0.01f)},
         /* A dome that does not say renderlightgeo is seen by the camera, as Blender's World (patch 0027). */
         {"cycles:background:camera_visible_default", VtValue(true)},
+        /* Volumes without a material: Blender's Principled Volume (Karma's scatter white). */
+        {"cycles:volume:default_color", VtValue(0.5f)},
     };
     for (const auto &[name, value] : blender_defaults) {
       delegate.SetRenderSetting(TfToken(name), value);

@@ -24,6 +24,9 @@
 #include "scene/film.h"
 #include "scene/integrator.h"
 #include "scene/scene.h"
+#include "scene/shader.h"
+#include "scene/shader_graph.h"
+#include "scene/shader_nodes.h"
 #include "session/session.h"
 #include "util/string.h"
 
@@ -127,6 +130,22 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
 
 }  // namespace
 
+namespace {
+
+/* The shader of volumes without a material: a Principled Volume of this color (Cycles' own default is 0.5 grey, as in
+ * Blender; Karma's unbound volumes scatter white). */
+void SetDefaultVolumeColor(Scene *scene, const float3 color)
+{
+  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  PrincipledVolumeNode *principled = graph->create_node<PrincipledVolumeNode>();
+  principled->set_color(color);
+  graph->connect(principled->output("Volume"), graph->output()->input("Volume"));
+  scene->default_volume->set_graph(std::move(graph));
+  scene->default_volume->tag_update(scene);
+}
+
+}  // namespace
+
 HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
                                    Session *session_,
                                    const bool keep_nodes)
@@ -134,6 +153,13 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
 {
   _renderParam = session_ ? std::make_unique<HdCyclesSession>(session_, keep_nodes) :
                             std::make_unique<HdCyclesSession>(GetSessionParams(settingsMap));
+
+  /* Karma's defaults where Cycles' core ones differ, for hosts that do not set them (husk, Houdini, usdview): no
+   * volume bounces (Karma's Volume Limit 0, also Blender's default; Cycles' core has 7) and white unbound volumes.
+   * Blender's add-on and cycles_usd_render set Blender's. */
+  Scene *const scene = _renderParam->session->scene.get();
+  scene->integrator->set_max_volume_bounce(0);
+  SetDefaultVolumeColor(scene, one_float3());
 
   for (const auto &setting : settingsMap) {
     // Skip over the settings known to be used for initialization only
@@ -493,6 +519,19 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     else if (keyString == "cycles:motion_blur") {
       /* The stage's render settings (USD's disableMotionBlur, Blender's Render › Motion Blur). */
       _renderParam->SetMotionBlurAllowed(VtValue::Cast<bool>(value).GetWithDefault(true));
+      ++_settingsVersion;
+    }
+    else if (keyString == "cycles:volume:default_color") {
+      /* A grey (float) or a color: the Principled Volume color of volumes without a material. */
+      float3 color = one_float3();
+      if (value.IsHolding<GfVec3f>() || value.IsHolding<GfVec3d>()) {
+        const GfVec3f c = VtValue::Cast<GfVec3f>(value).UncheckedGet<GfVec3f>();
+        color = make_float3(c[0], c[1], c[2]);
+      }
+      else {
+        color = make_float3(VtValue::Cast<float>(value).GetWithDefault(1.0f));
+      }
+      SetDefaultVolumeColor(scene, color);
       ++_settingsVersion;
     }
     else if (keyString == "cycles:light:sun_intensity_scale") {
