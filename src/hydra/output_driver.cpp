@@ -62,10 +62,22 @@ void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
                                          const size_t num_pixels,
                                          const size_t channels) const
 {
-  if (aovName == HdAovTokens->depth && channels == 1 &&
-      (_renderParam->IsViewport() || _renderParam->GetDepthToWindow()))
-  {
+  if (aovName != HdAovTokens->depth || channels != 1) {
+    return;
+  }
+  if (_renderParam->IsViewport() || _renderParam->GetDepthToWindow()) {
     convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix());
+  }
+  else if (_renderParam->GetDepthInMetres()) {
+    /* The scene is in stage units, so is the distance: metres for hosts that want them. */
+    const float metersPerUnit = float(_renderParam->GetStageMetersPerUnit());
+    if (metersPerUnit > 0.0f && metersPerUnit != 1.0f) {
+      for (size_t i = 0; i < num_pixels; ++i) {
+        if (data[i] < 1e9f) { /* The background stays far. */
+          data[i] *= metersPerUnit;
+        }
+      }
+    }
   }
 }
 

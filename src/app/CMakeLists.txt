@@ -172,3 +172,34 @@ if(WITH_CYCLES_PRECOMPUTE)
     TARGETS cycles_precompute
     DESTINATION ${app_install_dir})
 endif()
+
+# USD Nodes (hdcycles-blender patch 0010): frames of a USD file in one Cycles session, without Blender.
+if(WITH_CYCLES_HYDRA_RENDER_DELEGATE AND WITH_USD)
+  add_executable(cycles_usd_render
+    cycles_usd_render.cpp
+  )
+  target_link_libraries(cycles_usd_render PRIVATE ${LIB})
+  # Copied as built, keeping the build RUNPATH to Blender's prebuilt libraries (install(TARGETS) would reset it).
+  install(PROGRAMS $<TARGET_FILE:cycles_usd_render> DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+  if(USD_LIBRARY)
+    # Blender's libusd_ms needs MaterialX; inside Blender it is already loaded, an executable links it itself.
+    get_filename_component(_usd_lib_dir ${USD_LIBRARY} DIRECTORY)
+    file(GLOB _materialx_libs ${_usd_lib_dir}/../../materialx/lib/libMaterialX*.so)
+    target_link_libraries(cycles_usd_render PRIVATE ${_materialx_libs})
+    get_filename_component(_materialx_dir ${_usd_lib_dir}/../../materialx/lib ABSOLUTE)
+    # DT_RPATH (not RUNPATH): libusd_ms and the other prebuilt libraries find their own dependencies through it too.
+    # --exclude-libs: cuew's symbols stay private. Exported (Python's static library brings -export-dynamic, which
+    # libusd_ms needs), cuew's `cuInit` pointer shadowed the CUDA driver's for OpenImageDenoise's CUDA module: crash.
+    # $ORIGIN/../lib first: a bundle (build.sh bundle) carries its libraries there; else the build's own.
+    target_link_options(cycles_usd_render PRIVATE
+      "-Wl,--disable-new-dtags" "LINKER:-rpath,$ORIGIN/../lib" "-Wl,-rpath,${_materialx_dir}"
+      "-Wl,--exclude-libs,libextern_cuew.a")
+    unset(_materialx_dir)
+    unset(_materialx_libs)
+    # USD's plugins (plugInfo.json; usdShaders etc.): the executable registers <prefix>/usd and <prefix>/usd_plugins.
+    get_filename_component(_usd_lib_dir ${USD_LIBRARY} DIRECTORY)
+    install(DIRECTORY ${_usd_lib_dir}/usd DESTINATION ${CMAKE_INSTALL_PREFIX})
+    install(DIRECTORY ${_usd_lib_dir}/../plugin/usd/ DESTINATION ${CMAKE_INSTALL_PREFIX}/usd_plugins)
+    unset(_usd_lib_dir)
+  endif()
+endif()

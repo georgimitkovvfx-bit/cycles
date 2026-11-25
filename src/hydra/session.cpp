@@ -234,7 +234,7 @@ struct SessionThreadState : Session {
 
 bool HdCyclesSession::ExclusiveSync() const
 {
-  return !SessionThreadState::Rendering(session);
+  return _exclusiveSync || !SessionThreadState::Rendering(session);
 }
 
 SceneLock::SceneLock(const HdRenderParam *renderParam)

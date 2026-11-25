@@ -284,6 +284,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
    * rendering. Only the render pass starts it, after Hydra's sync: husk's frames, any first sync. Resyncs while
    * rendering (and viewports) keep the lock. */
   bool ExclusiveSync() const;
+  /* Set by a host that never renders while Hydra syncs (cycles_usd_render): rprims fill their
+   * geometry outside the scene lock in every sync, not only the ones before a render starts. */
+  void SetExclusiveSync(const bool exclusive)
+  {
+    _exclusiveSync = exclusive;
+  }
   bool IsViewport() const
   {
     return _viewport;
@@ -306,6 +312,17 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   void SetDepthToWindow(const bool depthToWindow)
   {
     _depthToWindow = depthToWindow;
+  }
+
+  /* The final-render depth AOV in metres, not in stage units (Karma): Blender's Z pass
+   * (cycles_usd_render). */
+  bool GetDepthInMetres() const
+  {
+    return _depthInMetres;
+  }
+  void SetDepthInMetres(const bool metres)
+  {
+    _depthInMetres = metres;
   }
 
   /* cycles:light:sun_intensity_scale: 1 = USD's units, as Karma. Blender's USD exporter and Hydra
@@ -535,7 +552,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
   mutable CCL_NS::thread_mutex _projectionMutex;
   bool _viewport = false;
+  bool _exclusiveSync = false;
   bool _depthToWindow = false;
+  bool _depthInMetres = false;
   float _sunIntensityScale = 1.0f;
   bool _domeCameraVisibleDefault = false;
   float _shutterOpen = 0.0f;
