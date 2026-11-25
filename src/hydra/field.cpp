@@ -13,9 +13,11 @@
 #  include "scene/image_vdb.h"
 #  include "scene/scene.h"
 
+#  include <filesystem>
 #  include <map>
 #  include <memory>
 #  include <mutex>
+#  include <tuple>
 #endif
 
 #include <pxr/imaging/hd/sceneDelegate.h>
@@ -36,13 +38,18 @@ class HdCyclesVolumeLoader : public VDBImageLoader {
  private:
   /* Fields naming the same file and grid share one grid: Cycles' image manager tells VDB images apart by their grid
    * pointer, so a VDB used by many Volumes (smoke puffs, a fog bank per shot) is then read and stored once, not once
-   * per Volume. Weak: a grid no loader holds any more is read again. */
+   * per Volume. The key has the file's time and size: a rewritten file is read again, not served from a grid an
+   * older field still holds. Weak: a grid no loader holds any more is read again too. */
   static openvdb::GridBase::ConstPtr shared_grid(const std::string &filePath, const std::string &gridName)
   {
+    using Key = std::tuple<std::string, std::string, std::filesystem::file_time_type, std::uintmax_t>;
     static std::mutex mutex;
-    static std::map<std::pair<std::string, std::string>, std::weak_ptr<const openvdb::GridBase>> grids;
+    static std::map<Key, std::weak_ptr<const openvdb::GridBase>> grids;
+    std::error_code error;
+    const auto time = std::filesystem::last_write_time(filePath, error);
+    const std::uintmax_t size = error ? 0 : std::filesystem::file_size(filePath, error);
     const std::lock_guard<std::mutex> lock(mutex);
-    std::weak_ptr<const openvdb::GridBase> &cached = grids[{filePath, gridName}];
+    std::weak_ptr<const openvdb::GridBase> &cached = grids[Key(filePath, gridName, time, size)];
     if (openvdb::GridBase::ConstPtr found = cached.lock()) {
       return found;
     }
