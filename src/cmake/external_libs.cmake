@@ -489,7 +489,7 @@ if(WITH_CYCLES_EMBREE)
   # Use the precompiled Embree, unless another Embree was specified with EMBREE_ROOT_DIR.
   # For example a static Embree without SYCL support for Houdini, since the SYCL runtime
   # libraries required by the precompiled Embree conflict with other Houdini plugins.
-  if(MSVC AND EXISTS ${_cycles_lib_dir} AND
+  if(MSVC AND EXISTS "${_cycles_lib_dir}" AND
      (NOT EMBREE_ROOT_DIR OR EMBREE_ROOT_DIR STREQUAL "${_cycles_lib_dir}/embree"))
     set(_cycles_use_precompiled_embree ON)
   else()
