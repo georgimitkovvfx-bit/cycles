@@ -95,7 +95,20 @@ std::string AovSource(const HdRenderPassAovBinding &aovBinding)
   return source;
 }
 
+/* Session::is_session_thread_rendering is protected: called through a member pointer named in a derived class. */
+struct SessionThreadState : Session {
+  static bool Rendering(Session *session)
+  {
+    return (session->*&SessionThreadState::is_session_thread_rendering)();
+  }
+};
+
 }  // namespace
+
+bool HdCyclesSession::ExclusiveSync() const
+{
+  return _exclusiveSync || !SessionThreadState::Rendering(session);
+}
 
 SceneLock::SceneLock(const HdRenderParam *renderParam, const bool holdRender)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),

@@ -159,14 +159,15 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _instanceIdAov;
   }
 
+  /* Set by a host that never renders while Hydra syncs (cycles_usd_render). */
   void SetExclusiveSync(const bool exclusive)
   {
     _exclusiveSync = exclusive;
   }
-  bool ExclusiveSync() const
-  {
-    return _exclusiveSync;
-  }
+  /* Whether rprims may fill their geometry outside the scene lock, in parallel: in hosts that set it, and in every
+   * host while the session thread is not rendering (only the render pass starts it, after Hydra's sync): husk's
+   * frames, any first sync. */
+  bool ExclusiveSync() const;
   void SetMotionBlurAllowed(const bool allowed)
   {
     _motionBlurAllowed = allowed;
