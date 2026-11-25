@@ -545,6 +545,14 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
   if (auto ds = displayStyleSchema.GetFlatShadingEnabled()) {
     flatShadingEnabled = ds->GetTypedValue(0.0f);
   }
+  /* Uniform normals are one per face: the faces are flat, as USD means and Karma and Storm render them. Cycles
+   * computes face normals only for flat faces; smooth ones averaged the corners (a roof of two faces at 90°: 0.571
+   * with a 0.20 gradient across each face, Karma 0.446 flat). From hdcycles-blender patch 0017. */
+  if (ReadPrimvarInterpolation(HdPrimvarsSchema::GetFromParent(prim.dataSource), HdTokens->normals) ==
+      HdInterpolationUniform)
+  {
+    flatShadingEnabled = true;
+  }
 
   const HdMeshSchema meshSchema = HdMeshSchema::GetFromParent(prim.dataSource);
   const HdMeshTopologySchema topoSchema = meshSchema.GetTopology();

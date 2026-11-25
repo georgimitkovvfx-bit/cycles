@@ -380,13 +380,10 @@ void HdCyclesSession::UpdateScene()
      * first dome light in scene order samples it and gives its light settings (ray visibility,
      * Multiple Importance, light group) to the whole world. */
     std::vector<Object *> domeObjects;
-    bool have_lights = meshLights > 0;
     for (Object *object : scene->objects) {
       if (!object->get_geometry()->is_light()) {
         continue;
       }
-
-      have_lights = true;
 
       if (static_cast<Light *>(object->get_geometry())->is_background_light()) {
         domeObjects.push_back(object);
@@ -431,12 +428,12 @@ void HdCyclesSession::UpdateScene()
       scene->background->set_visibility(PATH_RAY_VISIBILITY_ALL);
       scene->background->set_lightgroup(ustring());
 
-      /* Set background color depending to non-zero value if there are no
-       * lights in the scene, to match behavior of other renderers. */
+      /* No dome light: a black world, as Karma renders a stage without lights (husk --headlight none). A grey
+       * ambient for stages without lights lit what Karma leaves dark; hosts that want a light add one (husk's
+       * headlight, Houdini's viewport). From hdcycles-blender patch 0017. */
       for (ShaderNode *node : scene->default_background->graph->nodes) {
         if (node->is_a(BackgroundNode::get_node_type())) {
-          BackgroundNode *bgNode = static_cast<BackgroundNode *>(node);
-          bgNode->set_color((have_lights) ? zero_float3() : make_float3(0.5f));
+          static_cast<BackgroundNode *>(node)->set_color(zero_float3());
         }
       }
       /* Recompile: the shader kept its color from before (white world light after removing a
