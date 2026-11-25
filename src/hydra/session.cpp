@@ -19,6 +19,8 @@
 
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/imaging/hd/collectionExpressionEvaluator.h>
+#include <pxr/imaging/hd/instancedBySchema.h>
+#include <pxr/imaging/hd/instancerTopologySchema.h>
 
 #include <algorithm>
 #include <map>
@@ -215,12 +217,98 @@ HdCyclesSession::~HdCyclesSession()
   }
 }
 
+namespace {
+
+/* The instancer that instances `id`, and the root of the prototype `id` belongs to (instancedBy). */
+std::pair<SdfPath, SdfPath> InstancedBy(const HdSceneIndexBase &sceneIndex,
+                                        const SdfPath &id,
+                                        const SdfPath &instancerId = SdfPath())
+{
+  const HdInstancedBySchema instancedBy = HdInstancedBySchema::GetFromParent(sceneIndex.GetPrim(id).dataSource);
+  VtArray<SdfPath> by, roots;
+  if (auto ds = instancedBy.GetPaths()) {
+    by = ds->GetTypedValue(0.0f);
+  }
+  if (auto ds = instancedBy.GetPrototypeRoots()) {
+    roots = ds->GetTypedValue(0.0f);
+  }
+  for (size_t i = 0; i < by.size(); ++i) {
+    if (instancerId.IsEmpty() || by[i] == instancerId) {
+      return {by[i], i < roots.size() ? roots[i] : SdfPath()};
+    }
+  }
+  return {};
+}
+
+/* Where each instance of `prototypeId` (an rprim, or an instancer instanced in turn) has its root in the scene, in
+ * the order of HdCyclesInstancer::ComputeInstanceTransforms: a native instance's location (instanceLocations), else
+ * the instancer's own path (a PointInstancer's instances are no prims) — placed through the parent instancers, whose
+ * instances are outside. Empty when the topology is missing. */
+std::vector<SdfPath> InstanceRoots(const HdSceneIndexBase &sceneIndex,
+                                   const SdfPath &instancerId,
+                                   const SdfPath &prototypeId)
+{
+  HdInstancerTopologySchema topology = HdInstancerTopologySchema::GetFromParent(
+      sceneIndex.GetPrim(instancerId).dataSource);
+  if (!topology) {
+    return {};
+  }
+  const VtIntArray indices = topology.ComputeInstanceIndicesForProto(prototypeId);
+  VtArray<SdfPath> locations;
+  if (auto ds = topology.GetInstanceLocations()) {
+    locations = ds->GetTypedValue(0.0f);
+  }
+  std::vector<SdfPath> roots;
+  roots.reserve(indices.size());
+  for (const int index : indices) {
+    roots.push_back(size_t(index) < locations.size() && !locations[size_t(index)].IsEmpty() ?
+                        locations[size_t(index)] :
+                        instancerId);
+  }
+  const auto [parentId, parentRoot] = InstancedBy(sceneIndex, instancerId);
+  if (parentId.IsEmpty()) {
+    return roots;
+  }
+  const std::vector<SdfPath> parents = InstanceRoots(sceneIndex, parentId, instancerId);
+  if (parents.empty()) {
+    return roots;
+  }
+  std::vector<SdfPath> nested;
+  nested.reserve(parents.size() * roots.size());
+  for (const SdfPath &parent : parents) {
+    for (const SdfPath &root : roots) {
+      nested.push_back(!parentRoot.IsEmpty() && root.HasPrefix(parentRoot) ? root.ReplacePrefix(parentRoot, parent) :
+                                                                              parent);
+    }
+  }
+  return nested;
+}
+
+/* The path each instance of the rprim `id` is matched as: its instance's root, then the rprim's place below the
+ * prototype root (a mesh inside a native instance: <instance>/<mesh>). As Karma matches light links: linking a
+ * native instance lights only it, linking a PointInstancer all its instances, linking a prototype prim none. */
+std::vector<SdfPath> InstancePaths(const HdSceneIndexBase &sceneIndex, const SdfPath &instancerId, const SdfPath &id)
+{
+  std::vector<SdfPath> paths = InstanceRoots(sceneIndex, instancerId, id);
+  const SdfPath root = InstancedBy(sceneIndex, id, instancerId).second;
+  if (!root.IsEmpty() && id.HasPrefix(root) && id != root) {
+    const SdfPath below = id.MakeRelativePath(root);
+    for (SdfPath &path : paths) {
+      path = path.AppendPath(below);
+    }
+  }
+  return paths;
+}
+
+}  // namespace
+
 void HdCyclesSession::SetLinkGeometry(const void *owner,
                                       const SdfPath &id,
-                                      const std::vector<Object *> *objects)
+                                      const std::vector<Object *> *objects,
+                                      const SdfPath &instancerId)
 {
   const std::lock_guard<std::mutex> guard(_linksMutex);
-  _linkedGeometry[owner] = LinkedGeometry{id, objects};
+  _linkedGeometry[owner] = LinkedGeometry{id, objects, instancerId};
   /* new or changed instances need their sets: only when links are in use */
   _linksDirty = _linksDirty || !_lightLinks.empty();
 }
@@ -283,10 +371,21 @@ void HdCyclesSession::UpdateLinks()
       object->set_shadow_set_membership(LIGHT_LINK_MASK_ALL);
     }
   }
-  std::vector<const LinkedGeometry *> geometry;
-  geometry.reserve(_linkedGeometry.size());
+  /* What each object is matched as: its prim's path, or for an instance where the instance sits (InstancePaths),
+   * without the host's prefix. */
+  std::vector<std::pair<SdfPath, Object *>> geometry;
   for (const auto &[owner, entry] : _linkedGeometry) {
-    geometry.push_back(&entry);
+    std::vector<SdfPath> paths;
+    if (!entry.instancerId.IsEmpty() && _linkSceneIndex) {
+      paths = InstancePaths(*_linkSceneIndex, entry.instancerId, entry.id);
+    }
+    const bool perInstance = paths.size() == entry.objects->size();
+    for (size_t i = 0; i < entry.objects->size(); ++i) {
+      const SdfPath &path = perInstance ? paths[i] : entry.id;
+      geometry.emplace_back(_linkPrefix.IsAbsoluteRootPath() ? path :
+                                                               path.ReplacePrefix(_linkPrefix, SdfPath::AbsoluteRootPath()),
+                            (*entry.objects)[i]);
+    }
   }
   for (const bool shadow : {false, true}) {
     /* Which geometry each linked light reaches; one that reaches all is no link. */
@@ -298,12 +397,14 @@ void HdCyclesSession::UpdateLinks()
       }
       const HdCollectionExpressionEvaluator evaluator(_linkSceneIndex, expression);
       std::vector<bool> reached(geometry.size());
+      std::unordered_map<SdfPath, bool, SdfPath::Hash> matched; /* a point instancer's instances share a path */
       bool all = true;
       for (size_t i = 0; i < geometry.size(); ++i) {
-        reached[i] = bool(evaluator.Match(_linkPrefix.IsAbsoluteRootPath() ?
-                                              geometry[i]->id :
-                                              geometry[i]->id.ReplacePrefix(_linkPrefix,
-                                                                            SdfPath::AbsoluteRootPath())));
+        const auto [found, added] = matched.try_emplace(geometry[i].first, false);
+        if (added) {
+          found->second = bool(evaluator.Match(geometry[i].first));
+        }
+        reached[i] = found->second;
         all = all && reached[i];
       }
       if (!all) {
@@ -334,13 +435,11 @@ void HdCyclesSession::UpdateLinks()
           overflow = true;
         }
       }
-      for (Object *object : *geometry[i]->objects) {
-        if (shadow) {
-          object->set_blocker_shadow_set(index);
-        }
-        else {
-          object->set_receiver_light_set(index);
-        }
+      if (shadow) {
+        geometry[i].second->set_blocker_shadow_set(index);
+      }
+      else {
+        geometry[i].second->set_receiver_light_set(index);
       }
     }
     if (overflow) {

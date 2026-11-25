@@ -197,7 +197,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
    * linked lights reaching a prim becomes a Cycles receiver (blocker) set; a linked light reaches its sets. The sets
    * are recomputed in UpdateScene when lights or geometry changed. ``objects``: the prim's instance objects (its own
    * vector, read at UpdateScene). */
-  void SetLinkGeometry(const void *owner, const PXR_NS::SdfPath &id, const std::vector<CCL_NS::Object *> *objects);
+  /* `instancerId`: the prim's instancer, if any. Its instances are matched where they sit (InstancePaths). */
+  void SetLinkGeometry(const void *owner,
+                       const PXR_NS::SdfPath &id,
+                       const std::vector<CCL_NS::Object *> *objects,
+                       const PXR_NS::SdfPath &instancerId = PXR_NS::SdfPath());
   void RemoveLinkGeometry(const void *owner);
   /* ``prefix``: where the host put the stage in Hydra (Blender: /usd_scene); the expressions are in USD paths. */
   void SetLightLinks(CCL_NS::Object *light,
@@ -225,6 +229,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   struct LinkedGeometry {
     PXR_NS::SdfPath id;
     const std::vector<CCL_NS::Object *> *objects;
+    PXR_NS::SdfPath instancerId;
   };
   struct LightLinks {
     PXR_NS::SdfPathExpression light;

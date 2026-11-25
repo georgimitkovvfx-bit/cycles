@@ -321,7 +321,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       instance->set_lightgroup(flags.lightgroup);
     }
     /* Light and shadow linking (patch 0018): which linked lights reach this prim is decided in HdCyclesSession. */
-    static_cast<HdCyclesSession *>(renderParam)->SetLinkGeometry(this, id, &_instances);
+    static_cast<HdCyclesSession *>(renderParam)->SetLinkGeometry(this, id, &_instances, Base::GetInstancerId());
   }
 
   /* A static BVH (sequences too, cycles_usd_render) lets Cycles bake a single-user geometry's transform into its
