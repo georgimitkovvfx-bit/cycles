@@ -50,6 +50,9 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((aoBounces, "cycles:ao_bounces")) \
     ((aoFactor, "cycles:ao_factor")) \
     ((houdiniViewport, "houdini:viewport")) \
+    ((windowDepth, "cycles:viewport:window_depth")) \
+    ((sunIntensityScale, "cycles:light:sun_intensity_scale")) \
+    ((domeCameraVisibleDefault, "cycles:background:camera_visible_default")) \
     (resolution) \
     (pixelAspectRatio) \
     (aspectRatioConformPolicy) \

@@ -52,6 +52,7 @@
 #include <optional>
 
 #include <pxr/base/tf/getenv.h>
+#include <pxr/imaging/hd/lightSchema.h>
 #include <pxr/imaging/hd/materialSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
 #include <pxr/imaging/hd/renderIndex.h>
@@ -915,8 +916,9 @@ void HdCyclesDelegate::SendResync()
   }
   const bool materials = _renderParam->resyncMaterials.exchange(false);
   const bool rprims = _renderParam->resyncRprims.exchange(false);
+  const bool lights = _renderParam->resyncLights.exchange(false);
   const std::set<std::string> materialIds = _renderParam->TakeMaterialResyncs();
-  if (!(materials || rprims || !materialIds.empty()) || !_renderIndex) {
+  if (!(materials || rprims || lights || !materialIds.empty()) || !_renderIndex) {
     return;
   }
 
@@ -963,6 +965,14 @@ void HdCyclesDelegate::SendResync()
     /* The rebuilt materials request an rprim sync for the attributes they read now, which this
      * sync does already: another one would re-read every rprim and restart the render again. */
     _renderParam->rprimsResyncing = true;
+  }
+  if (lights) {
+    const HdDataSourceLocatorSet lightLocators = {HdLightSchema::GetDefaultLocator()};
+    for (const TfToken &type : {HdPrimTypeTokens->distantLight, HdPrimTypeTokens->domeLight}) {
+      for (const SdfPath &id : _renderIndex->GetSprimSubtree(type, root)) {
+        entries.emplace_back(id, lightLocators);
+      }
+    }
   }
   resyncSceneIndex->Resync(entries);
   _renderParam->resyncPending = true;
@@ -1300,6 +1310,21 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     session->params.sample_subset_length = Integrator::MAX_SAMPLES;
     session->params.use_sample_subset = session->params.sample_subset_offset > 0;
     ++_settingsVersion;
+  }
+  else if (key == HdCyclesRenderSettingsTokens->windowDepth) {
+    _renderParam->SetDepthToWindow(VtValue::Cast<bool>(value).GetWithDefault(false));
+  }
+  else if (key == HdCyclesRenderSettingsTokens->sunIntensityScale) {
+    if (_renderParam->SetSunIntensityScale(VtValue::Cast<float>(value).GetWithDefault(1.0f))) {
+      _renderParam->resyncLights = true;
+    }
+  }
+  else if (key == HdCyclesRenderSettingsTokens->domeCameraVisibleDefault) {
+    if (_renderParam->SetDomeCameraVisibleDefault(
+            VtValue::Cast<bool>(value).GetWithDefault(false)))
+    {
+      _renderParam->resyncLights = true;
+    }
   }
   else if (key == HdCyclesRenderSettingsTokens->houdiniViewport) {
     _renderParam->SetViewport(VtValue::Cast<bool>(value).GetWithDefault(false));

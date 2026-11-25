@@ -141,6 +141,9 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
 
     strength *= exp2(GetTypedValue<float>(lightDs, HdLightTokens->exposure, 0.0f));
     strength *= GetTypedValue<float>(lightDs, HdLightTokens->intensity, 1.0f);
+    if (_lightType == HdPrimTypeTokens->distantLight) {
+      strength *= static_cast<HdCyclesSession *>(renderParam)->GetSunIntensityScale();
+    }
 
     if (_lightType != HdPrimTypeTokens->domeLight && _lightType != HdPrimTypeTokens->distantLight)
     {
@@ -174,7 +177,12 @@ void HdCyclesLight::Sync(HdSceneDelegate *sceneDelegate,
             GetTypedValue<bool>(
                 lightDs,
                 _tokens->visibleInPrimaryRay,
-                GetTypedValue<bool>(lightDs, _tokens->karmaRenderLightGeo, false))))
+                GetTypedValue<bool>(
+                    lightDs,
+                    _tokens->karmaRenderLightGeo,
+                    _lightType == HdPrimTypeTokens->domeLight &&
+                        static_cast<HdCyclesSession *>(renderParam)
+                            ->GetDomeCameraVisibleDefault()))))
     {
       visibility |= PATH_RAY_VISIBILITY_CAMERA;
     }

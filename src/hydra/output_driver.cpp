@@ -62,7 +62,9 @@ void HdCyclesOutputDriver::convert_units(const TfToken &aovName,
                                          const size_t num_pixels,
                                          const size_t channels) const
 {
-  if (aovName == HdAovTokens->depth && channels == 1 && _renderParam->IsViewport()) {
+  if (aovName == HdAovTokens->depth && channels == 1 &&
+      (_renderParam->IsViewport() || _renderParam->GetDepthToWindow()))
+  {
     convert_depth(data, num_pixels, _renderParam->GetProjectionMatrix());
   }
 }

@@ -294,6 +294,48 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _viewport = viewport;
   }
 
+  /* Settings for hosts that differ from Karma (ADR 0076: Karma's behaviour is the default). The
+   * Blender add-on sets Blender's. */
+
+  /* cycles:viewport:window_depth: the depth AOV as window depth (0..1) outside Houdini's viewport
+   * too, for viewports that composite it (USD Nodes' Live view in Blender). */
+  bool GetDepthToWindow() const
+  {
+    return _depthToWindow;
+  }
+  void SetDepthToWindow(const bool depthToWindow)
+  {
+    _depthToWindow = depthToWindow;
+  }
+
+  /* cycles:light:sun_intensity_scale: 1 = USD's units, as Karma. Blender's USD exporter and Hydra
+   * export divide a sun's strength by 4 (its importer multiplies it back): Blender asks for 4. */
+  float GetSunIntensityScale() const
+  {
+    return _sunIntensityScale;
+  }
+  /* Whether the scale changed. */
+  bool SetSunIntensityScale(const float scale)
+  {
+    const bool changed = scale != _sunIntensityScale;
+    _sunIntensityScale = scale;
+    return changed;
+  }
+
+  /* cycles:background:camera_visible_default: whether the camera sees a dome light whose Cycles,
+   * USD and Karma attributes do not say. Karma hides it; Blender shows its world. */
+  bool GetDomeCameraVisibleDefault() const
+  {
+    return _domeCameraVisibleDefault;
+  }
+  /* Whether the default changed. */
+  bool SetDomeCameraVisibleDefault(const bool visible)
+  {
+    const bool changed = visible != _domeCameraVisibleDefault;
+    _domeCameraVisibleDefault = visible;
+    return changed;
+  }
+
   /* The Cycles session thread writes the AOVs (output driver) while Hydra changes the bindings
    * and deletes render buffers: the output driver holds this while using the bound buffers. */
   std::unique_lock<std::recursive_mutex> LockAovBindings() const
@@ -428,6 +470,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   std::atomic<bool> resyncMaterials = false;
   std::atomic<bool> resyncRprims = false;
+  // Suns and dome lights, after a setting that changes them (sun scale, dome camera visibility)
+  std::atomic<bool> resyncLights = false;
   // Set from HdCyclesDelegate::SendResync() to CommitResources() when the next sync syncs every
   // rprim again: the materials and cameras synced before them need no other rprim sync
   std::atomic<bool> rprimsResyncing = false;
@@ -450,7 +494,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   bool IsResyncing() const
   {
     const std::lock_guard<CCL_NS::thread_mutex> lock(_resyncMaterialIdsMutex);
-    return resyncMaterials || resyncRprims || resyncPending || !_resyncMaterialIds.empty();
+    return resyncMaterials || resyncRprims || resyncLights || resyncPending ||
+           !_resyncMaterialIds.empty();
   }
 
  private:
@@ -490,6 +535,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
   mutable CCL_NS::thread_mutex _projectionMutex;
   bool _viewport = false;
+  bool _depthToWindow = false;
+  float _sunIntensityScale = 1.0f;
+  bool _domeCameraVisibleDefault = false;
   float _shutterOpen = 0.0f;
   float _shutterClose = 0.0f;
   bool _shutterFromSettings = false;
