@@ -51,6 +51,7 @@ set(SRC_HD_CYCLES_HEADERS
   render_pass_scene_index.h
   render_settings.h
   resync_scene_index.h
+  scene_indices.h
   session.h
   util.h
   volume.h
@@ -81,6 +82,7 @@ set(SRC_HD_CYCLES
   render_pass_scene_index.cpp
   render_settings.cpp
   resync_scene_index.cpp
+  scene_indices.cpp
   session.cpp
   util.cpp
   volume.cpp
