@@ -31,6 +31,7 @@
 #include "util/string.h"
 
 #include <pxr/base/tf/getenv.h>
+#include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hgi/tokens.h>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -41,6 +42,9 @@ TF_DEFINE_PUBLIC_TOKENS(HdCyclesRenderSettingsTokens, HD_CYCLES_RENDER_SETTINGS_
 TF_DEFINE_PRIVATE_TOKENS(_tokens,
     (cycles)
     (openvdbAsset)
+    (renderMode)
+    ((houdiniViewport, "houdini:viewport"))
+    ((bvhType, "cycles:bvh_type"))
 );
 // clang-format on
 
@@ -72,6 +76,33 @@ const TfTokenVector kSupportedBPrimTypes = {
     _tokens->openvdbAsset,
 #endif
 };
+
+std::string GetStringSetting(const HdRenderSettingsMap &settings, const TfToken &key)
+{
+  const auto it = settings.find(key);
+  if (it == settings.end()) {
+    return std::string();
+  }
+  if (it->second.IsHolding<TfToken>()) {
+    return it->second.UncheckedGet<TfToken>().GetString();
+  }
+  return VtValue::Cast<std::string>(it->second).GetWithDefault(std::string());
+}
+
+/* The BVH: static (Embree's better build, single-user transforms baked into their geometry) for batch renders —
+ * husk's renderMode "batch", as Blender's F12 — dynamic (refits) for the rest. `cycles:bvh_type` picks one: Blender's
+ * STATIC_BVH / DYNAMIC_BVH, or static / dynamic. Fixed when the session is created. */
+SceneParams GetSceneParams(const HdRenderSettingsMap &settings)
+{
+  SceneParams params;
+  const auto viewport = settings.find(_tokens->houdiniViewport);
+  const bool batch = GetStringSetting(settings, _tokens->renderMode) == "batch" &&
+                     !(viewport != settings.end() && VtValue::Cast<bool>(viewport->second).GetWithDefault(false));
+  const std::string type = TfStringToLower(GetStringSetting(settings, _tokens->bvhType));
+  const bool isStatic = type.empty() ? batch : type.rfind("static", 0) == 0;
+  params.bvh_type = isStatic ? BVH_TYPE_STATIC : BVH_TYPE_DYNAMIC;
+  return params;
+}
 
 SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
 {
@@ -152,7 +183,8 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
     : HdRenderDelegate()
 {
   _renderParam = session_ ? std::make_unique<HdCyclesSession>(session_, keep_nodes) :
-                            std::make_unique<HdCyclesSession>(GetSessionParams(settingsMap));
+                            std::make_unique<HdCyclesSession>(GetSessionParams(settingsMap),
+                                                              GetSceneParams(settingsMap));
 
   /* Karma's defaults where Cycles' core ones differ, for hosts that do not set them (husk, Houdini, usdview): no
    * volume bounces (Karma's Volume Limit 0, also Blender's default; Cycles' core has 7) and white unbound volumes.

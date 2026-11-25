@@ -131,8 +131,10 @@ HdCyclesSession::HdCyclesSession(Session *session_, const bool keep_nodes)
 {
 }
 
-HdCyclesSession::HdCyclesSession(const SessionParams &params)
-    : session(new Session(params, SceneParams())), keep_nodes(false), _ownCyclesSession(true)
+HdCyclesSession::HdCyclesSession(const SessionParams &params) : HdCyclesSession(params, SceneParams()) {}
+
+HdCyclesSession::HdCyclesSession(const SessionParams &params, const SceneParams &sceneParams)
+    : session(new Session(params, sceneParams)), keep_nodes(false), _ownCyclesSession(true)
 {
   Scene *const scene = session->scene.get();
 

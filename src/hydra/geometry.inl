@@ -329,14 +329,17 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
    * normals, widths, primvars — and let Cycles bake the new transform; the baked normals go, so they are read again
    * or recomputed. Without this a moved object stayed where it was first rendered. */
   HdDirtyBits populateBits = *dirtyBits;
-  if (transformsDirty && _geom->transform_applied) {
+  /* New points, normals, widths or primvars arrive in object space too: mixed with the baked rest they rendered at the
+   * origin (a deforming mesh that does not move, from its second frame on). */
+  const HdDirtyBits objectSpaceBits = HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyNormals |
+                                      HdChangeTracker::DirtyWidths | HdChangeTracker::DirtyPrimvar;
+  if ((transformsDirty || (populateBits & objectSpaceBits)) && _geom->transform_applied) {
     if constexpr (std::is_same_v<CyclesBase, Mesh>) {
       _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
       _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
       _geom->attributes.remove(ATTR_STD_NORMAL_UNDISPLACED);
     }
-    populateBits |= HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyNormals | HdChangeTracker::DirtyWidths |
-                    HdChangeTracker::DirtyPrimvar;
+    populateBits |= objectSpaceBits;
     _geom->transform_applied = false;
   }
 
