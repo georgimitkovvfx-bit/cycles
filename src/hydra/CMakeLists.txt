@@ -20,6 +20,8 @@ set(LIB
   bf::dependencies::epoxy
 )
 cycles_external_libraries_append(LIB)
+# No Python library in the plugin (see the Python headers below).
+list(REMOVE_ITEM LIB bf::dependencies::optional::python)
 
 set(SRC_HD_CYCLES_HEADERS
   camera.h
@@ -186,10 +188,17 @@ target_link_libraries(cycles_hydra
   bf::dependencies::openimageio
   bf::dependencies::optional::tbb
   bf::dependencies::optional::usd
-  bf::dependencies::optional::python
   PRIVATE
   ${LIB}
 )
+
+# Python's headers only: USD's headers include them, the delegate itself uses no Python. The
+# library is the host's (Blender's, which it exports, or the Python USD links): a Python library
+# linked into the plugin would be a second, uninitialised interpreter (usdview crashed in
+# PyDict_New with Cycles' static Python before USD's on the link line).
+if(PYTHON_INCLUDE_DIR)
+  target_include_directories(cycles_hydra SYSTEM PUBLIC ${PYTHON_INCLUDE_DIR})
+endif()
 
 if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   set(SRC_HD_CYCLES_PLUGIN
@@ -237,6 +246,9 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     bf::dependencies::optional::tbb
     bf::dependencies::optional::usd
   )
+  if(PYTHON_INCLUDE_DIR)
+    target_include_directories(${HdCyclesImagingName} SYSTEM PRIVATE ${PYTHON_INCLUDE_DIR})
+  endif()
 
   if(APPLE)
     set_property(

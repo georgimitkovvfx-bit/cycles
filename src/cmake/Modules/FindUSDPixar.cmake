@@ -121,6 +121,13 @@ if(pxr_FOUND)
   endif()
   set(USD_OVERRIDE_MATERIALX ON)
 
+  # Python: the one USD was built with (pxrConfig.cmake found it; USD's targets link it), as for
+  # Houdini. Not Cycles' bundled static Python, a second interpreter in the process.
+  if(Python3_FOUND)
+    list(APPEND USD_INCLUDE_DIRS ${Python3_INCLUDE_DIRS})
+    set(USD_OVERRIDE_PYTHON ON)
+  endif()
+
   message(STATUS "OSL is not part of the USD package, disabling WITH_CYCLES_OSL")
   set(WITH_CYCLES_OSL OFF)
   message(STATUS "NanoVDB is not part of the USD package, disabling WITH_CYCLES_NANOVDB")
