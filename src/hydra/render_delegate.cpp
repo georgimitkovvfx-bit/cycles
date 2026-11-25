@@ -157,6 +157,7 @@ bool IsSessionSetting(const TfToken &key)
          key == HdCyclesRenderSettingsTokens->pixelSize ||
          key == HdCyclesRenderSettingsTokens->useSpatialSplits ||
          key == HdCyclesRenderSettingsTokens->useCompactBvh ||
+         key == HdCyclesRenderSettingsTokens->bvhType ||
          key == HdCyclesRenderSettingsTokens->curveSubdivisions ||
          key == HdCyclesRenderSettingsTokens->renderMode;
 }
@@ -359,6 +360,13 @@ SceneParams GetSceneParams(const HdRenderSettingsMap &settings, const SessionPar
     params.hair_subdivisions = std::clamp(
         VtValue::Cast<int>(it->second).GetWithDefault(params.hair_subdivisions), 0, 24);
   }
+  /* Blender's Acceleration Structure: static (Embree's better build, single-user transforms baked into their
+   * geometry; HdCyclesGeometry::Sync restores them when they change) for background renders (husk), as Blender's
+   * F12; dynamic (refits) for the viewport. Blender's STATIC_BVH / DYNAMIC_BVH, or static / dynamic. */
+  it = settings.find(HdCyclesRenderSettingsTokens->bvhType);
+  const std::string bvhType = TfStringToLower(it != settings.end() ? GetStringSetting(it->second, "") : "");
+  const bool staticBvh = bvhType.empty() ? sessionParams.background : bvhType.rfind("static", 0) == 0;
+  params.bvh_type = staticBvh ? BVH_TYPE_STATIC : BVH_TYPE_DYNAMIC;
 
   return params;
 }

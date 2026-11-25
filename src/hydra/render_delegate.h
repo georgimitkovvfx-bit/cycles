@@ -39,6 +39,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((pixelSize, "cycles:pixel_size")) \
     ((useSpatialSplits, "cycles:use_spatial_splits")) \
     ((useCompactBvh, "cycles:use_compact_bvh")) \
+    ((bvhType, "cycles:bvh_type")) \
     ((curveSubdivisions, "cycles:curve_subdivisions")) \
     ((timeLimit, "cycles:time_limit")) \
     ((samples, "cycles:samples")) \

@@ -11,12 +11,14 @@
 #include "hydra/util.h"
 #include "scene/geometry.h"
 #include "scene/integrator.h"
+#include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/scene.h"
 #include "session/session.h"
 #include "util/hash.h"
 
 #include <optional>
+#include <type_traits>
 
 #include <pxr/imaging/hd/categoriesSchema.h>
 #include <pxr/imaging/hd/materialBindingSchema.h>
@@ -288,16 +290,37 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     UpdateObjectSettings(primDs);
   }
 
+  /* A static BVH (husk's renders) lets Cycles bake a single-user geometry's transform into its data
+   * (ObjectManager::apply_static_transforms), once. When the object moves, or new points, normals, widths or
+   * primvars arrive (in object space), restore all of its object-space data and let Cycles bake again; the baked
+   * normals go, so they are read again or recomputed. Without this a moved object stayed where it was first
+   * rendered, and a deforming one went to the origin. From hdcycles-blender patches 0015 and 0039. */
+  HdDirtyBits populateBits = *dirtyBits;
+  const HdDirtyBits objectSpaceBits = HdChangeTracker::DirtyPoints | HdChangeTracker::DirtyNormals |
+                                      HdChangeTracker::DirtyWidths | HdChangeTracker::DirtyPrimvar;
+  if (_geom->transform_applied &&
+      (HdChangeTracker::IsTransformDirty(*dirtyBits, id) || HdChangeTracker::IsInstancerDirty(*dirtyBits, id) ||
+       (populateBits & objectSpaceBits)))
+  {
+    if constexpr (std::is_same_v<CyclesBase, Mesh>) {
+      _geom->attributes.remove(ATTR_STD_VERTEX_NORMAL);
+      _geom->attributes.remove(ATTR_STD_CORNER_NORMAL);
+      _geom->attributes.remove(ATTR_STD_NORMAL_UNDISPLACED);
+    }
+    populateBits |= objectSpaceBits;
+    _geom->transform_applied = false;
+  }
+
   // Must happen after material ID update, so that attribute decisions can be made
   // based on it (e.g. check whether an attribute is actually needed)
   bool rebuild = false;
   if (exclusive) {
     lockHolder.reset();
-    Populate(sceneDelegate, *dirtyBits, rebuild);
+    Populate(sceneDelegate, populateBits, rebuild);
     lockHolder.emplace(renderParam);
   }
   else {
-    Populate(sceneDelegate, *dirtyBits, rebuild);
+    Populate(sceneDelegate, populateBits, rebuild);
   }
   Scene *const scene = lockHolder->scene;
   /* A refit keeps the time steps the BVH was built with, and their buffers that changing the
