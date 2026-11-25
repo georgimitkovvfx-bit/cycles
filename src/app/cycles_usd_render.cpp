@@ -818,6 +818,8 @@ int render(const Options &o)
   HdCyclesSession::SetDefaultSurface(session->scene.get());
   /* Nothing renders while Hydra syncs here: rprims fill their geometry in parallel (HdCyclesSession). */
   static_cast<HdCyclesSession *>(delegate.GetRenderParam())->SetExclusiveSync(true);
+  /* Blender's Z pass is in metres (the Blender runner's too), not in stage units. */
+  static_cast<HdCyclesSession *>(delegate.GetRenderParam())->SetDepthInMetres(true);
   /* No Hydra instanceId AOV here: no per-instance attribute (memory, attribute repacks on every change). */
   static_cast<HdCyclesSession *>(delegate.GetRenderParam())->SetInstanceIdAov(false);
   /* Blender's defaults for what the stage does not set (Cycles' own differ: 7 bounces of every kind, no glossy

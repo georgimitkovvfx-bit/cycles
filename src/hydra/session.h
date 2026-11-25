@@ -64,6 +64,18 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _depthToWindow = depthToWindow;
   }
 
+  /* The `depth` AOV of final renders is the distance in stage units, as Karma's and hdCycles-h22's (Cycles: metres;
+   * 600 for 6 m in a centimetre stage, not 6). ``cycles_usd_render`` keeps metres: it writes Blender's Z pass. */
+  bool GetDepthInMetres() const
+  {
+    return _depthInMetres;
+  }
+
+  void SetDepthInMetres(const bool metres)
+  {
+    _depthInMetres = metres;
+  }
+
   /* The projection of the camera being rendered, to convert the depth pass (set by the render pass). */
   PXR_NS::GfMatrix4d GetProjectionMatrix() const
   {
@@ -246,6 +258,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   const bool _ownCyclesSession;
   double _stageMetersPerUnit = 0.01;
   bool _depthToWindow = false;
+  bool _depthInMetres = false;
   PXR_NS::GfMatrix4d _projectionMatrix = PXR_NS::GfMatrix4d(1.0);
   mutable std::mutex _projectionMutex; /* written by the render pass, read by the output driver's thread */
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
