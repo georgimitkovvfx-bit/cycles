@@ -91,11 +91,17 @@ if(EXISTS ${USD_INCLUDE_DIR}/pxr/imaging/hgiGL)
   list(APPEND SRC_HD_CYCLES_HEADERS display_driver.h)
 endif()
 
-# MaterialX materials, translated with the MaterialX libraries USD was built with.
-if(TARGET hdMtlx)
+# MaterialX materials, translated with the MaterialX libraries USD was built with: USD's hdMtlx
+# (Houdini, Pixar's USD), or Blender's USD, which is one library, with Blender's MaterialX.
+if(TARGET hdMtlx OR WITH_MATERIALX)
   add_definitions(-DWITH_HYDRA_MATERIALX)
   list(APPEND SRC_HD_CYCLES materialx.cpp)
   list(APPEND SRC_HD_CYCLES_HEADERS materialx.h)
+  if(TARGET hdMtlx)
+    list(APPEND LIB hdMtlx)
+  else()
+    list(APPEND LIB MaterialXCore MaterialXFormat)
+  endif()
 endif()
 
 # Volumes from SOPs in a Houdini LOP stage and Houdini image formats (.rat), read through
