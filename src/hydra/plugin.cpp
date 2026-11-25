@@ -16,6 +16,7 @@
 #include <pxr/imaging/hd/rendererPluginRegistry.h>
 #if PXR_VERSION >= 2408
 #  include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
+#  include <pxr/imaging/hdsi/velocityMotionResolvingSceneIndex.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -88,6 +89,20 @@ TF_REGISTRY_FUNCTION(HdSceneIndexPlugin)
       nullptr,
       0,
       HdSceneIndexPluginRegistry::InsertionOrderAtStart);
+
+  /* velocities / accelerations / angular velocities → motion of points and instances over the shutter (UsdGeom's
+   * rules), for every host: husk and Houdini's viewport (Karma resolves them itself), usdview, Blender. The frame
+   * rate comes from the scene globals (husk's is 24; cycles_usd_render has its own), as in hdCycles-h22. */
+  HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+      "Cycles",
+      [](const std::string & /*renderInstanceId*/,
+         const HdSceneIndexBaseRefPtr &inputScene,
+         const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+        return HdsiVelocityMotionResolvingSceneIndex::New(inputScene);
+      },
+      nullptr,
+      0,
+      HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
 }
 #endif
 

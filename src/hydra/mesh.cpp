@@ -202,6 +202,17 @@ void HdCyclesMesh::PopulatePoints(HdSceneDelegate *sceneDelegate)
       attr_P->add_motion(_geom);
     }
     const int center = (_motionSteps - 1) / 2;
+    /* The centre step is the middle of the shutter, which is the frame only for a shutter centred on it (Blender's
+     * default, -0.25 to 0.25); with 0 to 1 the points at the frame were the centre and most of the blur stayed at the
+     * start. */
+    if (MotionTime(center) != 0.0f) {
+      const VtValue centerValue = pointsDs->GetValue(MotionTime(center));
+      if (centerValue.IsHolding<VtVec3fArray>() && centerValue.UncheckedGet<VtVec3fArray>().size() >= numPoints) {
+        std::copy_n(reinterpret_cast<const packed_float3 *>(centerValue.UncheckedGet<VtVec3fArray>().data()),
+                    numPoints,
+                    verts);
+      }
+    }
     for (int step = 0; step < _motionSteps; ++step) {
       if (step == center) {
         continue;
