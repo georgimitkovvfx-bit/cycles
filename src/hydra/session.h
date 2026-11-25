@@ -269,6 +269,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   // Rendering for the Houdini viewport: it reads the depth AOV as window depth (0..1) and needs
   // integer IDs, final renders keep distance and float IDs
+  /* Whether rprims may fill their geometry outside the scene lock, in parallel: while the session thread is not
+   * rendering. Only the render pass starts it, after Hydra's sync: husk's frames, any first sync. Resyncs while
+   * rendering (and viewports) keep the lock. */
+  bool ExclusiveSync() const;
   bool IsViewport() const
   {
     return _viewport;

@@ -235,7 +235,7 @@ HdDirtyBits HdCyclesMesh::_PropagateDirtyBits(HdDirtyBits bits) const
 void HdCyclesMesh::Populate(HdSceneDelegate *sceneDelegate, HdDirtyBits dirtyBits, bool &rebuild)
 {
   /* Rebuild subdivision and displacement from the authored geometry when primvars change.
-   * Decided here, under the scene lock, because displacement depends on shader state. */
+   * Decided here, after the shaders synced, because displacement depends on shader state. */
   if ((dirtyBits & HdChangeTracker::DirtyPrimvar) &&
       (_geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE || _geom->has_true_displacement() ||
        IsAdaptiveSubdivision(sceneDelegate) != _adaptiveSubdivision))
@@ -516,7 +516,7 @@ void HdCyclesMesh::PopulatePrimvars(HdSceneDelegate *sceneDelegate)
     _geom->add_vertex_normals();
     _geom->update_tangents(scene, true);
     _geom->update_tangents(scene, false);
-    _geom->tag_update(scene, false);
+    _attributesChanged = true;
   }
 }
 

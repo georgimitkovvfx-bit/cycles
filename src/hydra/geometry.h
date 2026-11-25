@@ -86,6 +86,9 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   // Per instance when the instancer has per-instance ray visibility settings, else empty
   std::vector<unsigned int> _instanceVisibility;
   bool _renderTagVisible = true;
+  /* Set by Populate for an attribute-only update, which Sync tags under the scene lock: Populate may run outside
+   * it (HdCyclesSession::ExclusiveSync). */
+  bool _attributesChanged = false;
   const HdCyclesSession *_session = nullptr;
 
  private:

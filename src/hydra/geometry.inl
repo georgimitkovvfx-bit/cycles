@@ -16,6 +16,8 @@
 #include "session/session.h"
 #include "util/hash.h"
 
+#include <optional>
+
 #include <pxr/imaging/hd/categoriesSchema.h>
 #include <pxr/imaging/hd/materialBindingSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
@@ -75,7 +77,12 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   HdInstancer::_SyncInstancerAndParents(sceneDelegate->GetRenderIndex(), Base::GetInstancerId());
   Base::_UpdateVisibility(sceneDelegate, dirtyBits);
 
-  const SceneLock lock(renderParam);
+  /* Hydra syncs rprims in parallel, but the scene lock made them run one at a time. While the session thread is
+   * not rendering (husk's frames, any first sync), each rprim fills its own geometry (Populate) outside the lock;
+   * changes to the scene stay under it. */
+  const bool exclusive = static_cast<HdCyclesSession *>(renderParam)->ExclusiveSync();
+  std::optional<SceneLock> lockHolder(std::in_place, renderParam);
+  const SceneLock &lock = *lockHolder;
 
   const SdfPath &id = Base::GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
@@ -284,13 +291,21 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   // Must happen after material ID update, so that attribute decisions can be made
   // based on it (e.g. check whether an attribute is actually needed)
   bool rebuild = false;
-  Populate(sceneDelegate, *dirtyBits, rebuild);
+  if (exclusive) {
+    lockHolder.reset();
+    Populate(sceneDelegate, *dirtyBits, rebuild);
+    lockHolder.emplace(renderParam);
+  }
+  else {
+    Populate(sceneDelegate, *dirtyBits, rebuild);
+  }
+  Scene *const scene = lockHolder->scene;
   /* A refit keeps the time steps the BVH was built with, and their buffers that changing the
    * motion steps freed. */
   rebuild |= _geom->motion_steps_is_modified() || _geom->use_motion_blur_is_modified();
 
   if (_light.Sync(static_cast<HdCyclesSession *>(renderParam),
-                  lock.scene,
+                  scene,
                   sceneDelegate,
                   id,
                   primDs,
@@ -300,12 +315,13 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
     UpdateObjectSettings(primDs);
   }
 
-  if (_geom->is_modified() || rebuild) {
-    _geom->tag_update(lock.scene, rebuild);
+  if (_geom->is_modified() || rebuild || _attributesChanged) {
+    _geom->tag_update(scene, rebuild);
   }
+  _attributesChanged = false;
 
   for (Object *instance : _instances) {
-    instance->tag_update(lock.scene);
+    instance->tag_update(scene);
   }
 
   *dirtyBits = HdChangeTracker::Clean;

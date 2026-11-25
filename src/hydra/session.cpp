@@ -220,6 +220,23 @@ PassType HdCyclesSession::GetPassType(const TfToken &aovName)
   return PASS_NONE;
 }
 
+namespace {
+
+/* Session::is_session_thread_rendering is protected: called through a member pointer named in a derived class. */
+struct SessionThreadState : Session {
+  static bool Rendering(Session *session)
+  {
+    return (session->*&SessionThreadState::is_session_thread_rendering)();
+  }
+};
+
+}  // namespace
+
+bool HdCyclesSession::ExclusiveSync() const
+{
+  return !SessionThreadState::Rendering(session);
+}
+
 SceneLock::SceneLock(const HdRenderParam *renderParam)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),
       session(const_cast<HdCyclesSession *>(static_cast<const HdCyclesSession *>(renderParam))),
