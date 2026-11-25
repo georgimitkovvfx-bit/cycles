@@ -161,6 +161,9 @@ class HdCyclesDelegate final : public PXR_NS::HdRenderDelegate {
   /* Set the integrator's denoising sockets from the settings, with what DLSS needs when it
    * denoises, or another denoiser when it cannot. */
   void UpdateDenoiser();
+
+  /* Karma's defaults where Cycles' core ones differ, on a new scene. */
+  void ApplyKarmaDefaults();
   bool _dlssWarned = false;
 
   /* Set the Cycles settings that have a Karma fallback (GetKarmaFallbacks) using the Karma or

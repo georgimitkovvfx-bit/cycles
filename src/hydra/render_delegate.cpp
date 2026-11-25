@@ -599,6 +599,7 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
   }
 
   _settingsMap = settingsMap;
+  ApplyKarmaDefaults();
   for (const auto &setting : settingsMap) {
     // Skip over the settings known to be used for initialization only
     if (IsSessionSetting(setting.first)) {
@@ -610,6 +611,51 @@ HdCyclesDelegate::HdCyclesDelegate(const HdRenderSettingsMap &settingsMap,
 }
 
 HdCyclesDelegate::~HdCyclesDelegate() = default;
+
+namespace {
+
+/* The shader of volumes without a material: a Principled Volume of this color (Cycles' own default is 0.5 grey, as in
+ * Blender; Karma's unbound volumes scatter white). */
+void SetDefaultVolumeColor(Scene *scene, const float3 color)
+{
+  unique_ptr<ShaderGraph> graph = make_unique<ShaderGraph>();
+  PrincipledVolumeNode *principled = graph->create_node<PrincipledVolumeNode>();
+  principled->set_color(color);
+  graph->connect(principled->output("Volume"), graph->output()->input("Volume"));
+  scene->default_volume->set_graph(std::move(graph));
+  scene->default_volume->tag_update(scene);
+}
+
+float3 DefaultVolumeColor(const VtValue &value)
+{
+  if (value.IsHolding<GfVec3f>() || value.IsHolding<GfVec3d>()) {
+    const GfVec3f c = VtValue::Cast<GfVec3f>(value).UncheckedGet<GfVec3f>();
+    return make_float3(c[0], c[1], c[2]);
+  }
+  return make_float3(VtValue::Cast<float>(value).GetWithDefault(1.0f));
+}
+
+const TfToken &DefaultVolumeColorSetting()
+{
+  static const TfToken token("cycles:volume:default_color");
+  return token;
+}
+
+}  // namespace
+
+void HdCyclesDelegate::ApplyKarmaDefaults()
+{
+  /* Measured with husk (hdcycles-blender motion_test.sh): an unbound VDB fog ball renders as in
+   * Karma with white single scattering. Karma's Volume Limit defaults to 0 (Blender's Volume
+   * Bounces too), Cycles' core to 7; Karma's unbound volumes scatter white, Cycles' default volume
+   * is 0.5 grey (cycles:volume:default_color sets another). Authored settings set again after. */
+  Scene *const scene = _renderParam->session->scene.get();
+  scene->integrator->set_max_volume_bounce(0);
+  const auto color = _settingsMap.find(DefaultVolumeColorSetting());
+  SetDefaultVolumeColor(scene,
+                        color != _settingsMap.end() ? DefaultVolumeColor(color->second) :
+                                                      one_float3());
+}
 
 void HdCyclesDelegate::SetDrivers(const HdDriverVector &drivers)
 {
@@ -1206,6 +1252,7 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
       return;
     }
     _renderParam->RecreateSession(params, sceneParams);
+    ApplyKarmaDefaults();
     settings = _settingsMap;
     for (const auto &[otherKey, otherValue] : settings) {
       /* Settings from Karma are set again by their Karma settings. */
@@ -1281,6 +1328,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
     };
     _renderParam->SetMotionBlurDisabled(get(HdCyclesRenderSettingsTokens->disableMotionBlur) ||
                                         get(HdCyclesRenderSettingsTokens->instantaneousShutter));
+  }
+  else if (key == DefaultVolumeColorSetting()) {
+    /* A grey (float) or a color: volumes without a material (white when unset, as Karma). */
+    SetDefaultVolumeColor(scene, value.IsEmpty() ? one_float3() : DefaultVolumeColor(value));
+    ++_settingsVersion;
   }
   else if (key == HdCyclesRenderSettingsTokens->disableDepthOfField) {
     const bool disabled = VtValue::Cast<bool>(value).GetWithDefault(false);
@@ -1419,7 +1471,10 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
                                   _settingsMap.count(HdCyclesRenderSettingsTokens->aoFactor);
       const SocketType *socket = node->type->find_input(socketName);
       if (socket && !(fastGiSocket && fastGiAuthored)) {
-        if (value.IsEmpty()) {
+        if (value.IsEmpty() && node == scene->integrator && socketName == "max_volume_bounce") {
+          scene->integrator->set_max_volume_bounce(0); /* Karma's default (ApplyKarmaDefaults) */
+        }
+        else if (value.IsEmpty()) {
           node->set_default_value(*socket);
         }
         else {
@@ -1442,6 +1497,18 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
           session->params.sample_subset_length = scene->integrator->get_sample_subset_length();
         }
       }
+    }
+  }
+
+  /* Without the Cycles Motion Blur setting, motion blur is on when the shutter is open, as in Karma
+   * (husk and the viewport send the camera's shutter as shutter:open / close); disableMotionBlur
+   * still turns it off. */
+  static const TfToken motionBlurSetting("cycles:integrator:motion_blur");
+  if (!_settingsMap.count(motionBlurSetting)) {
+    const bool open = _renderParam->HasOpenShutter();
+    if (scene->integrator->get_motion_blur() != open) {
+      scene->integrator->set_motion_blur(open);
+      ++_settingsVersion;
     }
   }
 

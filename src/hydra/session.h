@@ -121,6 +121,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     _motionBlurDisabled = disabled;
   }
 
+  // Whether the shutter (render settings, else the camera's) is open
+  bool HasOpenShutter() const
+  {
+    return _shutterClose > _shutterOpen;
+  }
+
   // Blender's motion steps of objects: 2^steps + 1 motion times over the shutter
   void SetMotionSteps(const int steps)
   {
