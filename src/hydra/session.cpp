@@ -802,9 +802,26 @@ void HdCyclesSession::SetCategories(const std::string &object, const VtArray<TfT
   }
 }
 
+void HdCyclesSession::SetInstanceCategories(
+    const std::string &object, std::vector<std::pair<const Object *, VtArray<TfToken>>> categories)
+{
+  const auto it = _instanceCategories.find(object);
+  if (categories.empty()) {
+    if (it != _instanceCategories.end()) {
+      _instanceCategories.erase(it);
+      _lightLinkingDirty = true;
+    }
+    return;
+  }
+  if (it == _instanceCategories.end() || it->second != categories) {
+    _instanceCategories[object] = std::move(categories);
+    _lightLinkingDirty = true;
+  }
+}
+
 void HdCyclesSession::RemoveLinking(const std::string &name)
 {
-  _lightLinkingDirty |= _lightLinks.erase(name) + _categories.erase(name) != 0;
+  _lightLinkingDirty |= _lightLinks.erase(name) + _categories.erase(name) + _instanceCategories.erase(name) != 0;
 }
 
 void HdCyclesSession::UpdateLightLinking()
@@ -829,8 +846,8 @@ void HdCyclesSession::UpdateLightLinking()
   }
 
   std::array<std::map<std::vector<TfToken>, uint>, 2> sets = {{{{{}, 0}}, {{{}, 0}}}};
-  std::unordered_map<std::string, std::array<uint, 2>> objectSets;
-  for (const auto &[object, categories] : _categories) {
+  const auto setsOf = [&](const VtArray<TfToken> &categories) {
+    std::array<uint, 2> objectSet;
     for (int kind = 0; kind < 2; kind++) {
       std::vector<TfToken> linked;
       for (const TfToken &category : categories) {
@@ -840,8 +857,19 @@ void HdCyclesSession::UpdateLightLinking()
       }
       std::sort(linked.begin(), linked.end());
       linked.erase(std::unique(linked.begin(), linked.end()), linked.end());
-      objectSets[object][kind] =
-          sets[kind].emplace(std::move(linked), uint(sets[kind].size())).first->second;
+      objectSet[kind] = sets[kind].emplace(std::move(linked), uint(sets[kind].size())).first->second;
+    }
+    return objectSet;
+  };
+  std::unordered_map<std::string, std::array<uint, 2>> objectSets;
+  for (const auto &[object, categories] : _categories) {
+    objectSets[object] = setsOf(categories);
+  }
+  /* Instances with categories of their own (SetInstanceCategories), by object. */
+  std::unordered_map<const Object *, std::array<uint, 2>> instanceSets;
+  for (const auto &[object, instances] : _instanceCategories) {
+    for (const auto &[instance, categories] : instances) {
+      instanceSets[instance] = setsOf(categories);
     }
   }
   if (sets[0].size() > LIGHT_LINK_SET_MAX || sets[1].size() > LIGHT_LINK_SET_MAX) {
@@ -875,9 +903,12 @@ void HdCyclesSession::UpdateLightLinking()
     if (const auto it = _lightLinks.find(object->name.string()); it != _lightLinks.end()) {
       links = it->second;
     }
-    if (const auto it = objectSets.find(object->name.string());
-        !object->get_geometry()->is_light() && it != objectSets.end())
-    {
+    if (object->get_geometry()->is_light()) {
+    }
+    else if (const auto it = instanceSets.find(object); it != instanceSets.end()) {
+      objectSet = it->second;
+    }
+    else if (const auto it = objectSets.find(object->name.string()); it != objectSets.end()) {
       objectSet = it->second;
     }
 

@@ -69,6 +69,11 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
                      const PXR_NS::TfToken &shadowLink);
   void SetCategories(const std::string &object,
                      const PXR_NS::VtArray<PXR_NS::TfToken> &categories);
+  /* Categories per instance object of a prim (an instancer's instanceCategories with the prim's own), which win
+   * over the prim's; empty: none. Called with the scene locked. */
+  void SetInstanceCategories(const std::string &object,
+                             std::vector<std::pair<const CCL_NS::Object *, PXR_NS::VtArray<PXR_NS::TfToken>>>
+                                 categories);
   void RemoveLinking(const std::string &name);
   // Objects were added: they need their sets
   void TagLightLinking()
@@ -448,6 +453,9 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
 
   std::unordered_map<std::string, std::pair<PXR_NS::TfToken, PXR_NS::TfToken>> _lightLinks;
   std::unordered_map<std::string, PXR_NS::VtArray<PXR_NS::TfToken>> _categories;
+  std::unordered_map<std::string,
+                     std::vector<std::pair<const CCL_NS::Object *, PXR_NS::VtArray<PXR_NS::TfToken>>>>
+      _instanceCategories;
   bool _lightLinkingDirty = false;
   std::map<CCL_NS::Light *, WorldMaterial> _worldMaterials;
   void SetLightShader(CCL_NS::Light *light, CCL_NS::Shader *shader);

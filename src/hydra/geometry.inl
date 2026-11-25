@@ -21,6 +21,9 @@
 #include <type_traits>
 
 #include <pxr/imaging/hd/categoriesSchema.h>
+#include <pxr/imaging/hd/instanceCategoriesSchema.h>
+#include <pxr/imaging/hd/instancedBySchema.h>
+#include <pxr/imaging/hd/instancerTopologySchema.h>
 #include <pxr/imaging/hd/materialBindingSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
@@ -281,6 +284,66 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
         }
       }
     }
+  }
+
+  /* Linked instances (HdsiLightLinkingSceneIndex) have their categories on the instancer: a linked point instancer
+   * its own (all its instances), a linked native instance its entry in instanceCategories. Each instance object gets
+   * the prim's categories, its instancers' (through nesting) and its own: as Karma, linking a point instancer lights
+   * all its instances, linking a native instance only it. The prototype's categories alone gave every instance the
+   * prototype's link, so none was lit. Per-instance categories only for a non-nested instancer, as the scene index
+   * supports. */
+  if ((*dirtyBits & HdChangeTracker::DirtyCategories) || HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
+      HdChangeTracker::IsInstancerDirty(*dirtyBits, id))
+  {
+    std::vector<std::pair<const Object *, VtArray<TfToken>>> instanceCategories;
+    const SdfPath &instancerId = Base::GetInstancerId();
+    if (!instancerId.IsEmpty()) {
+      const HdContainerDataSourceHandle instancerDs = GetPrim(sceneDelegate, instancerId).dataSource;
+      VtArray<TfToken> shared; /* the prim's and its instancers' */
+      if (HdCategoriesSchema schema = HdCategoriesSchema::GetFromParent(primDs)) {
+        shared = schema.GetIncludedCategoryNames();
+      }
+      const size_t own = shared.size();
+      HdContainerDataSourceHandle levelDs = instancerDs;
+      for (int depth = 0; levelDs && depth < 16; ++depth) {
+        if (HdCategoriesSchema schema = HdCategoriesSchema::GetFromParent(levelDs)) {
+          for (const TfToken &category : schema.GetIncludedCategoryNames()) {
+            shared.push_back(category);
+          }
+        }
+        SdfPath parentId;
+        if (auto pathsDs = HdInstancedBySchema::GetFromParent(levelDs).GetPaths()) {
+          const VtArray<SdfPath> parents = pathsDs->GetTypedValue(0.0f);
+          if (!parents.empty()) {
+            parentId = parents.front();
+          }
+        }
+        levelDs = parentId.IsEmpty() ? nullptr : GetPrim(sceneDelegate, parentId).dataSource;
+      }
+      HdVectorDataSourceHandle values;
+      if (HdInstanceCategoriesSchema schema = HdInstanceCategoriesSchema::GetFromParent(instancerDs)) {
+        values = schema.GetCategoriesValues();
+      }
+      HdInstancerTopologySchema topology = HdInstancerTopologySchema::GetFromParent(instancerDs);
+      const VtIntArray indices = topology && values ? topology.ComputeInstanceIndicesForProto(id) : VtIntArray();
+      const bool perInstance = values && indices.size() == _instances.size();
+      if (perInstance || shared.size() > own) {
+        for (size_t i = 0; i < _instances.size(); ++i) {
+          VtArray<TfToken> categories = shared;
+          if (perInstance && size_t(indices[i]) < values->GetNumElements()) {
+            HdCategoriesSchema schema(HdContainerDataSource::Cast(values->GetElement(size_t(indices[i]))));
+            if (schema) {
+              for (const TfToken &category : schema.GetIncludedCategoryNames()) {
+                categories.push_back(category);
+              }
+            }
+          }
+          instanceCategories.emplace_back(_instances[i], std::move(categories));
+        }
+      }
+    }
+    static_cast<HdCyclesSession *>(renderParam)->SetInstanceCategories(id.GetString(),
+                                                                       std::move(instanceCategories));
   }
 
   if (HdChangeTracker::IsVisibilityDirty(*dirtyBits, id) ||
