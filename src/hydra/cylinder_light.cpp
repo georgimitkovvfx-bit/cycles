@@ -66,7 +66,7 @@ void HdCyclesCylinderLight::Sync(HdSceneDelegate *sceneDelegate,
   if (!_object) {
     _mesh = lock.scene->create_node<Mesh>();
     _mesh->name = GetId().GetString();
-    _shader = lock.scene->create_node<Shader>();
+    _shader = session->TakeShader(lock.scene);
     array<Node *> usedShaders;
     usedShaders.push_back_slow(_shader);
     _mesh->set_used_shaders(usedShaders);

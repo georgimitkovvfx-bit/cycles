@@ -282,7 +282,7 @@ bool HdCyclesGeometryLight::Sync(HdCyclesSession *session,
     const float key[5] = {strength.x, strength.y, strength.z, temperature, useMis ? 1.0f : 0.0f};
 
     if (!_shader) {
-      _shader = scene->create_node<Shader>();
+      _shader = session->TakeShader(scene);
       _shader->name = id.GetString();
     }
     if (!std::equal(std::begin(key), std::end(key), std::begin(_key))) {

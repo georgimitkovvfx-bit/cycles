@@ -319,7 +319,7 @@ bool HdCyclesSession::IsSessionUnused() const
   /* Nodes waiting in FlushDeletedNodes() count as deleted. */
   return _ownCyclesSession && scene->geometry.size() == _deletedGeometry.size() &&
          scene->objects.size() == _deletedObjects.size() &&
-         scene->shaders.size() == _numDefaultShaders + _deletedShaders.size();
+         scene->shaders.size() == _numDefaultShaders + _deletedShaders.size() + _retiredShaders.size();
 }
 
 void HdCyclesSession::RecreateSession(const SessionParams &params, const SceneParams &scene_params)
@@ -328,6 +328,7 @@ void HdCyclesSession::RecreateSession(const SessionParams &params, const ScenePa
   _deletedObjects.clear();
   _deletedGeometry.clear();
   _deletedShaders.clear();
+  _retiredShaders.clear();
   delete session;
   CreateSession(params, scene_params);
 }
@@ -347,6 +348,16 @@ void HdCyclesSession::DeleteNode(Shader *node)
   _deletedShaders.insert(node);
 }
 
+Shader *HdCyclesSession::TakeShader(Scene *scene)
+{
+  if (_retiredShaders.empty()) {
+    return scene->create_node<Shader>();
+  }
+  Shader *const shader = _retiredShaders.back();
+  _retiredShaders.pop_back();
+  return shader;
+}
+
 void HdCyclesSession::FlushDeletedNodes()
 {
   Scene *const scene = session->scene.get();
@@ -362,7 +373,19 @@ void HdCyclesSession::FlushDeletedNodes()
     _deletedGeometry.clear();
   }
   if (!_deletedShaders.empty()) {
-    scene->delete_nodes(_deletedShaders);
+    scene->delete_nodes(_deletedShaders); /* only clears their users: Cycles keeps them */
+    for (Shader *shader : _deletedShaders) {
+      for (const SocketType &socket : shader->type->inputs) {
+        shader->set_default_value(socket);
+      }
+      shader->set_graph(make_unique<ShaderGraph>()); /* frees the old graph's nodes */
+      shader->has_surface_spatial_varying = false;
+      shader->name = ustring();
+      shader->tag_update(scene);
+      if (std::find(_retiredShaders.begin(), _retiredShaders.end(), shader) == _retiredShaders.end()) {
+        _retiredShaders.push_back(shader);
+      }
+    }
     _deletedShaders.clear();
   }
 }

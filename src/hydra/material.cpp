@@ -1297,7 +1297,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     const bool existed = _shader != nullptr;
     if (!_shader) {
-      _shader = lock.scene->create_node<Shader>();
+      _shader = static_cast<HdCyclesSession *>(renderParam)->TakeShader(lock.scene);
       // Cryptomatte material name
       _shader->name = id.GetString();
       /* A dome light may use the material as world since before it existed. */

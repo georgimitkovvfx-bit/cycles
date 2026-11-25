@@ -50,6 +50,12 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   void DeleteNode(CCL_NS::Object *node);
   void DeleteNode(CCL_NS::Geometry *node);
   void DeleteNode(CCL_NS::Shader *node);
+  /* Cycles never deletes a Shader (Scene::delete_node: "not supported", shader ids are baked into the kernel's
+   * data): a deleted one kept its whole graph, and hosts that make prims again (a LOP switch, Blender's Stage View)
+   * added one per material and light each time. FlushDeletedNodes gives a deleted shader an empty graph and its
+   * defaults back, and TakeShader hands it out before making a new one. Scene locked. From hdcycles-blender patch
+   * 0022. */
+  CCL_NS::Shader *TakeShader(CCL_NS::Scene *scene);
 
   void UpdateScene();
 
@@ -513,6 +519,7 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   CCL_NS::set<CCL_NS::Object *> _deletedObjects;
   CCL_NS::set<CCL_NS::Geometry *> _deletedGeometry;
   CCL_NS::set<CCL_NS::Shader *> _deletedShaders;
+  std::vector<CCL_NS::Shader *> _retiredShaders; /* deleted, emptied, handed out again */
 
   void FlushDeletedNodes();
 };
