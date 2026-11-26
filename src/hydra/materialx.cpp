@@ -7,6 +7,8 @@
 #include "scene/shader_nodes.h"
 #include "util/colorspace.h"
 
+#include <memory>
+
 #include <pxr/base/tf/getenv.h>
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/dataSourceMaterialNetworkInterface.h>
@@ -85,6 +87,11 @@ struct Val {
   /* Output of chiang_hair_roughness: the Cycles hair roughnesses (longitudinal, azimuthal), from
    * which Cycles computes the variance and logistic scale itself, instead of those. */
   bool hairRoughness = false;
+  /* Output of heighttonormal: Cycles' Bump node, whose Normal is already a world space normal (MaterialX's is a
+   * tangent space normal encoded as a color). The normalmap it feeds (MaterialX's bump) completes the Bump node
+   * instead of decoding that normal again: bumpNode's Distance is linked there, from bumpScale. */
+  ShaderNode *bumpNode = nullptr;
+  std::shared_ptr<Val> bumpScale;
 
   bool isConstant() const
   {
@@ -1013,6 +1020,24 @@ class Translator {
       return Image(input, kind, outType);
     }
     if (category == "normalmap") {
+      const Val in = input("in");
+      if (in.bumpNode) {
+        /* heighttonormal into normalmap (MaterialX's bump): Cycles' Bump node does both. Decoding its world space
+         * normal as a tangent space color turned bumped surfaces nearly black. */
+        ShaderInput *distance = In(in.bumpNode, "Distance");
+        if (distance->link) {
+          _graph->disconnect(distance);
+        }
+        Link(Math("multiply", *in.bumpScale, Component(input("scale"), 0)), distance);
+        const Val normal = input("normal");
+        if (!normal.geomDefault) {
+          Link(Cast(normal, Kind::Vec3), In(in.bumpNode, "Normal"));
+        }
+        Val v = in;
+        v.bumpNode = nullptr;
+        v.bumpScale.reset();
+        return v;
+      }
       ShaderNode *normalMap = Create("normal_map");
       SetEnum(normalMap, "space", "tangent");
       Link(Component(input("scale"), 0), In(normalMap, "Strength"));
@@ -1022,8 +1047,13 @@ class Translator {
     if (category == "heighttonormal") {
       ShaderNode *bump = Create("bump");
       Link(Cast(input("in"), Kind::Float), In(bump, "Height"));
-      Link(Cast(input("scale"), Kind::Float), In(bump, "Distance"));
-      return Of(Out(bump, "Normal"), Kind::Vec3);
+      /* Its Distance waits for the normalmap it normally feeds (Val::bumpNode); alone it is its own scale. */
+      const Val scale = Cast(input("scale"), Kind::Float);
+      Link(scale, In(bump, "Distance"));
+      Val v = Of(Out(bump, "Normal"), Kind::Vec3);
+      v.bumpNode = bump;
+      v.bumpScale = std::make_shared<Val>(scale);
+      return v;
     }
     if (category == "noise2d" || category == "noise3d" || category == "fractal3d" ||
         category == "fractal2d")

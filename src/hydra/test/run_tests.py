@@ -97,8 +97,16 @@ MATERIALX = """        token outputs:mtlx:surface.connect = </world/mat/pbr.outp
         {
             uniform token info:id = "ND_open_pbr_surface_surfaceshader"
             %(base_color)s
+            %(normal)s
             float inputs:specular_weight = 0
             token outputs:out
+        }
+        def Shader "bump"
+        {
+            uniform token info:id = "ND_bump_vector3"
+            float inputs:height = 0.3
+            float inputs:scale = 2
+            vector3f outputs:out
         }
         def Shader "image"
         {
@@ -293,11 +301,22 @@ def test_texture_colour_spaces(render):
 def test_materialx(render):
     """OpenPBR with a 0.5 base colour reflects 0.5 (its preview surface, 0.05, must not be used); an sRGB image × 2
     feeding the base colour gives 0.428 (a relative file path, resolved)."""
-    flat = middle(render("mtlx_flat", plane(MATERIALX % {"base_color": "color3f inputs:base_color = (0.5, 0.5, 0.5)"})))
+    flat = middle(render("mtlx_flat", plane(MATERIALX % {"base_color": "color3f inputs:base_color = (0.5, 0.5, 0.5)",
+                                                         "normal": ""})))
     image = middle(render("mtlx_image", plane(MATERIALX % {
-        "base_color": "color3f inputs:base_color.connect = </world/mat/double.outputs:out>"})))
+        "base_color": "color3f inputs:base_color.connect = </world/mat/double.outputs:out>", "normal": ""})))
     assert abs(flat - 0.5) < 0.03, flat
     assert abs(image - 0.428) < 0.03, image
+
+
+def test_materialx_bump(render):
+    """MaterialX's bump (heighttonormal into normalmap) of a constant height leaves a flat plane as it is: 0.5 under
+    the dome, as without it. Cycles' Bump node's world space normal decoded again as a tangent space color tilted the
+    normal: bumped surfaces rendered nearly black."""
+    value = middle(render("mtlx_bump", plane(MATERIALX % {
+        "base_color": "color3f inputs:base_color = (0.5, 0.5, 0.5)",
+        "normal": "vector3f inputs:geometry_normal.connect = </world/mat/bump.outputs:out>"})))
+    assert abs(value - 0.5) < 0.03, value
 
 
 def test_light_and_shadow_links(render):
@@ -351,7 +370,7 @@ def test_catmull_rom_curve(render):
     assert abs(columns.min() - column(-1)) <= 4 and abs(columns.max() - column(1)) <= 4, (columns.min(), columns.max())
 
 
-TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_light_and_shadow_links,
+TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve]
 
 
