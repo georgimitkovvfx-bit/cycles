@@ -763,6 +763,37 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
 }
 #endif /* defined(__AO__) */
 
+/* Preview shading (ADR 0081 in USD Nodes): the hit's colour (the setting's, or the object's) under a
+ * headlight, written like emission; the caller ends the path. No shader evaluation, no light or
+ * shadow rays, no bounces: one ray per sample. Denoising passes get the colour as albedo. */
+ccl_device_forceinline void integrate_surface_preview(KernelGlobals kg,
+                                                      IntegratorState state,
+                                                      const ccl_private ShaderData *sd,
+                                                      ccl_global float *ccl_restrict render_buffer)
+{
+  const float3 color = kernel_data.integrator.preview_shading == PREVIEW_SHADING_OBJECT ?
+                           object_color(kg, sd->object) :
+                           make_float3(kernel_data.integrator.preview_color_r,
+                                       kernel_data.integrator.preview_color_g,
+                                       kernel_data.integrator.preview_color_b);
+  const float headlight = fabsf(dot(sd->N, sd->wi));
+  film_write_surface_emission(kg, state, rgb_to_spectrum(color * headlight), 1.0f, render_buffer);
+
+#ifdef __DENOISING_FEATURES__
+  if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DENOISING_FEATURES) {
+    ccl_global float *buffer = film_pass_pixel_render_buffer(kg, state, render_buffer);
+    if (kernel_data.film.pass_denoising_normal != PASS_UNUSED) {
+      film_write_pass_float3(buffer + kernel_data.film.pass_denoising_normal,
+                             transform_direction(&kernel_data.cam.worldtocamera, sd->N));
+    }
+    if (kernel_data.film.pass_denoising_albedo != PASS_UNUSED) {
+      film_write_pass_spectrum(buffer + kernel_data.film.pass_denoising_albedo,
+                               rgb_to_spectrum(color));
+    }
+  }
+#endif
+}
+
 template<uint64_t node_feature_mask>
 ccl_device int integrate_surface(KernelGlobals kg,
                                  IntegratorState state,
@@ -786,6 +817,10 @@ ccl_device int integrate_surface(KernelGlobals kg,
 #ifdef __VOLUME__
   if (!(sd.shader_flag & SD_HAS_ONLY_VOLUME)) {
 #endif
+    if (kernel_data.integrator.preview_shading != PREVIEW_SHADING_NONE) {
+      integrate_surface_preview(kg, state, &sd, render_buffer);
+      return LABEL_NONE;
+    }
 #ifdef __SUBSURFACE__
     /* Can skip shader evaluation for BSSRDF exit point without bump mapping. */
     if (!(path_flag & PATH_RAY_SUBSURFACE) || ((sd.shader_flag & SD_HAS_BSSRDF_BUMP)))

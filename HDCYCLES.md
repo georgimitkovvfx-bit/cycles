@@ -54,6 +54,7 @@ Why h22 is the base, and the inventory of both delegates: USD Nodes `docs/27a_cy
 | Byte images are sRGB without an OCIO configuration (OpenColorIO's raw fallback configuration made `auto` raw: usdview, `cycles_usd_render` on its own) | `util/colorspace.cpp` | `src/hydra/test` `test_texture_colour_spaces` |
 | The delegate's render tests, run by ctest (`make test`) and so by CI | `src/hydra/test/run_tests.py`, `app/CMakeLists.txt` | themselves |
 | MaterialX's bump (heighttonormal into normalmap) is one Cycles Bump node; the world space normal was decoded again as a tangent space color (bumped surfaces nearly black) | `hydra/materialx.cpp` | `src/hydra/test` `test_materialx_bump` |
+| Preview shading (USD Nodes ADR 0081): `cycles:integrator:preview_shading` = `color` / `object` shades a camera ray's first hit with `preview_color` or the object's colour under a headlight and ends the path (no shader VM, no light rays, no bounces) | `kernel/integrator/shade_surface.h`, `kernel/types.h`, `kernel/data_template.h`, `scene/integrator.*` | `src/hydra/test` `test_preview_shading` |
 | Linux fixes for h22 (5 commits on `linux/houdini22`) and the dome's camera visibility from Karma (0027) | `hydra/`, CMake | `houdini_test.sh` |
 
 ## Builds and tests

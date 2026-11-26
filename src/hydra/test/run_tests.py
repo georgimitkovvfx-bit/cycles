@@ -370,8 +370,47 @@ def test_catmull_rom_curve(render):
     assert abs(columns.min() - column(-1)) <= 4 and abs(columns.max() - column(1)) <= 4, (columns.min(), columns.max())
 
 
+def preview_shading_stage(mode: str, display_color: str = "") -> str:
+    """The grey plane under the dome, seen straight down, with preview shading ``mode`` in its render settings."""
+    stage = plane(PREVIEW % {"diffuse": "color3f inputs:diffuseColor = (0.5, 0.5, 0.5)", "color_space": ""})
+    stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n', 1)
+    if display_color:
+        stage = stage.replace("        rel material:binding = </world/mat>",
+                              f"        color3f[] primvars:displayColor = [{display_color}]\n"
+                              "        rel material:binding = </world/mat>", 1)
+    return stage + f"""
+def Scope "Render"
+{{
+    def RenderSettings "settings"
+    {{
+        rel camera = </world/cam>
+        custom token cycles:integrator:preview_shading = "{mode}"
+        custom color3f cycles:integrator:preview_color = (0.2, 0.4, 0.6)
+    }}
+}}
+"""
+
+
+def test_preview_shading(render):
+    """Preview shading (ADR 0081 in USD Nodes): a camera ray's first hit is its colour under a headlight, whatever the
+    material and the lights: the setting's colour, or the object's displayColor (0.8 grey without one). The plane
+    faces the camera, so the headlight's |N . V| is about 1."""
+    def colour(pixels):
+        n = pixels.shape[0]
+        return pixels[n // 3: 2 * n // 3, n // 3: 2 * n // 3].reshape(-1, 3).mean(axis=0)
+
+    one = colour(render("preview_color", preview_shading_stage("color")))
+    assert max(abs(a - b) for a, b in zip(one, (0.2, 0.4, 0.6))) < 0.02, one
+    red = colour(render("preview_object", preview_shading_stage("object", "(1, 0, 0)")))
+    assert abs(red[0] - 1.0) < 0.02 and red[1] < 0.01 and red[2] < 0.01, red
+    grey = colour(render("preview_object_grey", preview_shading_stage("object")))
+    assert max(abs(v - 0.8) for v in grey) < 0.02, grey
+    normal = middle(render("preview_none", preview_shading_stage("none")))
+    assert abs(normal - 0.5) < 0.03, normal  # the material under the dome, as test_dome_radiance
+
+
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
-         test_implicit_cube_and_stage_units, test_catmull_rom_curve]
+         test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading]
 
 
 def main() -> int:

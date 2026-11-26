@@ -74,6 +74,13 @@ NODE_DEFINE(Integrator)
               direct_light_sampling_type_enum,
               DIRECT_LIGHT_SAMPLING_MIS);
 
+  static NodeEnum preview_shading_enum;
+  preview_shading_enum.insert("none", PREVIEW_SHADING_NONE);
+  preview_shading_enum.insert("color", PREVIEW_SHADING_COLOR);
+  preview_shading_enum.insert("object", PREVIEW_SHADING_OBJECT);
+  SOCKET_ENUM(preview_shading, "Preview Shading", preview_shading_enum, PREVIEW_SHADING_NONE);
+  SOCKET_COLOR(preview_color, "Preview Color", make_float3(0.8f, 0.8f, 0.8f));
+
   SOCKET_INT(ao_bounces, "AO Bounces", 0);
   SOCKET_FLOAT(ao_factor, "AO Factor", 0.0f);
   SOCKET_FLOAT(ao_distance, "AO Distance", FLT_MAX);
@@ -241,6 +248,11 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   kintegrator->ao_additive_factor = ao_additive_factor;
 
   kintegrator->direct_light_sampling_type = direct_light_sampling_type;
+
+  kintegrator->preview_shading = preview_shading;
+  kintegrator->preview_color_r = preview_color.x;
+  kintegrator->preview_color_g = preview_color.y;
+  kintegrator->preview_color_b = preview_color.z;
 
   /* Transparent Shadows
    * We only need to enable transparent shadows, if we actually have
