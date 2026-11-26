@@ -202,4 +202,18 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE AND WITH_USD)
     install(DIRECTORY ${_usd_lib_dir}/../plugin/usd/ DESTINATION ${CMAKE_INSTALL_PREFIX}/usd_plugins)
     unset(_usd_lib_dir)
   endif()
+
+  # Render tests of the Hydra delegate (src/hydra/test/run_tests.py) with the installed cycles_usd_render, run by
+  # the precompiled libraries' Python (OpenImageIO and numpy). `make` installs first.
+  if(CYCLES_STANDALONE_REPOSITORY AND BUILD_TESTING AND DEFINED PYTHON_ROOT_DIR)
+    file(GLOB _hydra_test_python "${PYTHON_ROOT_DIR}/bin/python3.[0-9]*")
+    list(FILTER _hydra_test_python EXCLUDE REGEX "-config$")
+    if(_hydra_test_python)
+      list(GET _hydra_test_python 0 _hydra_test_python)
+      add_test(NAME cycles_hydra_render
+        COMMAND ${_hydra_test_python} ${CMAKE_SOURCE_DIR}/src/hydra/test/run_tests.py
+          --renderer ${CMAKE_INSTALL_PREFIX}/bin/cycles_usd_render)
+    endif()
+    unset(_hydra_test_python)
+  endif()
 endif()
