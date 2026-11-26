@@ -50,6 +50,9 @@ Why h22 is the base, and the inventory of both delegates: USD Nodes `docs/27a_cy
 | MaterialX file inputs by their resolved path (0021) | `hydra/materialx.cpp` | USD Nodes `test_materialx_image_and_math_nodes_feed_the_surface` |
 | Render hold while Hydra changes geometry (0019): `PathTrace::hold`, `Session::hold_render` | `integrator/path_trace.*`, `session/session.*`, `hydra/geometry.inl`, `render_pass.cpp` | USD Nodes `tools/stress_stage_view_hydra.py`, `edit_test.sh` |
 | The device / session cycle of static libraries declared (Houdini's `shaders_node_dump` with CUDA) | `src/device/CMakeLists.txt` | the Houdini build with CUDA |
+| MaterialX in this repository's own build (the precompiled MaterialX package; before, only USD's `hdMtlx` or Blender's `WITH_MATERIALX`) | `hydra/CMakeLists.txt` | `src/hydra/test` `test_materialx` |
+| Byte images are sRGB without an OCIO configuration (OpenColorIO's raw fallback configuration made `auto` raw: usdview, `cycles_usd_render` on its own) | `util/colorspace.cpp` | `src/hydra/test` `test_texture_colour_spaces` |
+| The delegate's render tests, run by ctest (`make test`) and so by CI | `src/hydra/test/run_tests.py`, `app/CMakeLists.txt` | themselves |
 | Linux fixes for h22 (5 commits on `linux/houdini22`) and the dome's camera visibility from Karma (0027) | `hydra/`, CMake | `houdini_test.sh` |
 
 ## Builds and tests
@@ -59,8 +62,12 @@ libraries, Houdini 22 (`build.sh houdini`), Pixar's USD 26.08 (`build.sh usdview
 `sm_75;sm_86;sm_89;sm_120;compute_75` (CUDA 13: Turing and newer). A change is done when every test passes on
 every build:
 
-* USD Nodes' Blender suite on 5.2 and 5.3 (`BLENDER_USER_SCRIPTS=work/hdcycles/<version>/userscripts`);
-* `houdini_test.sh`, `usdview_test.sh` and the 14 husk scripts against Karma (hdcycles-blender);
+* `make test` here: Cycles' unit tests and the delegate's render tests (`src/hydra/test/run_tests.py`: a dome's
+  radiance, texture colour spaces, MaterialX, light and shadow links, implicit shapes and units, curves). GitHub's CI
+  runs them on Linux (macOS and Windows experimental) once the repository has the secret `CI_ENABLE`;
+* on our machines, hdcycles-blender's `test_all.sh` (`CYCLES_SRC_DIR=<checkout>`): every build, the render tests on
+  the CPU and CUDA, USD Nodes' Blender suite on 5.2 and 5.3, `houdini_test.sh`, `usdview_test.sh` and the 14 husk
+  scripts against Karma;
 * for the Houdini GUI (LOPs, Material Builder), a check by hand.
 
 ## Upgrading
