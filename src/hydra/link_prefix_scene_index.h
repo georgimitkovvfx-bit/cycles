@@ -17,7 +17,9 @@ TF_DECLARE_WEAK_AND_REF_PTRS(HdCyclesLinkPrefixSceneIndex);
  * (/world/left), which match nothing below the prefix, so HdsiLightLinkingSceneIndex linked a
  * light to no geometry at all. A prim whose path is its prim origin (HdPrimOriginSchema) below a
  * prefix gets its collections' expressions with that prefix. Other prims pass unchanged: hosts
- * without a prefix (Houdini, usdview, husk, cycles_usd_render) see no difference. Before
+ * without a prefix (Houdini, usdview, husk, cycles_usd_render) see no difference. An expression
+ * of only patterns that match anywhere (//…, as a light's default ~//*.*) stays as it is: it
+ * matches below the prefix already, and must stay trivial to HdsiLightLinkingSceneIndex. Before
  * HdsiLightLinkingSceneIndex in the chain. */
 class HdCyclesLinkPrefixSceneIndex final : public HdSingleInputFilteringSceneIndexBase {
  public:

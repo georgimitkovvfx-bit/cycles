@@ -53,8 +53,22 @@ class CollectionDataSource final : public HdContainerDataSource {
     if (!expression) {
       return ds;
     }
+    const SdfPathExpression value = expression->GetTypedValue(0.0f);
+    /* Patterns that start with // match anywhere, so below the prefix too: an expression of only
+     * those stays as it is. Rewritten, a light's default links (~//*.*, everything) would no
+     * longer be trivial to HdsiLightLinkingSceneIndex: the light got a link category, which turned
+     * light and shadow linking on for every object (sampling 3.5x slower on the CPU, 7.6x with
+     * CUDA, on a forest with no links at all). */
+    bool anchored = false;
+    const auto logic = [](SdfPathExpression::Op, int) {};
+    const auto reference = [&](const SdfPathExpression::ExpressionReference &) { anchored = true; };
+    const auto pattern = [&](const SdfPathPattern &p) { anchored |= !p.HasLeadingStretch(); };
+    value.Walk(logic, reference, pattern);
+    if (!anchored) {
+      return ds;
+    }
     return HdRetainedTypedSampledDataSource<SdfPathExpression>::New(
-        expression->GetTypedValue(0.0f).ReplacePrefix(SdfPath::AbsoluteRootPath(), _prefix));
+        value.ReplacePrefix(SdfPath::AbsoluteRootPath(), _prefix));
   }
 
  private:
