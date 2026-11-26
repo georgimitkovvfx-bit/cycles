@@ -254,8 +254,9 @@ class Renderer:
         (folder / "grey128.png").write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
                                             + chunk(b"IDAT", zlib.compress(grey)) + chunk(b"IEND", b""))
 
-    def __call__(self, name: str, usda: str, size=(48, 48), samples=32, camera_path="/world/cam"):
-        """Linear RGB pixels (rows top down) of the stage."""
+    def __call__(self, name: str, usda: str, size=(48, 48), samples=32, camera_path="/world/cam", channel=""):
+        """Linear RGB pixels (rows top down) of the stage; with ``channel`` (as "Depth.Z"), that channel of the
+        multilayer EXR the stage's RenderVars ask for."""
         import numpy as np
         import OpenImageIO as oiio
 
@@ -268,8 +269,15 @@ class Renderer:
         image = self.folder / f"{name}.0001.exr"
         if not image.is_file():
             raise AssertionError(f"{name}: no image\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}")
-        pixels = oiio.ImageBuf(str(image)).get_pixels(oiio.FLOAT)
-        return np.asarray(pixels)[..., :3]
+        buffer = oiio.ImageBuf(str(image))
+        pixels = np.asarray(buffer.get_pixels(oiio.FLOAT))
+        if channel:
+            names = list(buffer.spec().channelnames)
+            found = [i for i, n in enumerate(names) if n == channel or n.endswith("." + channel)]
+            if not found:
+                raise AssertionError(f"{name}: no {channel} channel in {names}")
+            return pixels[..., found[0]]
+        return pixels[..., :3]
 
 
 def middle(pixels) -> float:
@@ -370,14 +378,26 @@ def test_catmull_rom_curve(render):
     assert abs(columns.min() - column(-1)) <= 4 and abs(columns.max() - column(1)) <= 4, (columns.min(), columns.max())
 
 
-def preview_shading_stage(mode: str, display_color: str = "") -> str:
-    """The grey plane under the dome, seen straight down, with preview shading ``mode`` in its render settings."""
+def preview_shading_stage(mode: str, display_color: str = "", depth: bool = False,
+                          color: str = "color3f cycles:integrator:preview_color = (0.2, 0.4, 0.6)") -> str:
+    """The grey plane under the dome, seen straight down, with preview shading ``mode`` and ``color`` in its render
+    settings (``depth``: and a depth RenderVar)."""
     stage = plane(PREVIEW % {"diffuse": "color3f inputs:diffuseColor = (0.5, 0.5, 0.5)", "color_space": ""})
     stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n', 1)
     if display_color:
         stage = stage.replace("        rel material:binding = </world/mat>",
                               f"        color3f[] primvars:displayColor = [{display_color}]\n"
                               "        rel material:binding = </world/mat>", 1)
+    products = "        rel products = </Render/product>\n" if depth else ""
+    product = ("""    def RenderProduct "product"
+    {
+        rel orderedVars = </Render/product/depth>
+        def RenderVar "depth"
+        {
+            uniform string sourceName = "depth"
+        }
+    }
+""" if depth else "")
     return stage + f"""
 def Scope "Render"
 {{
@@ -385,9 +405,9 @@ def Scope "Render"
     {{
         rel camera = </world/cam>
         custom token cycles:integrator:preview_shading = "{mode}"
-        custom color3f cycles:integrator:preview_color = (0.2, 0.4, 0.6)
-    }}
-}}
+        custom {color}
+{products}    }}
+{product}}}
 """
 
 
@@ -401,12 +421,20 @@ def test_preview_shading(render):
 
     one = colour(render("preview_color", preview_shading_stage("color")))
     assert max(abs(a - b) for a, b in zip(one, (0.2, 0.4, 0.6))) < 0.02, one
+    # As Blender's Hydra API passes a colour: a string (it has no vector values).
+    text = colour(render("preview_color_string", preview_shading_stage(
+        "color", color='string cycles:integrator:preview_color = "0.2 0.4 0.6"')))
+    assert max(abs(a - b) for a, b in zip(text, (0.2, 0.4, 0.6))) < 0.02, text
     red = colour(render("preview_object", preview_shading_stage("object", "(1, 0, 0)")))
     assert abs(red[0] - 1.0) < 0.02 and red[1] < 0.01 and red[2] < 0.01, red
     grey = colour(render("preview_object_grey", preview_shading_stage("object")))
     assert max(abs(v - 0.8) for v in grey) < 0.02, grey
     normal = middle(render("preview_none", preview_shading_stage("none")))
     assert abs(normal - 0.5) < 0.03, normal  # the material under the dome, as test_dome_radiance
+    # The data passes as in a normal render: viewports (Blender's Live) composite the image by its depth.
+    shaded = middle(render("depth_none", preview_shading_stage("none", depth=True), channel="Depth.Z"))
+    preview = middle(render("depth_preview", preview_shading_stage("color", depth=True), channel="Depth.Z"))
+    assert shaded > 0.0 and abs(preview - shaded) < 1e-3 * shaded, (preview, shaded)
 
 
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,

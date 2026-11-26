@@ -490,6 +490,9 @@ def build_contents(subnet, sockets, ds_dir):
         parm = settings.parm(parm_name)
         if socket["type"] in ("menu", "string"):
             parm.set(string_ref(parm_name))
+        elif socket["type"] == "color":
+            for component in settings.parmTuple(parm_name):
+                component.setExpression('ch("../%s")' % component.name())
         else:
             parm.setExpression('ch("../%s")' % parm_name)
 
@@ -644,6 +647,14 @@ def main():
     samples = settings_prim.GetAttribute("cycles:samples").Get()
     if samples != 64:
         raise RuntimeError("cycles:samples is %r instead of 64" % samples)
+    # A menu and a colour (three parameters) reach the prim too: preview shading.
+    test.parm(hou.text.encodeParm("cycles:integrator:preview_shading")).set("color")
+    test.parmTuple(hou.text.encodeParm("cycles:integrator:preview_color")).set((0.2, 0.4, 0.6))
+    settings_prim = test.stage().GetPrimAtPath("/Render/%s" % test.name())
+    mode = settings_prim.GetAttribute("cycles:integrator:preview_shading").Get()
+    color = settings_prim.GetAttribute("cycles:integrator:preview_color").Get()
+    if mode != "color" or color is None or abs(color[1] - 0.4) > 1e-6:
+        raise RuntimeError("Preview shading authored as %r, %r" % (mode, color))
     for path, type_name in (("Products/renderproduct", "RenderProduct"),
                             ("Vars/beauty", "RenderVar")):
         prim = stage_prims.GetPrimAtPath("/Render/%s/%s" % (test.name(), path))

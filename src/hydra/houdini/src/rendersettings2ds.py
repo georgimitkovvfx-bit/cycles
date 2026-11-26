@@ -140,6 +140,11 @@ BLENDER_DEFAULTS = {
 # Menu labels and items for socket enums, where the title cased token is not good enough.
 # Items missing here are left out of the menu.
 MENU_ITEMS = {
+    "cycles:integrator:preview_shading": {
+        "none": "Off",
+        "color": "Color",
+        "object": "Object Color",
+    },
     "cycles:integrator:denoiser_type": {
         "openimagedenoise": "OpenImageDenoise",
         "optix": "OptiX",
@@ -256,6 +261,19 @@ LAYOUT = [
           "Use Open Shading Language. On the GPU only OptiX supports it. Changing it restarts "
           "the render.",
           viewport=True),
+    ], open=True),
+    # Our Cycles (USD Nodes ADR 0081): a camera ray's first hit in one colour under a headlight, no
+    # materials, lights, shadows or bounces, for navigating big scenes (Karma's Simplified Shading).
+    P("Preview Shading", [
+        S("cycles:integrator:preview_shading", "Preview Shading",
+          "Off renders normally. Color shows every surface in Preview Color, Object Color in its "
+          "object's color (its displayColor, 0.8 grey without one), lit by a headlight: no "
+          "materials, lights, shadows or bounces, one ray per sample, for navigating big scenes.",
+          viewport=True),
+        S("cycles:integrator:preview_color", "Preview Color",
+          "The color of every surface when Preview Shading is Color.",
+          range=(0, 1, False, False), viewport=True,
+          hidewhen="{ cycles:integrator:preview_shading != color }"),
     ], open=True),
     P("Sampling", [
         P("Render", [
@@ -693,6 +711,7 @@ TYPES = {
     "menu": ("token", "string", "string"),
     "string": ("string", "string", "string"),
     "file": ("string", "file", "string"),
+    "color": ("float3", "color", "float3"),  # as Karma's colours: three floats
     # Houdini's ramp convention: the values, "<name>_pos" and "<name>_basis" arrays
     "ramp": ("ramp", "ramp_flt", "ramp"),
 }
@@ -1228,9 +1247,11 @@ class Writer:
             indent + "    type    %s" % parm_type,
         ]
         if parm_type != "ramp_flt":
-            lines.append(indent + "    size    1")
+            lines.append(indent + "    size    %d" % (3 if parm_type == "color" else 1))
+        default = socket["default"]
         lines += [
-            indent + "    default { %s }" % format_value(socket["default"]),
+            indent + "    default { %s }" % (" ".join(format_value(float(v)) for v in default)
+                                            if isinstance(default, list) else format_value(default)),
         ]
         if setting["range"]:
             low, high, low_strict, high_strict = setting["range"]

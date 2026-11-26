@@ -15,6 +15,8 @@
 #include <pxr/base/vt/array.h>
 #include <pxr/usd/sdf/assetPath.h>
 
+#include <cstdio>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 namespace {
@@ -58,6 +60,13 @@ template<> float3 convertToCycles<float3>(const VtValue &value)
   if (value.CanCast<GfVec4f>()) {
     const GfVec4f convertedValue = VtValue::Cast<GfVec4f>(value).UncheckedGet<GfVec4f>();
     return make_float3(convertedValue[0], convertedValue[1], convertedValue[2]);
+  }
+  /* "r g b": Blender's Hydra API passes render settings as booleans, numbers or strings only. */
+  if (value.IsHolding<std::string>()) {
+    float r, g, b;
+    if (sscanf(value.UncheckedGet<std::string>().c_str(), "%f %f %f", &r, &g, &b) == 3) {
+      return make_float3(r, g, b);
+    }
   }
 
   TF_WARN("Could not convert VtValue to float3");
