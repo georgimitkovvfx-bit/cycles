@@ -30,7 +30,8 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
 class HdCyclesSession;
 
 struct SceneLock {
-  SceneLock(const PXR_NS::HdRenderParam *renderParam);
+  /* `holdRender`: the change deletes or rewrites geometry, see the constructor. */
+  SceneLock(const PXR_NS::HdRenderParam *renderParam, bool holdRender = false);
   ~SceneLock();
 
   CCL_NS::Scene *scene;

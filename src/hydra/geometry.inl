@@ -86,7 +86,7 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
    * not rendering (husk's frames, any first sync), each rprim fills its own geometry (Populate) outside the lock;
    * changes to the scene stay under it. */
   const bool exclusive = static_cast<HdCyclesSession *>(renderParam)->ExclusiveSync();
-  std::optional<SceneLock> lockHolder(std::in_place, renderParam);
+  std::optional<SceneLock> lockHolder(std::in_place, renderParam, true);
   const SceneLock &lock = *lockHolder;
 
   const SdfPath &id = Base::GetId();
@@ -825,7 +825,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
     return;
   }
 
-  const SceneLock lock(renderParam);
+  /* The deletion itself waits for CommitResources (DeleteNode), the hold lasts until the render pass
+   * releases it after that. */
+  const SceneLock lock(renderParam, true);
   const bool keep_nodes = static_cast<const HdCyclesSession *>(renderParam)->keep_nodes;
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(Base::GetId().GetString());
   _light.Finalize(static_cast<HdCyclesSession *>(renderParam), keep_nodes);

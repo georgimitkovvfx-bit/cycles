@@ -124,6 +124,15 @@ class PathTrace {
    */
   void cancel();
 
+  /* Stop rendering and keep it stopped until `release_hold()`: a host that changes the scene while the session thread
+   * renders (Hydra) holds it first. On CPU, Embree shares the meshes' vertex and index arrays, so a mesh deleted or
+   * rewritten during a render is read after it was freed. Blocks until no `render_samples()` call is running. */
+  void hold();
+  void release_hold();
+  /* Called by the session thread before it updates the scene: waits while a hold is active. */
+  void wait_while_held();
+  bool is_held();
+
   /* Copy an entire render buffer to/from the path trace. */
 
   /* Copy happens via CPU side buffer: data will be copied from every device of the path trace, and
@@ -348,6 +357,10 @@ class PathTrace {
 
     /* Indicates whether rendering is requested to be canceled by `cancel()`. */
     bool is_requested = false;
+
+    /* Set by `hold()`: no rendering starts until `release_hold()`. */
+    bool is_held = false;
+    thread_condition_variable hold_condition;
 
     /* Synchronization between thread which does `render_samples()` and thread which does
      * `cancel()`. */

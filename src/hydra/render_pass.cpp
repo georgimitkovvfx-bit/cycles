@@ -361,8 +361,11 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
     // Reset session if the session, scene, camera or AOV bindings changed. The session thread may
     // have updated the scene since the sync changed it (sceneChanged).
     const bool sceneChanged = _renderParam->sceneChanged.exchange(false);
+    // A hold (geometry changed, SceneLock) cancelled the samples in flight: reset so that they
+    // are rendered again
+    const bool held = session->render_held();
     const bool reset = scene->need_reset() || sceneChanged ||
-                       settingsVersion != _lastSettingsVersion || displayChanged;
+                       settingsVersion != _lastSettingsVersion || displayChanged || held;
     if (reset) {
       _lastSettingsVersion = settingsVersion;
 
@@ -395,6 +398,12 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
       if (session->params.background) {
         session->progress.set_start_time();
       }
+    }
+
+    // Hydra's sync of this frame is done: the session thread updates the device scene, then
+    // renders
+    if (held) {
+      session->release_render_hold();
     }
 
     scene->mutex.unlock();

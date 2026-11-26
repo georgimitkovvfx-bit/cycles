@@ -237,11 +237,19 @@ bool HdCyclesSession::ExclusiveSync() const
   return _exclusiveSync || !SessionThreadState::Rendering(session);
 }
 
-SceneLock::SceneLock(const HdRenderParam *renderParam)
+SceneLock::SceneLock(const HdRenderParam *renderParam, const bool holdRender)
     : scene(static_cast<const HdCyclesSession *>(renderParam)->session->scene.get()),
       session(const_cast<HdCyclesSession *>(static_cast<const HdCyclesSession *>(renderParam))),
       sceneLock(scene->mutex)
 {
+  /* Hydra deletes or rewrites geometry while the session thread renders (viewports), and the CPU
+   * BVH reads the meshes' arrays in place (Embree's shared buffers): stop rendering until the
+   * render pass resets the session. Only for geometry: holding cancels the samples in flight, and
+   * every frame takes the lock (CommitResources). Hosts with an exclusive sync never render
+   * meanwhile. */
+  if (holdRender && !session->ExclusiveSync()) {
+    session->session->hold_render();
+  }
   /* The session thread unlocks the scene while it loads kernels (Scene::device_update), then
    * uploads the shaders it compiled before and clears their update tags: changes made meanwhile
    * are lost (black surfaces, unwritten shader AOVs) unless it redoes the update. */
