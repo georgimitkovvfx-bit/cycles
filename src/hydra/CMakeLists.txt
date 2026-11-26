@@ -98,8 +98,9 @@ if(EXISTS ${USD_INCLUDE_DIR}/pxr/imaging/hgiGL)
 endif()
 
 # MaterialX materials, translated with the MaterialX libraries USD was built with: USD's hdMtlx
-# (Houdini, Pixar's USD), or Blender's USD, which is one library, with Blender's MaterialX.
-if(TARGET hdMtlx OR WITH_MATERIALX)
+# (Houdini, Pixar's USD), or Blender's USD, which is one library, with Blender's MaterialX (in
+# Blender's tree WITH_MATERIALX, in this repository's own build the precompiled MaterialX package).
+if(TARGET hdMtlx OR WITH_MATERIALX OR TARGET MaterialXCore)
   add_definitions(-DWITH_HYDRA_MATERIALX)
   list(APPEND SRC_HD_CYCLES materialx.cpp)
   list(APPEND SRC_HD_CYCLES_HEADERS materialx.h)
