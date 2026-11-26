@@ -591,6 +591,16 @@ enum MotionPosition {
 
 /* Direct Light Sampling */
 
+/* Preview shading (our fork, ADR 0081 in USD Nodes): a camera ray's first hit is shaded with a
+ * headlight and a colour, and the path ends there. */
+enum PreviewShading {
+  PREVIEW_SHADING_NONE = 0,
+  PREVIEW_SHADING_COLOR = 1,
+  PREVIEW_SHADING_OBJECT = 2,
+
+  PREVIEW_SHADING_NUM,
+};
+
 enum DirectLightSamplingType {
   DIRECT_LIGHT_SAMPLING_MIS = 0,
   DIRECT_LIGHT_SAMPLING_FORWARD = 1,

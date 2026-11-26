@@ -50,6 +50,9 @@ class Integrator : public Node {
 
   NODE_SOCKET_API(DirectLightSamplingType, direct_light_sampling_type)
 
+  NODE_SOCKET_API(PreviewShading, preview_shading)
+  NODE_SOCKET_API(float3, preview_color)
+
   NODE_SOCKET_API(int, transparent_min_bounce)
   NODE_SOCKET_API(int, transparent_max_bounce)
 
