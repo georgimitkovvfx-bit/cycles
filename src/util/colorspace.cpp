@@ -308,6 +308,12 @@ ustring ColorSpaceManager::detect_known_colorspace(ustring colorspace,
   catch (const OCIO::Exception &exception) {
     LOG_WARNING << "OCIO config error: " << exception.what();
   }
+  /* Without $OCIO, OpenColorIO gives its raw configuration: one color space, "raw", which is also
+   * its default role. Nothing to rely on then: guess as without OpenColorIO below (byte images
+   * sRGB), instead of reading every image as raw data (usdview, cycles_usd_render on their own). */
+  if (config && config->getNumColorSpaces() <= 1) {
+    config = nullptr;
+  }
 
   /* Rely on OpenImageIO and OpenColorIO guessed color spaces when available. This relies on
    * recent OpenImageIO versions supporting interop IDs. */
