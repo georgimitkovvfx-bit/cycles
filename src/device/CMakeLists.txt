@@ -234,6 +234,11 @@ include_directories(${INC})
 include_directories(SYSTEM ${INC_SYS})
 
 cycles_add_library(cycles_device "${LIB}" ${SRC})
+# The GPU devices' graphics interop uses the session's GraphicsInteropBuffer (display_driver.cpp),
+# while the session uses the device: a cycle of static libraries, which CMake repeats on the link
+# line only when it is declared. Without it executables that list the session first (Houdini's
+# shaders_node_dump) did not link with CUDA.
+target_link_libraries(cycles_device PRIVATE cycles_session)
 
 if(WITH_CYCLES_DEVICE_ONEAPI)
   # Need to have proper rebuilding in case of changes
