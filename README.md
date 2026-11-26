@@ -1,3 +1,7 @@
+> **This fork** (georgimitkovvfx-bit/cycles, branch `main`): one Hydra delegate for Houdini, usdview and Blender,
+> built on hdCycles-h22 below. What differs from official Cycles and h22, how it is built and tested, and how to
+> upgrade: [HDCYCLES.md](HDCYCLES.md).
+
 Cycles for Houdini 22
 =====================
 
