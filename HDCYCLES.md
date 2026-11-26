@@ -53,6 +53,7 @@ Why h22 is the base, and the inventory of both delegates: USD Nodes `docs/27a_cy
 | MaterialX in this repository's own build (the precompiled MaterialX package; before, only USD's `hdMtlx` or Blender's `WITH_MATERIALX`) | `hydra/CMakeLists.txt` | `src/hydra/test` `test_materialx` |
 | Byte images are sRGB without an OCIO configuration (OpenColorIO's raw fallback configuration made `auto` raw: usdview, `cycles_usd_render` on its own) | `util/colorspace.cpp` | `src/hydra/test` `test_texture_colour_spaces` |
 | The delegate's render tests, run by ctest (`make test`) and so by CI | `src/hydra/test/run_tests.py`, `app/CMakeLists.txt` | themselves |
+| MaterialX's bump (heighttonormal into normalmap) is one Cycles Bump node; the world space normal was decoded again as a tangent space color (bumped surfaces nearly black) | `hydra/materialx.cpp` | `src/hydra/test` `test_materialx_bump` |
 | Linux fixes for h22 (5 commits on `linux/houdini22`) and the dome's camera visibility from Karma (0027) | `hydra/`, CMake | `houdini_test.sh` |
 
 ## Builds and tests
