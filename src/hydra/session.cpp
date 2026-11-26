@@ -1216,11 +1216,18 @@ void HdCyclesSession::UpdateDefaultSurface(unique_ptr<ShaderGraph> graph)
   Scene *const scene = session->scene.get();
   if (!graph) {
     graph = make_unique<ShaderGraph>();
-    DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
-    graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
-
     /* The clay material override is the gray Diffuse BSDF, like in HdCyclesMaterial::Sync. */
-    if (GetMaterialOverride() != "clay") {
+    if (GetMaterialOverride() == "clay") {
+      DiffuseBsdfNode *diffuseNode = graph->create_node<DiffuseBsdfNode>();
+      graph->connect(diffuseNode->output("BSDF"), graph->output()->input("Surface"));
+    }
+    else {
+      /* A Principled BSDF, as Cycles' own default surface: a Diffuse BSDF rendered geometry
+       * without a material 6 % brighter than an application's own session (cycles_usd_render) and
+       * native Cycles, which keep Cycles' default. Karma's fallback has a highlight too. */
+      PrincipledBsdfNode *bsdfNode = graph->create_node<PrincipledBsdfNode>();
+      graph->connect(bsdfNode->output("BSDF"), graph->output()->input("Surface"));
+
       // Wire up object color in default surface material
       ObjectInfoNode *objectNode = graph->create_node<ObjectInfoNode>();
 
@@ -1230,7 +1237,7 @@ void HdCyclesSession::UpdateDefaultSurface(unique_ptr<ShaderGraph> graph)
       colorNode->set_attribute(ustring(HdTokens->displayColor.GetString()));
 
       graph->connect(objectNode->output("Color"), colorNode->input("Missing"));
-      graph->connect(colorNode->output("Color"), diffuseNode->input("Color"));
+      graph->connect(colorNode->output("Color"), bsdfNode->input("Base Color"));
     }
   }
 
