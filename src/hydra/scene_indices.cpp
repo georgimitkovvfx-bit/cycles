@@ -7,6 +7,7 @@
  * their own scene index chain (cycles_usd_render), which never load the plugin library. */
 
 #include "hydra/scene_indices.h"
+#include "hydra/link_prefix_scene_index.h"
 #include "hydra/mesh_light.h"
 #include "hydra/render_pass_scene_index.h"
 #include "hydra/resync_scene_index.h"
@@ -69,6 +70,18 @@ void HdCyclesRegisterSceneIndices()
            const HdSceneIndexBaseRefPtr &inputScene,
            const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
           return HdCyclesGeometryLightSceneIndex::New(inputScene);
+        },
+        nullptr,
+        0,
+        HdSceneIndexPluginRegistry::InsertionOrderAtEnd);
+
+    /* Collections below the host's prefix (Blender's Stage View), before the light linking. */
+    HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
+        "Cycles",
+        [](const std::string & /*renderInstanceId*/,
+           const HdSceneIndexBaseRefPtr &inputScene,
+           const HdContainerDataSourceHandle & /*inputArgs*/) -> HdSceneIndexBaseRefPtr {
+          return HdCyclesLinkPrefixSceneIndex::New(inputScene);
         },
         nullptr,
         0,

@@ -37,6 +37,7 @@ set(SRC_HD_CYCLES_HEADERS
   cylinder_light.h
   dome_texture.h
   light.h
+  link_prefix_scene_index.h
   material.h
   mesh.h
   mesh_attributes.h
@@ -69,6 +70,7 @@ set(SRC_HD_CYCLES
   cylinder_light.cpp
   dome_texture.cpp
   light.cpp
+  link_prefix_scene_index.cpp
   material.cpp
   mesh.cpp
   mesh_light.cpp
