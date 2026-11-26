@@ -13,6 +13,7 @@
 #include <pxr/imaging/hd/materialConnectionSchema.h>
 #include <pxr/imaging/hd/materialNodeSchema.h>
 #include <pxr/imaging/hdMtlx/hdMtlx.h>
+#include <pxr/usd/sdf/assetPath.h>
 
 #include <MaterialXCore/Document.h>
 #include <MaterialXFormat/XmlIo.h>
@@ -1816,6 +1817,28 @@ mx::NodePtr FindTerminalNode(const mx::DocumentPtr &doc, const std::string &name
   return nullptr;
 }
 
+/* HdMtlx writes a file input's authored path into the document (Storm resolves its textures on its
+ * own), so a relative path ("./wood.png") was looked up in the working directory and rendered
+ * Cycles' missing-image magenta. Hydra hands over the resolved path too: put it in its place
+ * first. Houdini's paths are mostly absolute, Blender's (USD Nodes') relative. */
+void ResolveAssetPaths(HdDataSourceMaterialNetworkInterface &networkInterface)
+{
+  for (const TfToken &node : networkInterface.GetNodeNames()) {
+    for (const TfToken &param : networkInterface.GetAuthoredNodeParameterNames(node)) {
+      const VtValue value = networkInterface.GetNodeParameterValue(node, param);
+      if (!value.IsHolding<SdfAssetPath>()) {
+        continue;
+      }
+      const SdfAssetPath &path = value.UncheckedGet<SdfAssetPath>();
+      const std::string &resolved = path.GetResolvedPath();
+      if (!resolved.empty() && resolved != path.GetAssetPath()) {
+        networkInterface.SetNodeParameterValue(
+            node, param, VtValue(SdfAssetPath(resolved, resolved)));
+      }
+    }
+  }
+}
+
 /* The MaterialX document of a terminal node and its upstream nodes, and the terminal's node in
  * it. */
 mx::NodePtr CreateDocument(HdDataSourceMaterialNetworkInterface &networkInterface,
@@ -1826,6 +1849,7 @@ mx::NodePtr CreateDocument(HdDataSourceMaterialNetworkInterface &networkInterfac
                            mx::DocumentPtr &doc)
 {
   static const bool debug = TfGetenvBool("HD_CYCLES_MTLX_DEBUG", false);
+  ResolveAssetPaths(networkInterface);
   try {
     doc = HdMtlxCreateMtlxDocumentFromHdMaterialNetworkInterface(
         &networkInterface,
