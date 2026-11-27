@@ -282,11 +282,8 @@ void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
 bool InstanceExpansion::device_nests(const Scene *scene)
 {
   /* The kernel's __INSTANCE_NESTING__: the CPU with Embree (E2) or Cycles' own BVH, CUDA with Cycles' own BVH (E3).
-   * Not OSL (it reads objects by index and name), not the motion pass. */
-  if (!scene->device || scene->shader_manager->use_osl() ||
-      scene->need_motion() == Scene::MOTION_PASS ||
-      scene->need_motion() == Scene::MOTION_PASS_INTERACTIVE)
-  {
+   * Not OSL (it reads objects by index and name). */
+  if (!scene->device || scene->shader_manager->use_osl()) {
     return false;
   }
   const DeviceType type = scene->device->info.type;

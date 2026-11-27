@@ -337,6 +337,23 @@ ccl_device_forceinline void primitive_motion_data_without_camera(KernelGlobals k
     }
   }
 
+#ifdef __INSTANCE_NESTING__
+  /* A nested object's placement (ADR 0082): its transforms at the previous and next frame, the ends of its motion
+   * steps, composed from every level; the shading point first back to object space unless the mesh deforms (its
+   * motion positions are in object space already). */
+  if (sd->object_flag & SD_OBJECT_NESTED) {
+    const Transform pre = object_instance_transform(kg, sd->object, sd->instance, 0.0f);
+    const Transform post = object_instance_transform(kg, sd->object, sd->instance, 1.0f);
+    if (!(sd->object_flag & SD_OBJECT_HAS_VERTEX_MOTION)) {
+      *motion_pre = transform_point(&sd->ob_itfm_motion, *motion_pre);
+      *motion_post = transform_point(&sd->ob_itfm_motion, *motion_post);
+    }
+    *motion_pre = transform_point(&pre, *motion_pre);
+    *motion_post = transform_point(&post, *motion_post);
+    return;
+  }
+#endif
+
   /* object motion. note that depending on the mesh having motion vectors, this
    * transformation was set match the world/object space of motion_pre/post */
   Transform tfm;
