@@ -118,7 +118,8 @@ ccl_device_inline bool subsurface_disk(KernelGlobals kg,
       rng_state.rng_pixel, rng_state.rng_offset, rng_state.sample, 0x68bc21eb);
   const int max_hits = BSSRDF_MAX_HITS;
 
-  scene_intersect_local(kg, &ray, &ss_isect, object, &lcg_state, max_hits);
+  scene_intersect_local(
+      kg, &ray, &ss_isect, object, &lcg_state, max_hits, INTEGRATOR_STATE(state, isect, instance));
   const int num_eval_hits = min(ss_isect.num_hits, max_hits);
   if (num_eval_hits == 0) {
     return false;
@@ -146,7 +147,16 @@ ccl_device_inline bool subsurface_disk(KernelGlobals kg,
     if (!(object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
       /* Transform normal to world space. */
       Transform itfm;
-      object_fetch_transform_motion_test(kg, object, time, &itfm);
+#ifdef __INSTANCE_NESTING__
+      if (object_flag & SD_OBJECT_NESTED) {
+        itfm = transform_inverse(
+            object_instance_transform(kg, object, uint(ss_isect.hits[hit].instance), time));
+      }
+      else
+#endif
+      {
+        object_fetch_transform_motion_test(kg, object, time, &itfm);
+      }
       hit_Ng = normalize(transform_direction_transposed(&itfm, hit_Ng));
     }
 

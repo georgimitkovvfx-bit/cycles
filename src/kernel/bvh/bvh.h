@@ -290,13 +290,25 @@ ccl_device_intersect bool scene_intersect_shadow(KernelGlobals kg,
 #      include "kernel/bvh/local.h"
 #    endif
 
+/* Local hits are on the queried placement of a nested object (ADR 0082); -1 for others. */
+ccl_device_inline void scene_intersect_local_set_instance(ccl_private LocalIntersection *local_isect,
+                                                          const int local_instance)
+{
+  if (local_isect) {
+    for (int hit = 0; hit < local_isect->num_hits; hit++) {
+      local_isect->hits[hit].instance = local_instance;
+    }
+  }
+}
+
 template<bool single_hit = false>
 ccl_device_intersect bool scene_intersect_local(KernelGlobals kg,
                                                 const ccl_private Ray *ray,
                                                 ccl_private LocalIntersection *local_isect,
                                                 const int local_object,
                                                 ccl_private uint *lcg_state,
-                                                const int max_hits)
+                                                const int max_hits,
+                                                const int local_instance = -1)
 {
   if (!intersection_ray_valid(ray)) {
     if (local_isect) {
@@ -309,20 +321,30 @@ ccl_device_intersect bool scene_intersect_local(KernelGlobals kg,
   IF_USING_EMBREE
   {
     if (kernel_data.device_bvh) {
-      return kernel_embree_intersect_local(
-          kg, ray, local_isect, local_object, lcg_state, max_hits);
+      const bool hit = kernel_embree_intersect_local(
+          kg, ray, local_isect, local_object, local_instance, lcg_state, max_hits);
+      scene_intersect_local_set_instance(local_isect, local_instance);
+      return hit;
     }
   }
 #    endif
 
   IF_NOT_USING_EMBREE
   {
+    bool hit;
 #    ifdef __OBJECT_MOTION__
     if (kernel_data.bvh.have_motion) {
-      return bvh_intersect_local_motion(kg, ray, local_isect, local_object, lcg_state, max_hits);
+      hit = bvh_intersect_local_motion(
+          kg, ray, local_isect, local_object, local_instance, lcg_state, max_hits);
     }
+    else
 #    endif /* __OBJECT_MOTION__ */
-    return bvh_intersect_local(kg, ray, local_isect, local_object, lcg_state, max_hits);
+    {
+      hit = bvh_intersect_local(
+          kg, ray, local_isect, local_object, local_instance, lcg_state, max_hits);
+    }
+    scene_intersect_local_set_instance(local_isect, local_instance);
+    return hit;
   }
 
   kernel_assert(false);

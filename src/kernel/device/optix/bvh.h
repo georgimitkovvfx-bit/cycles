@@ -501,7 +501,8 @@ ccl_device_intersect bool scene_intersect_local(KernelGlobals kg,
                                                 ccl_private LocalIntersection *local_isect,
                                                 const int local_object,
                                                 ccl_private uint *lcg_state,
-                                                const int max_hits)
+                                                const int max_hits,
+                                                const int local_instance = -1)
 {
   /* Note: some registers have hardcoded meaning.
    * Be careful when changing the values here. See the note at the top of this file for more

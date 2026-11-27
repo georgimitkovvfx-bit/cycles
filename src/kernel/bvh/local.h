@@ -28,6 +28,7 @@ ccl_device_inline
                                      const ccl_private Ray *ray,
                                      ccl_private LocalIntersection *local_isect,
                                      const int local_object,
+                                     const int local_instance,
                                      ccl_private uint *lcg_state,
                                      const int max_hits)
 {
@@ -60,7 +61,18 @@ ccl_device_inline
   kernel_assert((local_isect == nullptr) == (max_hits == 0));
 
   const uint object_flag = kernel_data_fetch(object_flag, local_object);
-  if (!(object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
+#ifdef __INSTANCE_NESTING__
+  /* A nested object's placement: its geometry's BVH (the innermost level's), in the placement's space. */
+  if (object_flag & SD_OBJECT_NESTED) {
+    const KernelObjectInstance placed = kernel_data_fetch(object_instance, local_object);
+    node_addr = kernel_data_fetch(instance_bvh_roots, placed.levels_offset + placed.num_levels - 1);
+    bvh_instance_push_nested(kg, local_object, local_instance, ray, &P, &dir, &idir);
+    object = local_object;
+  }
+  else
+#endif
+      if (!(object_flag & SD_OBJECT_TRANSFORM_APPLIED))
+  {
 #if BVH_FEATURE(BVH_MOTION)
     bvh_instance_motion_push(kg, local_object, ray, &P, &dir, &idir);
 #else
@@ -223,10 +235,12 @@ ccl_device_inline bool BVH_FUNCTION_NAME(KernelGlobals kg,
                                          const ccl_private Ray *ray,
                                          ccl_private LocalIntersection *local_isect,
                                          const int local_object,
+                                         const int local_instance,
                                          ccl_private uint *lcg_state,
                                          const int max_hits)
 {
-  return BVH_FUNCTION_FULL_NAME(BVH)(kg, ray, local_isect, local_object, lcg_state, max_hits);
+  return BVH_FUNCTION_FULL_NAME(BVH)(
+      kg, ray, local_isect, local_object, local_instance, lcg_state, max_hits);
 }
 
 #undef BVH_FUNCTION_NAME
