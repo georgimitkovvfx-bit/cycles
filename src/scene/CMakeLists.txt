@@ -38,6 +38,7 @@ set(SRC
   mesh.cpp
   mesh_displace.cpp
   mesh_subdivision.cpp
+  instance.cpp
   procedural.cpp
   pointcloud.cpp
   object.cpp
@@ -82,6 +83,7 @@ set(SRC_HEADERS
   osl.h
   particles.h
   pass.h
+  instance.h
   procedural.h
   pointcloud.h
   curves.h

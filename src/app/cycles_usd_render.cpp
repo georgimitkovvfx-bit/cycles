@@ -19,6 +19,7 @@
 #include "hydra/session.h"
 #include "scene/camera.h"
 #include "scene/film.h"
+#include "scene/instance.h"
 #include "scene/object.h"
 #include "scene/shader.h"
 #include "scene/pass.h"
@@ -1127,6 +1128,10 @@ int render(const Options &o)
            synced,
            time_dt() - frame_started,
            peak_mb());
+    /* The objects instance arrays placed (USD Nodes ADR 0082 › E1), for tests and benchmarks. */
+    if (const InstanceExpansion *expansion = InstanceExpansion::find(session->scene.get())) {
+      printf("CYCLES_USD_RENDER_INSTANCES placed %zu\n", expansion->num_placements());
+    }
     printf("CYCLES_USD_RENDER_MEMORY frame %g device_mb %zu device_peak_mb %zu\n",
            frame,
            session->device->stats.mem_used >> 20,

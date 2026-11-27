@@ -1314,6 +1314,11 @@ void HdCyclesDelegate::SetRenderSetting(const PXR_NS::TfToken &key, const PXR_NS
   else if (key == HdCyclesRenderSettingsTokens->windowDepth) {
     _renderParam->SetDepthToWindow(VtValue::Cast<bool>(value).GetWithDefault(false));
   }
+  else if (key == HdCyclesRenderSettingsTokens->instanceArrays) {
+    if (_renderParam->SetUseInstanceArrays(VtValue::Cast<bool>(value).GetWithDefault(true))) {
+      _renderParam->RequestResync(false, true);
+    }
+  }
   else if (key == HdCyclesRenderSettingsTokens->sunIntensityScale) {
     if (_renderParam->SetSunIntensityScale(VtValue::Cast<float>(value).GetWithDefault(1.0f))) {
       _renderParam->resyncLights = true;

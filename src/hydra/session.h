@@ -87,6 +87,31 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   {
     _lightLinkingDirty = true;
   }
+  /* Prototype objects of instance arrays (USD Nodes ADR 0082 › E1): outside the scene's objects, they get their light
+   * and shadow link sets as objects do, and the placements copy them. Scene locked. */
+  void AddPrototype(CCL_NS::Object *prototype)
+  {
+    _prototypes.insert(prototype);
+    _lightLinkingDirty = true;
+  }
+  void RemovePrototype(CCL_NS::Object *prototype)
+  {
+    _prototypes.erase(prototype);
+  }
+
+  /* cycles:instance_arrays (default on): instanced prims as instance arrays, placed by Cycles, instead of one object
+   * per instance made here. Off: the per-instance objects everywhere (to compare). */
+  bool UseInstanceArrays() const
+  {
+    return _useInstanceArrays;
+  }
+  /* True when it changed: the rprims then need a resync. */
+  bool SetUseInstanceArrays(const bool use)
+  {
+    const bool changed = use != _useInstanceArrays;
+    _useInstanceArrays = use;
+    return changed;
+  }
 
   double GetStageMetersPerUnit() const
   {
@@ -538,6 +563,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   std::unordered_map<std::string,
                      std::vector<std::pair<const CCL_NS::Object *, PXR_NS::VtArray<PXR_NS::TfToken>>>>
       _instanceCategories;
+  std::set<CCL_NS::Object *> _prototypes;
+  bool _useInstanceArrays = true;
   bool _lightLinkingDirty = false;
   std::map<CCL_NS::Light *, WorldMaterial> _worldMaterials;
   void SetLightShader(CCL_NS::Light *light, CCL_NS::Shader *shader);

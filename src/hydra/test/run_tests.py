@@ -266,6 +266,7 @@ class Renderer:
                    "--resolution", f"{size[0]}x{size[1]}", "--samples", str(samples), "--camera", camera_path,
                    "--device", self.device]
         result = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+        self.output = result.stdout
         image = self.folder / f"{name}.0001.exr"
         if not image.is_file():
             raise AssertionError(f"{name}: no image\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}")
@@ -538,9 +539,122 @@ def test_id_aovs(render):
     assert values[0] < 0.01 and abs(values[1] - 1) < 0.02 and abs(values[2] - 2) < 0.04, values
 
 
+def nested_forest(arrays: bool, motion: bool) -> str:
+    """Two trees of a nested point instancer seen from above, the second turned and scaled, each a trunk and an
+    instancer of three leaves: per-tree displayColor on the forest (the trunks' default surface), a per-leaf "tint" on
+    the leaves (their emission). ``arrays``: cycles:instance_arrays; ``motion``: both levels move over the shutter."""
+    def positions(still, moved):
+        return (f"point3f[] positions.timeSamples = {{ 1: {still}, 2: {moved} }}" if motion
+                else f"point3f[] positions = {still}")
+    tile = """int[] faceVertexCounts = [4]
+                        int[] faceVertexIndices = [0, 1, 2, 3]
+                        point3f[] points = [(-{s}, -{s}, 0), ({s}, -{s}, 0), ({s}, {s}, 0), (-{s}, {s}, 0)]"""
+    stage = HEADER % 1
+    stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n'
+                          "    timeCodesPerSecond = 24\n    startTimeCode = 1\n    endTimeCode = 2\n", 1)
+    return stage + f"""def Xform "world"
+{{
+    def PointInstancer "forest"
+    {{
+        rel prototypes = [</world/forest/protos/tree>]
+        int[] protoIndices = [0, 0]
+        {positions("[(-3, 0, 0), (3, 0, 0)]", "[(-2, 0.5, 0), (4, 0.5, 0)]")}
+        quath[] orientations = [(1, 0, 0, 0), (0.7071068, 0, 0, 0.7071068)]
+        float3[] scales = [(1, 1, 1), (1.3, 1.3, 1.3)]
+        color3f[] primvars:displayColor = [(1, 0.2, 0.1), (0.1, 0.3, 1)] (interpolation = "vertex")
+        def Scope "protos"
+        {{
+            def Xform "tree"
+            {{
+                def Mesh "trunk"
+                {{
+                        {tile.format(s=0.4)}
+                }}
+                def PointInstancer "leaves"
+                {{
+                    rel prototypes = [</world/forest/protos/tree/leaves/protos/leaf>]
+                    int[] protoIndices = [0, 0, 0]
+                    {positions("[(-1.2, 1.8, 0), (1.2, 1.8, 0), (0, -1.8, 0)]",
+                               "[(-1.2, 2.3, 0), (1.2, 2.3, 0), (0, -1.3, 0)]")}
+                    color3f[] primvars:tint = [(1, 0, 0), (0, 1, 0), (0, 0, 1)] (interpolation = "vertex")
+                    def Scope "protos"
+                    {{
+                        def Mesh "leaf" (prepend apiSchemas = ["MaterialBindingAPI"])
+                        {{
+                        {tile.format(s=0.6)}
+                        rel material:binding = </world/glow>
+                        }}
+                    }}
+                }}
+            }}
+        }}
+    }}
+    def Material "glow"
+    {{
+        token outputs:surface.connect = </world/glow/surface.outputs:surface>
+        def Shader "surface"
+        {{
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0.2, 0.2, 0.2)
+            color3f inputs:emissiveColor.connect = </world/glow/tint.outputs:result>
+            token outputs:surface
+        }}
+        def Shader "tint"
+        {{
+            uniform token info:id = "UsdPrimvarReader_float3"
+            token inputs:varname = "tint"
+            float3 outputs:result
+        }}
+    }}
+    def DistantLight "sun"
+    {{
+        float inputs:intensity = 3
+    }}
+    def Camera "cam"
+    {{
+        float focalLength = 35
+        float horizontalAperture = 36
+        float verticalAperture = 36
+        double shutter:open = 0
+        double shutter:close = {1 if motion else 0}
+        double3 xformOp:translate = (0, 0, 14)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }}
+}}
+
+def Scope "Render"
+{{
+    def RenderSettings "settings"
+    {{
+        rel camera = </world/cam>
+        custom bool cycles:instance_arrays = {1 if arrays else 0}
+    }}
+}}
+"""
+
+
+def test_instance_arrays(render):
+    """Instance arrays (USD Nodes ADR 0082 › E1: instanced prims placed by Cycles) render nested instancing as the
+    per-instance objects do: transforms through both levels, the inner and outer primvars, motion of both levels. The
+    transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
+    for motion in (False, True):
+        name = "motion" if motion else "still"
+        on = render(f"arrays_{name}", nested_forest(True, motion), size=(96, 96), samples=16)
+        placed = render.output
+        off = render(f"objects_{name}", nested_forest(False, motion), size=(96, 96), samples=16)
+        # 2 trunks and 6 leaves, placed by Cycles only with the arrays
+        assert "CYCLES_USD_RENDER_INSTANCES placed 8" in placed, placed[-500:]
+        assert "CYCLES_USD_RENDER_INSTANCES" not in render.output, name
+        difference = abs(on - off).max(axis=2)
+        # the leaves' red, green and blue tints, the trunks' colours under the sun, a black background
+        assert min(on[..., c].max() for c in range(3)) > 0.5 and on.mean() < 0.5, (name, on.mean())
+        assert difference.mean() < 1e-3 and (difference > 0.02).mean() < 0.005, \
+            (name, difference.mean(), (difference > 0.02).mean())
+
+
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
-         test_id_aovs]
+         test_id_aovs, test_instance_arrays]
 
 
 def main() -> int:

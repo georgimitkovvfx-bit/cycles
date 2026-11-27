@@ -872,7 +872,7 @@ void HdCyclesMesh::PopulateTopology(HdSceneDelegate *sceneDelegate)
       _geom->set_subd_max_level(_topology.GetRefineLevel());
     }
     if (!_instances.empty()) {
-      _geom->set_subd_objecttoworld(_instances[0]->get_tfm());
+      _geom->set_subd_objecttoworld(FirstInstanceTransform());
     }
   }
 }
