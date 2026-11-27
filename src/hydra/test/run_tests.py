@@ -665,7 +665,7 @@ def test_instance_arrays(render):
              ("deform", True, True, True), ("vector", True, True, False)]
     for name, motion, tint, deform in cases:
         vector = name == "vector"
-        channel = "Vector.X" if vector else ""
+        channel = "Vector.Z" if vector else ""  # the movement to the next frame (the first frame has no previous)
         on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector), size=(96, 96), samples=16,
                     channel=channel)
         placed = render.output
