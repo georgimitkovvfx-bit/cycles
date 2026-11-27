@@ -85,6 +85,14 @@ class Object : public Node {
   const InstanceArray *instance_root = nullptr;
   /* Its levels' first entry in the kernel's instance_levels (InstanceExpansion::device_update), for the BVH. */
   int instance_levels_offset = -1;
+  /* Its per-placement attributes (instance primvars, instanceId): name, entry in the kernel's instance_attributes,
+   * floats per element (InstanceExpansion::device_update), for the attribute maps. */
+  struct InstanceAttributeRef {
+    ustring name;
+    int index;
+    int width;
+  };
+  vector<InstanceAttributeRef> instance_attribute_refs;
 
   /* Specifies the position of the object in scene->objects and
    * in the device vectors. Gets set in device_update. */

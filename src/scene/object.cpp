@@ -1278,6 +1278,8 @@ void ObjectManager::device_free(Device * /*unused*/, DeviceScene *dscene, bool f
   dscene->instance_transforms.free_if_need_realloc(force_free);
   dscene->instance_colors.free_if_need_realloc(force_free);
   dscene->instance_inverse_transforms.free_if_need_realloc(force_free);
+  dscene->instance_attributes.free_if_need_realloc(force_free);
+  dscene->instance_attribute_values.free_if_need_realloc(force_free);
 }
 
 void ObjectManager::apply_static_transforms(DeviceScene *dscene, Scene *scene, Progress &progress)

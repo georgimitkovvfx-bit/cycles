@@ -651,11 +651,25 @@ void GeometryManager::device_update_attributes(Device *device,
     AttributeRequestSet &attributes = object_attributes[i];
     AttributeSet &values = object_attribute_values[i];
 
+    /* A nested object's per-placement attributes (ADR 0082): requested here, their descriptors set below. */
+    const auto per_placement = [&](const ustring name) {
+      return std::any_of(object->instance_attribute_refs.begin(),
+                         object->instance_attribute_refs.end(),
+                         [&](const Object::InstanceAttributeRef &ref) { return ref.name == name; });
+    };
+    for (const Object::InstanceAttributeRef &ref : object->instance_attribute_refs) {
+      if (geom_requests.find(ref.name) && !geom->attributes.find(ref.name)) {
+        attributes.add(ref.name);
+      }
+    }
+
     for (size_t j = 0; j < object->attributes.size(); j++) {
       const ParamValue &param = object->attributes[j];
 
       /* add attributes that are requested and not already handled by the mesh */
-      if (geom_requests.find(param.name()) && !geom->attributes.find(param.name())) {
+      if (geom_requests.find(param.name()) && !geom->attributes.find(param.name()) &&
+          !per_placement(param.name()))
+      {
         attributes.add(param.name());
 
         Attribute *attr = values.add(param.name(), param.type(), ATTR_ELEMENT_OBJECT);
@@ -779,6 +793,21 @@ void GeometryManager::device_update_attributes(Device *device,
 
       if (progress.get_cancel()) {
         return;
+      }
+    }
+
+    /* Per-placement attributes have no storage here: their entry in instance_attributes. */
+    static const TypeDesc types[] = {TypeFloat, TypeFloat2, TypeVector, TypeFloat4};
+    static const NodeAttributeType node_types[] = {
+        NODE_ATTR_FLOAT, NODE_ATTR_FLOAT2, NODE_ATTR_FLOAT3, NODE_ATTR_FLOAT4};
+    for (const Object::InstanceAttributeRef &ref : object->instance_attribute_refs) {
+      for (AttributeRequest &req : attributes.requests) {
+        if (req.name == ref.name) {
+          req.type = types[ref.width - 1];
+          req.desc.element = ATTR_ELEMENT_INSTANCE;
+          req.desc.offset = ref.index;
+          req.desc.type = node_types[ref.width - 1];
+        }
       }
     }
   }

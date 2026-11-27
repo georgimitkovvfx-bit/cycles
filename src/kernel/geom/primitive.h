@@ -28,12 +28,83 @@ CCL_NAMESPACE_BEGIN
  * attributes for performance, mainly for GPU performance to avoid bringing in
  * heavy volume interpolation code. */
 
+#ifdef __INSTANCE_NESTING__
+/* A nested object's per-placement attribute (ATTR_ELEMENT_INSTANCE, ADR 0082): its level's element's value, or the
+ * placement's flattened index. */
+ccl_device_inline void instance_attribute_values(KernelGlobals kg,
+                                                 const ccl_private ShaderData *sd,
+                                                 const int index,
+                                                 ccl_private float *values)
+{
+  const KernelInstanceAttribute attr = kernel_data_fetch(instance_attributes, index);
+  values[0] = values[1] = values[2] = values[3] = 0.0f;
+  if (attr.level < 0) {
+    values[0] = float(sd->instance);
+    return;
+  }
+  const KernelObjectInstance placed = kernel_data_fetch(object_instance, sd->object);
+  const KernelInstanceLevel level = kernel_data_fetch(instance_levels,
+                                                      placed.levels_offset + attr.level);
+  const int base = attr.value_offset +
+                   attr.width * int(object_instance_element(level, uint(sd->instance)));
+  for (int i = 0; i < attr.width; i++) {
+    values[i] = kernel_data_fetch(instance_attribute_values, base + i);
+  }
+}
+
+template<typename T>
+ccl_device_inline T instance_attribute_fetch(KernelGlobals /*kg*/,
+                                             const ccl_private ShaderData * /*sd*/,
+                                             const int /*index*/)
+{
+  return make_zero<T>();
+}
+ccl_device_template_spec float instance_attribute_fetch(KernelGlobals kg,
+                                                        const ccl_private ShaderData *sd,
+                                                        const int index)
+{
+  float v[4];
+  instance_attribute_values(kg, sd, index, v);
+  return v[0];
+}
+ccl_device_template_spec float2 instance_attribute_fetch(KernelGlobals kg,
+                                                         const ccl_private ShaderData *sd,
+                                                         const int index)
+{
+  float v[4];
+  instance_attribute_values(kg, sd, index, v);
+  return make_float2(v[0], v[1]);
+}
+ccl_device_template_spec float3 instance_attribute_fetch(KernelGlobals kg,
+                                                         const ccl_private ShaderData *sd,
+                                                         const int index)
+{
+  float v[4];
+  instance_attribute_values(kg, sd, index, v);
+  return make_float3(v[0], v[1], v[2]);
+}
+ccl_device_template_spec float4 instance_attribute_fetch(KernelGlobals kg,
+                                                         const ccl_private ShaderData *sd,
+                                                         const int index)
+{
+  float v[4];
+  instance_attribute_values(kg, sd, index, v);
+  return make_float4(v[0], v[1], v[2], v[3]);
+}
+#endif
+
 template<typename T>
 ccl_device_forceinline T primitive_surface_attribute(KernelGlobals kg,
                                                      const ccl_private ShaderData *sd,
                                                      const AttributeDescriptor desc)
 {
   using BaseT = dual_base_t<T>;
+
+#ifdef __INSTANCE_NESTING__
+  if (desc.element & ATTR_ELEMENT_INSTANCE) {
+    return T(instance_attribute_fetch<BaseT>(kg, sd, desc.offset));
+  }
+#endif
 
   if (desc.element & (ATTR_ELEMENT_OBJECT | ATTR_ELEMENT_MESH)) {
     return T(attribute_data_fetch<BaseT>(kg, desc.element, desc.offset));
