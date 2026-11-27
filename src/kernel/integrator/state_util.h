@@ -132,6 +132,7 @@ ccl_device_forceinline void integrator_state_write_shadow_ray_self(
   INTEGRATOR_STATE_WRITE(state, shadow_ray, self_light_object) = ray->self.light_object;
   INTEGRATOR_STATE_WRITE(state, shadow_ray, self_light_prim) = ray->self.light_prim;
   INTEGRATOR_STATE_WRITE(state, shadow_ray, self_instance) = ray->self.instance;
+  INTEGRATOR_STATE_WRITE(state, shadow_ray, self_light_instance) = ray->self.light_instance;
 }
 
 ccl_device_forceinline void integrator_state_read_shadow_ray_self(
@@ -144,6 +145,7 @@ ccl_device_forceinline void integrator_state_read_shadow_ray_self(
   ray->self.light_object = INTEGRATOR_STATE(state, shadow_ray, self_light_object);
   ray->self.light_prim = INTEGRATOR_STATE(state, shadow_ray, self_light_prim);
   ray->self.instance = INTEGRATOR_STATE(state, shadow_ray, self_instance);
+  ray->self.light_instance = INTEGRATOR_STATE(state, shadow_ray, self_light_instance);
 }
 
 /* Intersection */

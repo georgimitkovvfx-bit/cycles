@@ -93,6 +93,8 @@ class Object : public Node {
     int width;
   };
   vector<InstanceAttributeRef> instance_attribute_refs;
+  /* An emissive nested object: its placements' first entry in the kernel's instance_light_to_tree, else -1. */
+  int instance_light_offset = -1;
 
   /* Specifies the position of the object in scene->objects and
    * in the device vectors. Gets set in device_update. */

@@ -23,6 +23,7 @@ struct LightSample {
   float pdf_selection; /* pdf for selecting light */
   float eval_fac;      /* intensity multiplier (normalization, spot falloff) */
   int object;          /* object id for triangle/curve lights */
+  int instance;        /* its placement, for a nested object's triangle lights; -1 otherwise */
   int prim;            /* lamp id for lights, primitive id for triangle/curve lights */
   int shader;          /* shader id */
   int group;           /* lightgroup */

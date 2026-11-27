@@ -370,7 +370,10 @@ ccl_device
 
   const bool is_transmission = dot(ls.D, sd->N) < 0.0f;
 
-  if (ls.prim != PRIM_NONE && ls.prim == sd->prim && ls.object == sd->object) {
+  /* The same triangle of another placement of a nested object is another light. */
+  if (ls.prim != PRIM_NONE && ls.prim == sd->prim && ls.object == sd->object &&
+      (!(sd->object_flag & SD_OBJECT_NESTED) || ls.instance == sd->instance))
+  {
     /* Skip self intersection if light direction lies in the same hemisphere as the geometric
      * normal. */
     if (dot(ls.D, is_transmission ? -sd->Ng : sd->Ng) > 0.0f) {

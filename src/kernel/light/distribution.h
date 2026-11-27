@@ -49,6 +49,7 @@ ccl_device bool light_distribution_sample(KernelGlobals kg,
   /* Sample light index from distribution. */
   ls->emitter_id = light_distribution_sample(kg, rand);
   ls->pdf_selection = kernel_data.integrator.distribution_pdf_lights;
+  ls->instance = -1; /* nested placements' emission needs the light tree */
   return true;
 }
 

@@ -18,8 +18,12 @@
 CCL_NAMESPACE_BEGIN
 
 /* returns true if the triangle is has motion blur or an instancing transform applied */
-ccl_device_inline bool triangle_world_space_vertices(
-    KernelGlobals kg, const int object, const int prim, const float time, float3 V[3])
+ccl_device_inline bool triangle_world_space_vertices(KernelGlobals kg,
+                                                     const int object,
+                                                     const int prim,
+                                                     const int instance,
+                                                     const float time,
+                                                     float3 V[3])
 {
   bool has_motion = false;
   const uint object_flag = kernel_data_fetch(object_flag, object);
@@ -35,7 +39,15 @@ ccl_device_inline bool triangle_world_space_vertices(
   if (!(object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
 #ifdef __OBJECT_MOTION__
     const float object_time = (time >= 0.0f) ? time : 0.5f;
+#  ifdef __INSTANCE_NESTING__
+    /* A nested object's placement (ADR 0082): its levels composed. */
+    const Transform tfm = (object_flag & SD_OBJECT_NESTED) ?
+                              object_instance_transform(kg, object, uint(instance), object_time) :
+                              object_fetch_transform_motion_test(kg, object, object_time, nullptr);
+#  else
+    (void)instance;
     const Transform tfm = object_fetch_transform_motion_test(kg, object, object_time, nullptr);
+#  endif
 #else
     Transform tfm = object_fetch_transform(kg, object, OBJECT_TRANSFORM);
 #endif
@@ -69,7 +81,8 @@ ccl_device_forceinline float triangle_light_pdf(KernelGlobals kg,
    * to the length of the edges of the triangle. */
 
   float3 V[3];
-  const bool has_motion = triangle_world_space_vertices(kg, sd->object, sd->prim, sd->time, V);
+  const bool has_motion = triangle_world_space_vertices(
+      kg, sd->object, sd->prim, sd->instance, sd->time, V);
 
   const float3 e0 = V[1] - V[0];
   const float3 e1 = V[2] - V[0];
@@ -114,7 +127,7 @@ ccl_device_forceinline float triangle_light_pdf(KernelGlobals kg,
 
     if (has_motion && area != 0.0f) {
       /* For motion blur need area of triangle at fixed time as used in the CDF. */
-      triangle_world_space_vertices(kg, sd->object, sd->prim, -1.0f, V);
+      triangle_world_space_vertices(kg, sd->object, sd->prim, sd->instance, -1.0f, V);
       distribution_area = triangle_area(V[0], V[1], V[2]);
     }
 
@@ -138,7 +151,7 @@ ccl_device_forceinline bool triangle_light_sample(KernelGlobals kg,
    * to the length of the edges of the triangle. */
 
   float3 V[3];
-  const bool has_motion = triangle_world_space_vertices(kg, object, prim, time, V);
+  const bool has_motion = triangle_world_space_vertices(kg, object, prim, ls->instance, time, V);
 
   const float3 e0 = V[1] - V[0];
   const float3 e1 = V[2] - V[0];
@@ -266,7 +279,7 @@ ccl_device_forceinline bool triangle_light_sample(KernelGlobals kg,
 
     if (has_motion && area != 0.0f) {
       /* For motion blur need area of triangle at fixed time as used in the CDF. */
-      triangle_world_space_vertices(kg, object, prim, -1.0f, V);
+      triangle_world_space_vertices(kg, object, prim, ls->instance, -1.0f, V);
       distribution_area = triangle_area(V[0], V[1], V[2]);
     }
 
@@ -339,12 +352,13 @@ ccl_device_forceinline bool triangle_light_tree_parameters(
 ccl_device float2 triangle_light_uv(KernelGlobals kg,
                                     const int object,
                                     const int prim,
+                                    const int instance,
                                     const float time,
                                     const float3 ray_P,
                                     const float3 ray_D)
 {
   float3 V[3];
-  triangle_world_space_vertices(kg, object, prim, time, V);
+  triangle_world_space_vertices(kg, object, prim, instance, time, V);
   return ray_triangle_uv(ray_P, ray_D, V[0], V[1], V[2]);
 }
 

@@ -540,14 +540,15 @@ def test_id_aovs(render):
 
 
 def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False, vector: bool = False,
-                  sss: bool = False) -> str:
+                  sss: bool = False, emit: bool = False) -> str:
     """Two trees of a nested point instancer seen from above, the second turned and scaled, each a trunk and an
     instancer of three leaves under a sun: per-tree displayColor on the forest (the trunks' default surface), a per-leaf
     "tint" on the leaves (their diffuse colour; ``tint`` false: a constant green; not emission, which a mesh light's
     sampling would expand). ``arrays``: cycles:instance_arrays; ``motion``: both
     levels move over the shutter; ``deform``: the leaf's points move (it flutters); ``vector``: a motion pass
     (Blender's "vector"), without motion blur; ``sss``: the leaves are small boxes of a subsurface Principled BSDF
-    whose normal is a Bevel node's (Cycles nodes: local rays on each placement)."""
+    whose normal is a Bevel node's (Cycles nodes: local rays on each placement); ``emit``: the leaves glow (mesh
+    lights, an emitter per placement)."""
     def positions(still, moved):
         return (f"point3f[] positions.timeSamples = {{ 1: {still}, 2: {moved} }}" if motion
                 else f"point3f[] positions = {still}")
@@ -629,6 +630,7 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
             uniform token info:id = "UsdPreviewSurface"
             {"color3f inputs:diffuseColor.connect = </world/glow/tint.outputs:result>" if tint
              else "color3f inputs:diffuseColor = (0.1, 0.9, 0.2)"}
+            {"color3f inputs:emissiveColor = (0.5, 2, 0.5)" if emit else ""}
             token outputs:surface
         }}
         def Shader "tint"
@@ -686,15 +688,16 @@ def test_instance_arrays(render):
     (one object, the kernel places it, its colour, random number, primvars and motion per placement); the others are
     expanded into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
     cases = [("still", False, True, False), ("motion", True, True, False), ("plain", False, False, False),
-             ("deform", True, True, True), ("vector", True, True, False), ("sss", False, False, False)]
+             ("deform", True, True, True), ("vector", True, True, False), ("sss", False, False, False),
+             ("emit", False, False, False)]
     for name, motion, tint, deform in cases:
-        vector, sss = name == "vector", name == "sss"
+        vector, sss, emit = name == "vector", name == "sss", name == "emit"
         channel = "Vector.Z" if vector else ""  # the movement to the next frame (the first frame has no previous)
-        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector, sss), size=(96, 96),
+        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector, sss, emit), size=(96, 96),
                     samples=16, channel=channel)
         placed = render.output
-        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform, vector, sss), size=(96, 96),
-                     samples=16, channel=channel)
+        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform, vector, sss, emit),
+                     size=(96, 96), samples=16, channel=channel)
         if vector:
             on = on[..., None]
             off = off[..., None]
@@ -712,7 +715,7 @@ def test_instance_arrays(render):
             continue
         # the leaves' red, green and blue tints, the trunks' colours under the sun, a black background
         assert (not tint or min(on[..., c].max() for c in range(3)) > 0.5) and 0.005 < on.mean() < 0.5, (name, on.mean())
-        if sss:  # random walks and bevel samples: noise of 16 samples, the same on average
+        if sss or emit:  # random walks, bevel samples, mesh lights: noise of 16 samples, the same on average
             assert abs(on.mean() - off.mean()) < 0.02 * off.mean() and difference.mean() < 0.02, \
                 (name, on.mean(), off.mean(), difference.mean())
             continue

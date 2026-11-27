@@ -7,6 +7,7 @@
 #include "device/device.h"
 #include "scene/devicescene.h"
 #include "scene/geometry.h"
+#include "scene/integrator.h"
 #include "scene/object.h"
 #include "scene/scene.h"
 #include "scene/shader.h"
@@ -345,16 +346,45 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   {
     return false;
   }
-  /* Emission sampled as a light (mesh lights, the light tree, one object index each). Its shaders, not
-   * usable_as_light(): a prototype outside the scene has no bounds and is never traceable. */
+  /* Emission sampled as a light: an emitter per placement in the light tree; the light distribution (no light
+   * tree) lists every triangle of every object. By its shaders, not usable_as_light(): a prototype outside the
+   * scene has no bounds and is never traceable. */
   for (const Node *node : geom->get_used_shaders()) {
     const Shader *shader = static_cast<const Shader *>(node);
-    if (shader->has_volume || shader->emission_sampling != EMISSION_SAMPLING_NONE) {
+    if (shader->has_volume || (shader->emission_sampling != EMISSION_SAMPLING_NONE &&
+                               !scene->integrator->get_use_light_tree()))
+    {
       return false;
     }
   }
   (void)scene;
   return true;
+}
+
+size_t InstanceExpansion::num_placements(const Object *object)
+{
+  return object->instance_root ?
+             object->instance_root->size() * placements_per_element(object->instance_root) :
+             0;
+}
+
+void InstanceExpansion::placement_transforms(const Object *object, vector<Transform> &transforms)
+{
+  /* Outer first, as the flattened index (outer-major); the innermost with the object's own transform. */
+  transforms.assign(1, transform_identity());
+  for (const InstanceArray *array = object->instance_root; array;
+       array = array->object ? nullptr : array->group->arrays[0])
+  {
+    const vector<Transform> &centre = array->steps[array->steps.size() / 2];
+    vector<Transform> next;
+    next.reserve(transforms.size() * centre.size());
+    for (const Transform &outer : transforms) {
+      for (const Transform &element : centre) {
+        next.push_back(array->object ? outer * element * object->get_tfm() : outer * element);
+      }
+    }
+    transforms = std::move(next);
+  }
 }
 
 BoundBox InstanceExpansion::chain_bounds(const Object *object, vector<vector<BoundBox>> *element_bounds)
@@ -404,7 +434,8 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   vector<KernelInstanceLevel> levels;
   vector<Transform> transforms;
   vector<float> colors;
-  object_instance[0] = {-1, 0, 0, 0};
+  object_instance[0] = {-1, 0, 0, -1};
+  size_t num_instance_lights = 0;
   vector<Transform> inverse_transforms;
   vector<DecomposedTransform> motion;
   vector<KernelInstanceAttribute> attributes;
@@ -412,9 +443,10 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   static const ustring instance_id("instanceId");
   for (Object *object : scene->objects) {
     KernelObjectInstance &placed = object_instance[object->index];
-    placed = {-1, 0, 0, 0};
+    placed = {-1, 0, 0, -1};
     const InstanceArray *root = object->instance_root;
     object->instance_levels_offset = root ? int(levels.size()) : -1;
+    object->instance_light_offset = -1;
     object->instance_attribute_refs.clear();
     if (!root) {
       continue;
@@ -505,6 +537,17 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
       levels[l - 1].stride = levels[l].stride * std::max(levels[l].count, 1u);
     }
     placed.num_levels = int(levels.size() - first);
+
+    /* An emissive one has an emitter per placement in the light tree. */
+    bool emissive = false;
+    for (const Node *node : object->get_geometry()->get_used_shaders()) {
+      emissive |= static_cast<const Shader *>(node)->emission_sampling != EMISSION_SAMPLING_NONE;
+    }
+    if (emissive) {
+      placed.light_offset = int(num_instance_lights);
+      object->instance_light_offset = int(num_instance_lights);
+      num_instance_lights += num_placements(object);
+    }
   }
   dscene->object_instance.copy_to_device();
 

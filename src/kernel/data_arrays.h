@@ -40,6 +40,8 @@ KERNEL_DATA_ARRAY(int, instance_bvh_roots)
 /* per-placement attributes (ATTR_ELEMENT_INSTANCE) */
 KERNEL_DATA_ARRAY(KernelInstanceAttribute, instance_attributes)
 KERNEL_DATA_ARRAY(float, instance_attribute_values)
+/* the light tree emitters of emissive nested placements (KernelObjectInstance::light_offset) */
+KERNEL_DATA_ARRAY(uint, instance_light_to_tree)
 
 /* cameras */
 KERNEL_DATA_ARRAY(DecomposedTransform, camera_motion)

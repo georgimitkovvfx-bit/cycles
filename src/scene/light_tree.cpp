@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "scene/light_tree.h"
+#include "scene/instance.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 
@@ -82,10 +83,21 @@ LightTreeEmitter::LightTreeEmitter(Object *object, const int object_id) : object
   light_set_membership = object->get_light_set_membership();
 }
 
+LightTreeEmitter::LightTreeEmitter(Object *object,
+                                   const int object_id,
+                                   const int instance,
+                                   const Transform &tfm)
+    : object_id(object_id), instance(instance), tfm(tfm)
+{
+  centroid = object->get_geometry()->bounds.transformed(&tfm).center();
+  light_set_membership = object->get_light_set_membership();
+}
+
 LightTreeEmitter::LightTreeEmitter(Scene *scene,
                                    const int prim_id,
                                    const int object_id,
-                                   bool need_transformation)
+                                   bool need_transformation,
+                                   const Transform *tfm)
     : prim_id(prim_id), object_id(object_id)
 {
   Object *object = scene->objects[object_id];
@@ -103,9 +115,9 @@ LightTreeEmitter::LightTreeEmitter(Scene *scene,
 
     if (need_transformation) {
       assert(!mesh->transform_applied);
-      const Transform &tfm = object->get_tfm();
+      const Transform &world = tfm ? *tfm : object->get_tfm();
       for (int i = 0; i < 3; i++) {
-        vertices[i] = transform_point(&tfm, vertices[i]);
+        vertices[i] = transform_point(&world, vertices[i]);
       }
     }
 
@@ -318,7 +330,17 @@ LightTree::LightTree(Scene *scene,
         continue;
       }
 
-      mesh_lights_.emplace_back(object, object->index);
+      if (object->instance_root) {
+        /* A nested object: an emitter per placement, each an instance of the mesh's subtree. */
+        vector<Transform> placements;
+        InstanceExpansion::placement_transforms(object, placements);
+        for (size_t i = 0; i < placements.size(); i++) {
+          mesh_lights_.emplace_back(object, object->index, int(i), placements[i]);
+        }
+      }
+      else {
+        mesh_lights_.emplace_back(object, object->index);
+      }
 
       /* Only count unique meshes. */
       Mesh *mesh = static_cast<Mesh *>(object->get_geometry());
@@ -390,12 +412,14 @@ LightTreeNode *LightTree::build(Scene *scene, DeviceScene *dscene)
      * and solving a cubic equation (https://doi.org/10.1016/j.nima.2009.11.075 section 3.4), then
      * the angle is derived from the major axis of the resulted right elliptic cone's base, which
      * can be an overestimation. */
-    if (!mesh->transform_applied && !emitter.measure.transform(object->get_tfm())) {
+    const Transform &tfm = (emitter.instance >= 0) ? emitter.tfm : object->get_tfm();
+    if (!mesh->transform_applied && !emitter.measure.transform(tfm)) {
       emitter.measure.reset();
       size_t const mesh_num_triangles = mesh->num_triangles();
       for (size_t i = 0; i < mesh_num_triangles; i++) {
         if (triangle_usable_as_light(mesh, i)) {
-          emitter.measure.add(LightTreeEmitter(scene, i, emitter.object_id, true).measure);
+          emitter.measure.add(
+              LightTreeEmitter(scene, i, emitter.object_id, true, &emitter.tfm).measure);
         }
       }
     }

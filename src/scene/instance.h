@@ -104,6 +104,11 @@ class InstanceExpansion : public Procedural {
    * in their parent's space, outer level first (Cycles' own BVH builds a BVH per level from them). */
   static BoundBox chain_bounds(const Object *object, vector<vector<BoundBox>> *element_bounds = nullptr);
 
+  /* A nested object's placements: their number, and their object-to-world transforms (the frame) in flattened order
+   * (the light tree's emitters of an emissive one). */
+  static size_t num_placements(const Object *object);
+  static void placement_transforms(const Object *object, vector<Transform> &transforms);
+
   /* The kernel's instance tables (object_instance, instance_levels, instance_transforms, instance_colors) for the
    * nested objects (Object::instance_root), every object's entry. Called by the object manager. */
   static void device_update(DeviceScene *dscene, Scene *scene);
