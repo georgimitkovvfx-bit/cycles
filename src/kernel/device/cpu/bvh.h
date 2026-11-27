@@ -135,6 +135,30 @@ ccl_device_inline int kernel_embree_get_hit_object(const RTCHit *hit)
   return (hit->instID[0] != RTC_INVALID_GEOMETRY_ID ? hit->instID[0] : hit->geomID) / 2;
 }
 
+/* The placement of a hit on a nested object (USD Nodes ADR 0082 › E2): each instance array level's element (Embree's
+ * instPrimID, outer first) times its stride. -1 for other objects. */
+ccl_device_inline int kernel_embree_get_hit_instance(KernelGlobals kg,
+                                                     const int object,
+                                                     const unsigned int *inst_prim_id)
+{
+#ifdef __INSTANCE_NESTING__
+  const KernelObjectInstance placed = kernel_data_fetch(object_instance, object);
+  if (placed.num_levels == 0) {
+    return -1;
+  }
+  uint instance = 0;
+  for (int l = 0; l < placed.num_levels; l++) {
+    instance += inst_prim_id[l] * kernel_data_fetch(instance_levels, placed.levels_offset + l).stride;
+  }
+  return int(instance);
+#else
+  (void)kg;
+  (void)object;
+  (void)inst_prim_id;
+  return -1;
+#endif
+}
+
 ccl_device_inline bool kernel_embree_is_self_intersection(const KernelGlobals kg,
                                                           const RTCHit *hit,
                                                           const Ray *ray)
@@ -155,6 +179,15 @@ ccl_device_inline bool kernel_embree_is_self_intersection(const KernelGlobals kg
     prim = kernel_data_fetch(curve_segments, prim).prim;
   }
 
+#ifdef __INSTANCE_NESTING__
+  /* The same primitive of another placement of a nested object is not the ray's own surface. */
+  if (ray->self.object == object && ray->self.prim == prim &&
+      kernel_data_fetch(object_instance, object).num_levels > 0 &&
+      kernel_embree_get_hit_instance(kg, object, hit->instPrimID) != ray->self.instance)
+  {
+    return (ray->self.light_prim == prim) && (ray->self.light_object == object);
+  }
+#endif
   return intersection_skip_self_shadow(ray->self, object, prim);
 }
 
@@ -192,6 +225,7 @@ ccl_device_inline void kernel_embree_convert_hit(KernelGlobals kg,
   isect->t = ray->tfar;
   isect->prim = hit->primID + prim_offset;
   isect->object = object;
+  isect->instance = kernel_embree_get_hit_instance(kg, object, hit->instPrimID);
 
   const bool is_hair = hit->geomID & 1;
   if (is_hair) {
@@ -218,6 +252,7 @@ ccl_device_inline void kernel_embree_convert_sss_hit(
   isect->t = ray->tfar;
   isect->prim = hit->primID + prim_offset;
   isect->object = object;
+  isect->instance = kernel_embree_get_hit_instance(kg, object, hit->instPrimID);
   isect->type = kernel_data_fetch(objects, object).primitive_type;
 }
 

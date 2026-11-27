@@ -716,6 +716,7 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
   ray.time = sd->time;
   ray.self.object = (skip_self) ? sd->object : OBJECT_NONE;
   ray.self.prim = (skip_self) ? sd->prim : PRIM_NONE;
+  ray.self.instance = sd->instance;
   ray.self.light_object = OBJECT_NONE;
   ray.self.light_prim = PRIM_NONE;
   ray.dP = differential_zero_compact();
@@ -777,7 +778,7 @@ ccl_device_forceinline void integrate_surface_preview(KernelGlobals kg,
   sd->num_closure = 0; /* set by shader evaluation, which is skipped */
 
   const float3 color = kernel_data.integrator.preview_shading == PREVIEW_SHADING_OBJECT ?
-                           object_color(kg, sd->object) :
+                           object_color(kg, sd) :
                            make_float3(kernel_data.integrator.preview_color_r,
                                        kernel_data.integrator.preview_color_g,
                                        kernel_data.integrator.preview_color_b);

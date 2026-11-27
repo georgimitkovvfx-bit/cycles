@@ -296,6 +296,7 @@ ccl_device_inline void shadow_ray_setup(const ccl_private ShaderData *ccl_restri
   /* Fill in intersection surface and light details. */
   ray->self.object = (skip_self) ? sd->object : OBJECT_NONE;
   ray->self.prim = (skip_self) ? sd->prim : PRIM_NONE;
+  ray->self.instance = sd->instance;
   ray->self.light_object = ls->object;
   ray->self.light_prim = ls->prim;
 }

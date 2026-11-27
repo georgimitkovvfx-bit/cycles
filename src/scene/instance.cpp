@@ -3,9 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "scene/instance.h"
+#include "bvh/params.h"
+#include "device/device.h"
+#include "scene/devicescene.h"
 #include "scene/geometry.h"
 #include "scene/object.h"
 #include "scene/scene.h"
+#include "scene/shader.h"
 
 #include "util/hash.h"
 #include "util/set.h"
@@ -15,6 +19,10 @@
 #include <algorithm>
 #include <cstring>
 #include <unordered_set>
+
+#ifdef WITH_EMBREE
+#  include <embree4/rtcore_config.h>
+#endif
 
 CCL_NAMESPACE_BEGIN
 
@@ -73,6 +81,30 @@ size_t InstanceExpansion::num_placements() const
   size_t count = 0;
   for (const auto &[array, objects] : placed_) {
     count += objects.size();
+  }
+  return count;
+}
+
+size_t InstanceExpansion::num_nested() const
+{
+  size_t count = 0;
+  for (const auto &[array, objects] : placed_) {
+    for (const Object *object : objects) {
+      count += object->instance_root != nullptr;
+    }
+  }
+  return count;
+}
+
+size_t InstanceExpansion::num_nested_placements() const
+{
+  size_t count = 0;
+  for (const auto &[array, objects] : placed_) {
+    for (const Object *object : objects) {
+      if (object->instance_root) {
+        count += array->size() * placements_per_element(array);
+      }
+    }
   }
   return count;
 }
@@ -160,6 +192,7 @@ bool InstanceExpansion::subtree_modified(const InstanceArray *array) const
 
 void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
 {
+  const bool nests = device_nests(scene);
   std::unordered_set<const InstanceArray *> inner;
   for (const unique_ptr<InstanceGroup> &group : groups_) {
     inner.insert(group->arrays.begin(), group->arrays.end());
@@ -180,8 +213,31 @@ void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
     if (inner.count(array.get()) || !subtree_modified(array.get())) {
       continue;
     }
-    /* Every element of an array places the same objects: one slot range per element, filled in parallel. */
     vector<Object *> &made = placed_[array.get()];
+
+    /* Nested: one object for the whole chain, which the kernel places (ADR 0082 › E2). */
+    if (nests && chain_nests(scene, array.get())) {
+      if (made.size() > 1) {
+        scene->delete_nodes(std::set<Object *>(made.begin() + 1, made.end()), scene);
+        made.resize(1);
+      }
+      if (made.empty()) {
+        made.push_back(scene->create_node<Object>());
+      }
+      Object *object = made[0];
+      const vector<Level> no_levels;
+      place(const_cast<Object *>(chain_prototype(array.get())), true, no_levels, object);
+      if (object->instance_root != array.get()) {
+        object->instance_root = array.get();
+        object->tag_modified();
+      }
+      /* The arrays changed (the reason to be here): the object's instance tables and BVH. */
+      object->tag_modified();
+      object->tag_update(scene);
+      continue;
+    }
+
+    /* Every element of an array places the same objects: one slot range per element, filled in parallel. */
     const size_t per_element = placements_per_element(array.get());
     const size_t count = array->size() * per_element;
     if (count < made.size()) {
@@ -198,6 +254,10 @@ void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
       expand_element(root, element, chain, made, used);
     });
     for (Object *object : made) {
+      if (object->instance_root) {
+        object->instance_root = nullptr;
+        object->tag_modified();
+      }
       if (object->is_modified()) {
         object->tag_update(scene);
       }
@@ -217,6 +277,147 @@ void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
       member.object->clear_modified();
     }
   }
+}
+
+bool InstanceExpansion::device_nests(const Scene *scene)
+{
+#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
+  /* The CPU alone with Embree (the kernel's __INSTANCE_NESTING__); OSL reads objects by index and name. */
+  if (!scene->device || scene->device->info.type != DEVICE_CPU || scene->shader_manager->use_osl()) {
+    return false;
+  }
+  const BVHLayout layout = BVHParams::best_bvh_layout(
+      scene->params.bvh_layout, scene->device->get_bvh_layout_mask(scene->dscene.data.kernel_features));
+  return layout == BVH_LAYOUT_EMBREE && scene->need_motion() != Scene::MOTION_PASS &&
+         scene->need_motion() != Scene::MOTION_PASS_INTERACTIVE;
+#else
+  (void)scene;
+  return false;
+#endif
+}
+
+const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
+{
+  const InstanceArray *array = root;
+  for (size_t depth = 0; array && depth < kMaxDepth; depth++) {
+    if (array->object) {
+      return array->object;
+    }
+    const InstanceGroup *group = array->group;
+    array = (group && group->objects.empty() && group->arrays.size() == 1) ? group->arrays[0] : nullptr;
+  }
+  return nullptr;
+}
+
+bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
+{
+#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
+  /* A chain (each group holds one array: the delegate's per-prim chains) of up to Embree's levels, without what the
+   * first version flattens: motion on any level, per-element attributes, and prototypes whose shading keys on one
+   * object index or transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking, the
+   * instanceId attribute). */
+  const Object *prototype = chain_prototype(root);
+  if (!prototype || !prototype->get_geometry()) {
+    return false;
+  }
+  int levels = 0;
+  for (const InstanceArray *array = root; array;) {
+    if (++levels > RTC_MAX_INSTANCE_LEVEL_COUNT || array->steps.size() != 1 || !array->attributes.empty()) {
+      return false;
+    }
+    array = array->object ? nullptr : array->group->arrays[0];
+  }
+  static const ustring instance_id("instanceId");
+  for (const ParamValue &attribute : prototype->attributes) {
+    if (attribute.name() == instance_id) {
+      return false;
+    }
+  }
+  const Geometry *geom = prototype->get_geometry();
+  if (!prototype->get_motion().empty() || geom->is_volume() || geom->is_light() ||
+      geom->get_use_motion_blur() || prototype->get_is_bake_target() ||
+      prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
+      prototype->has_shadow_linking() || const_cast<Object *>(prototype)->usable_as_light())
+  {
+    return false;
+  }
+  for (const Node *node : geom->get_used_shaders()) {
+    const Shader *shader = static_cast<const Shader *>(node);
+    if (shader->has_volume || shader->has_surface_bssrdf || shader->has_surface_raytrace) {
+      return false;
+    }
+  }
+  (void)scene;
+  return true;
+#else
+  (void)scene;
+  (void)root;
+  return false;
+#endif
+}
+
+void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
+{
+  const size_t num_objects = scene->objects.size();
+  KernelObjectInstance *object_instance = dscene->object_instance.alloc(std::max(num_objects, size_t(1)));
+  vector<KernelInstanceLevel> levels;
+  vector<Transform> transforms;
+  vector<float> colors;
+  object_instance[0] = {-1, 0, 0, 0};
+  for (Object *object : scene->objects) {
+    KernelObjectInstance &placed = object_instance[object->index];
+    placed = {-1, 0, 0, 0};
+    const InstanceArray *root = object->instance_root;
+    if (!root) {
+      continue;
+    }
+    placed.levels_offset = int(levels.size());
+    placed.name_hash = hash_string(object->get_geometry()->name.c_str());
+    const Object *prototype = chain_prototype(root);
+    const bool keep_color = prototype && [&] {
+      for (const InstanceArray *array = root; array; array = array->object ? nullptr : array->group->arrays[0]) {
+        if (array->object) {
+          return array->keep_object_color;
+        }
+      }
+      return false;
+    }();
+    /* Outer first; each level's stride is the product of the inner levels' counts. */
+    const size_t first = levels.size();
+    for (const InstanceArray *array = root; array; array = array->object ? nullptr : array->group->arrays[0]) {
+      KernelInstanceLevel level;
+      level.count = uint(array->size());
+      level.stride = 1;
+      level.transform_offset = uint(transforms.size());
+      level.color_offset = -1;
+      transforms.insert(transforms.end(), array->steps[0].begin(), array->steps[0].end());
+      if (!array->colors.empty() && !keep_color) {
+        level.color_offset = int(colors.size());
+        for (const float3 &color : array->colors) {
+          colors.push_back(color.x);
+          colors.push_back(color.y);
+          colors.push_back(color.z);
+        }
+      }
+      levels.push_back(level);
+    }
+    for (size_t l = levels.size() - 1; l > first; l--) {
+      levels[l - 1].stride = levels[l].stride * std::max(levels[l].count, 1u);
+    }
+    placed.num_levels = int(levels.size() - first);
+  }
+  dscene->object_instance.copy_to_device();
+
+  /* Never empty: the kernel's arrays must exist. */
+  KernelInstanceLevel *klevels = dscene->instance_levels.alloc(std::max(levels.size(), size_t(1)));
+  std::copy(levels.begin(), levels.end(), klevels);
+  Transform *ktransforms = dscene->instance_transforms.alloc(std::max(transforms.size(), size_t(1)));
+  std::copy(transforms.begin(), transforms.end(), ktransforms);
+  float *kcolors = dscene->instance_colors.alloc(std::max(colors.size(), size_t(1)));
+  std::copy(colors.begin(), colors.end(), kcolors);
+  dscene->instance_levels.copy_to_device();
+  dscene->instance_transforms.copy_to_device();
+  dscene->instance_colors.copy_to_device();
 }
 
 size_t InstanceExpansion::placements_per_element(const InstanceArray *array, const size_t depth)

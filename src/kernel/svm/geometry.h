@@ -100,7 +100,7 @@ ccl_device_noinline void svm_node_object_info(KernelGlobals kg,
       return;
     }
     case NODE_INFO_OB_COLOR: {
-      stack_store_float3(stack, node.out_offset, object_color(kg, sd->object));
+      stack_store_float3(stack, node.out_offset, object_color(kg, sd));
       return;
     }
     case NODE_INFO_OB_ALPHA:
@@ -113,7 +113,7 @@ ccl_device_noinline void svm_node_object_info(KernelGlobals kg,
       data = shader_pass_id(kg, sd);
       break;
     case NODE_INFO_OB_RANDOM: {
-      data = object_random_number(kg, sd->object);
+      data = object_random_number(kg, sd);
       break;
     }
     default:

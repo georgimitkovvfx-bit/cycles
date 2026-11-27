@@ -20,6 +20,7 @@
 
 CCL_NAMESPACE_BEGIN
 
+class DeviceScene;
 class InstanceGroup;
 class Object;
 
@@ -78,8 +79,11 @@ class InstanceExpansion : public Procedural {
   static InstanceExpansion *get(Scene *scene);
   static InstanceExpansion *find(Scene *scene);
 
-  /* The scene objects placed by all arrays (statistics). */
+  /* Statistics: the scene objects all arrays placed, how many of them are nested (the kernel places them), and the
+   * placements those stand for. */
   size_t num_placements() const;
+  size_t num_nested() const;
+  size_t num_nested_placements() const;
 
   InstanceArray *create_array();
   InstanceGroup *create_group();
@@ -95,6 +99,10 @@ class InstanceExpansion : public Procedural {
 
   void generate(Scene *scene, Progress &progress) override;
 
+  /* The kernel's instance tables (object_instance, instance_levels, instance_transforms, instance_colors) for the
+   * nested objects (Object::instance_root), every object's entry. Called by the object manager. */
+  static void device_update(DeviceScene *dscene, Scene *scene);
+
  private:
   struct Level {
     const InstanceArray *array;
@@ -109,6 +117,12 @@ class InstanceExpansion : public Procedural {
                              size_t &used);
   static void place(Object *prototype, bool keep_color, const vector<Level> &chain, Object *object);
   bool subtree_modified(const InstanceArray *array) const;
+
+  /* Nested instancing (USD Nodes ADR 0082 › E2): whether the device traces instance arrays itself, and whether a root
+   * array's chain is one it can trace (else its placements are made as objects). */
+  static bool device_nests(const Scene *scene);
+  static bool chain_nests(const Scene *scene, const InstanceArray *root);
+  static const Object *chain_prototype(const InstanceArray *root);
 
   vector<unique_ptr<InstanceArray>> arrays_;
   vector<unique_ptr<InstanceGroup>> groups_;

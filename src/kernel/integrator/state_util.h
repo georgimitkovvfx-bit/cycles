@@ -131,6 +131,7 @@ ccl_device_forceinline void integrator_state_write_shadow_ray_self(
 
   INTEGRATOR_STATE_WRITE(state, shadow_ray, self_light_object) = ray->self.light_object;
   INTEGRATOR_STATE_WRITE(state, shadow_ray, self_light_prim) = ray->self.light_prim;
+  INTEGRATOR_STATE_WRITE(state, shadow_ray, self_instance) = ray->self.instance;
 }
 
 ccl_device_forceinline void integrator_state_read_shadow_ray_self(
@@ -142,6 +143,7 @@ ccl_device_forceinline void integrator_state_read_shadow_ray_self(
       state, shadow_isect, INTEGRATOR_SHADOW_ISECT_SIZE - 1, prim);
   ray->self.light_object = INTEGRATOR_STATE(state, shadow_ray, self_light_object);
   ray->self.light_prim = INTEGRATOR_STATE(state, shadow_ray, self_light_prim);
+  ray->self.instance = INTEGRATOR_STATE(state, shadow_ray, self_instance);
 }
 
 /* Intersection */
@@ -166,6 +168,8 @@ ccl_device_forceinline void integrator_state_write_isect(
                 "Generated packed_isect struct is misaligned with Intersection struct");
   static_assert(offsetof(packed_isect, type) == offsetof(Intersection, type),
                 "Generated packed_isect struct is misaligned with Intersection struct");
+  static_assert(offsetof(packed_isect, instance) == offsetof(Intersection, instance),
+                "Generated packed_isect struct is misaligned with Intersection struct");
 #else
   INTEGRATOR_STATE_WRITE(state, isect, t) = isect->t;
   INTEGRATOR_STATE_WRITE(state, isect, u) = isect->u;
@@ -173,6 +177,7 @@ ccl_device_forceinline void integrator_state_write_isect(
   INTEGRATOR_STATE_WRITE(state, isect, object) = isect->object;
   INTEGRATOR_STATE_WRITE(state, isect, prim) = isect->prim;
   INTEGRATOR_STATE_WRITE(state, isect, type) = isect->type;
+  INTEGRATOR_STATE_WRITE(state, isect, instance) = isect->instance;
 #endif
 }
 
@@ -185,6 +190,7 @@ ccl_device_forceinline void integrator_state_read_isect(
   isect->prim = INTEGRATOR_STATE(state, isect, prim);
   isect->object = INTEGRATOR_STATE(state, isect, object);
   isect->type = INTEGRATOR_STATE(state, isect, type);
+  isect->instance = INTEGRATOR_STATE(state, isect, instance);
   isect->u = INTEGRATOR_STATE(state, isect, u);
   isect->v = INTEGRATOR_STATE(state, isect, v);
   isect->t = INTEGRATOR_STATE(state, isect, t);
@@ -292,6 +298,7 @@ ccl_device_forceinline void integrator_state_write_shadow_isect(
   INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_isect, index, object) = isect->object;
   INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_isect, index, prim) = isect->prim;
   INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_isect, index, type) = isect->type;
+  INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_isect, index, instance) = isect->instance;
 }
 
 ccl_device_forceinline void integrator_state_read_shadow_isect(
@@ -302,6 +309,7 @@ ccl_device_forceinline void integrator_state_read_shadow_isect(
   isect->prim = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, prim);
   isect->object = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, object);
   isect->type = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, type);
+  isect->instance = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, instance);
   isect->u = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, u);
   isect->v = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, v);
   isect->t = INTEGRATOR_STATE_ARRAY(state, shadow_isect, index, t);

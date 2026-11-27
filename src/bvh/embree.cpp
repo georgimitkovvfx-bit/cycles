@@ -24,6 +24,7 @@ RTC_NAMESPACE_USE
 #  include "bvh/embree.h"
 
 #  include "scene/hair.h"
+#  include "scene/instance.h"
 #  include "scene/mesh.h"
 #  include "scene/object.h"
 #  include "scene/pointcloud.h"
@@ -161,7 +162,10 @@ void BVHEmbree::build(Progress &progress,
         ++i;
         continue;
       }
-      if (!ob->get_geometry()->is_instanced()) {
+      if (ob->instance_root) {
+        add_instance_arrays(ob, i);
+      }
+      else if (!ob->get_geometry()->is_instanced()) {
         add_object(ob, i);
       }
       else {
@@ -315,6 +319,71 @@ void BVHEmbree::add_instance(Object *ob, const int i)
   rtcCommitGeometry(geom_id);
   rtcAttachGeometryByID(scene, geom_id, i * 2);
   rtcReleaseGeometry(geom_id);
+}
+
+/* A nested object (USD Nodes ADR 0082 › E2): its chain of instance arrays as Embree instance arrays, innermost first:
+ * the innermost places the object's geometry (each element's transform times the object's own), each outer one a
+ * scene holding the level inside it, the outermost goes into the top scene as the object (geometry id i * 2, so a hit's
+ * instID[0] is the object and instPrimID[level] each level's element, as the kernel reads them). */
+void BVHEmbree::add_instance_arrays(Object *ob, const int i)
+{
+  BVHEmbree *instance_bvh = static_cast<BVHEmbree *>(ob->get_geometry()->bvh.get());
+  assert(instance_bvh != nullptr);
+
+  vector<const InstanceArray *> chain;
+  for (const InstanceArray *array = ob->instance_root; array;
+       array = array->object ? nullptr : array->group->arrays[0])
+  {
+    chain.push_back(array);
+  }
+
+  RTCScene child = instance_bvh->scene;
+  for (int level = int(chain.size()) - 1; level >= 0; level--) {
+    const vector<Transform> &transforms = chain[level]->steps[0];
+    RTCGeometry geom_id = rtcNewGeometry(rtc_device, RTC_GEOMETRY_TYPE_INSTANCE_ARRAY);
+    rtcSetGeometryInstancedScene(geom_id, child); /* one scene for all elements: no index buffer */
+    rtcSetGeometryTimeStepCount(geom_id, 1);
+    Transform *buffer = static_cast<Transform *>(rtcSetNewGeometryBuffer(geom_id,
+                                                                         RTC_BUFFER_TYPE_TRANSFORM,
+                                                                         0,
+                                                                         RTC_FORMAT_FLOAT3X4_ROW_MAJOR,
+                                                                         sizeof(Transform),
+                                                                         transforms.size()));
+    const bool innermost = level == int(chain.size()) - 1;
+    for (size_t e = 0; e < transforms.size(); e++) {
+      buffer[e] = innermost ? transforms[e] * ob->get_tfm() : transforms[e];
+    }
+    rtcSetGeometryUserData(geom_id,
+#  if RTC_VERSION >= 40400
+                           (void *)rtcGetSceneTraversable(instance_bvh->scene)
+#  else
+                           (void *)instance_bvh->scene
+#  endif
+    );
+    rtcSetGeometryMask(geom_id, ob->visibility_for_tracing());
+    rtcSetGeometryEnableFilterFunctionFromArguments(geom_id, true);
+    rtcCommitGeometry(geom_id);
+
+    if (level == 0) {
+      rtcAttachGeometryByID(scene, geom_id, i * 2);
+      rtcReleaseGeometry(geom_id);
+      break;
+    }
+    /* A scene of this level for the level outside it; the instance array holding it keeps a reference. */
+    RTCScene level_scene = rtcNewScene(rtc_device);
+    rtcSetSceneFlags(level_scene, rtcGetSceneFlags(scene));
+    rtcSetSceneBuildQuality(level_scene, build_quality);
+    rtcAttachGeometryByID(level_scene, geom_id, 0);
+    rtcReleaseGeometry(geom_id);
+    rtcCommitScene(level_scene);
+    if (child != instance_bvh->scene) {
+      rtcReleaseScene(child);
+    }
+    child = level_scene;
+  }
+  if (child != instance_bvh->scene) {
+    rtcReleaseScene(child);
+  }
 }
 
 void BVHEmbree::add_triangles(const Object *ob, const Mesh *mesh, const int i)
