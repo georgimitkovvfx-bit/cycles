@@ -539,11 +539,12 @@ def test_id_aovs(render):
     assert values[0] < 0.01 and abs(values[1] - 1) < 0.02 and abs(values[2] - 2) < 0.04, values
 
 
-def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False) -> str:
+def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False, vector: bool = False) -> str:
     """Two trees of a nested point instancer seen from above, the second turned and scaled, each a trunk and an
     instancer of three leaves: per-tree displayColor on the forest (the trunks' default surface), a per-leaf "tint" on
     the leaves (their emission; ``tint`` false: a constant green). ``arrays``: cycles:instance_arrays; ``motion``: both
-    levels move over the shutter; ``deform``: the leaf's points move (it flutters)."""
+    levels move over the shutter; ``deform``: the leaf's points move (it flutters); ``vector``: a motion pass
+    (Blender's "vector"), without motion blur."""
     def positions(still, moved):
         return (f"point3f[] positions.timeSamples = {{ 1: {still}, 2: {moved} }}" if motion
                 else f"point3f[] positions = {still}")
@@ -624,7 +625,7 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
         float horizontalAperture = 36
         float verticalAperture = 36
         double shutter:open = 0
-        double shutter:close = {1 if motion else 0}
+        double shutter:close = {1 if motion and not vector else 0}
         double3 xformOp:translate = (0, 0, 14)
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }}
@@ -636,7 +637,20 @@ def Scope "Render"
     {{
         rel camera = </world/cam>
         custom bool cycles:instance_arrays = {1 if arrays else 0}
+{"        rel products = </Render/product>" if vector else ""}
     }}
+{'''    def RenderProduct "product"
+    {
+        rel orderedVars = [</Render/product/color>, </Render/product/vector>]
+        def RenderVar "color"
+        {
+            uniform string sourceName = "color"
+        }
+        def RenderVar "vector"
+        {
+            uniform string sourceName = "vector"
+        }
+    }''' if vector else ""}
 }}
 """
 
@@ -648,17 +662,30 @@ def test_instance_arrays(render):
     (one object, the kernel places it, its colour, random number, primvars and motion per placement); the others are
     expanded into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
     cases = [("still", False, True, False), ("motion", True, True, False), ("plain", False, False, False),
-             ("deform", True, True, True)]
+             ("deform", True, True, True), ("vector", True, True, False)]
     for name, motion, tint, deform in cases:
-        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform), size=(96, 96), samples=16)
+        vector = name == "vector"
+        channel = "Vector.X" if vector else ""
+        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector), size=(96, 96), samples=16,
+                    channel=channel)
         placed = render.output
-        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform), size=(96, 96), samples=16)
+        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform, vector), size=(96, 96),
+                     samples=16, channel=channel)
+        if vector:
+            on = on[..., None]
+            off = off[..., None]
         assert "CYCLES_USD_RENDER_INSTANCES" not in render.output, name
         # 2 trunks and 6 leaves, nested: the leaves' per-leaf tint a per-placement attribute, both levels' motion
         # interpolated at the ray's time, the fluttering leaf's motion its geometry's.
         expected = "placed 2 nested 2 (8 instances)"
         assert f"CYCLES_USD_RENDER_INSTANCES {expected}" in placed, (name, placed[-500:])
         difference = abs(on - off).max(axis=2)
+        if name == "vector":
+            # the motion pass: each pixel's movement to the previous and next frame, as the expanded objects' (pixels)
+            assert abs(on).max() > 1.0, (name, abs(on).max())
+            assert abs(on - off).mean() < 1e-3 and (difference > 0.05).mean() < 0.005, \
+                (name, abs(on - off).mean(), (difference > 0.05).mean())
+            continue
         # the leaves' red, green and blue tints, the trunks' colours under the sun, a black background
         assert (not tint or min(on[..., c].max() for c in range(3)) > 0.5) and 0.005 < on.mean() < 0.5, (name, on.mean())
         assert difference.mean() < 1e-3 and (difference > 0.02).mean() < 0.005, \
