@@ -27,6 +27,11 @@ KERNEL_DATA_ARRAY(Transform, object_motion_pass)
 KERNEL_DATA_ARRAY(DecomposedTransform, object_motion)
 KERNEL_DATA_ARRAY(uint, object_flag)
 KERNEL_DATA_ARRAY(uint, object_prim_offset)
+/* nested instancing (USD Nodes ADR 0082 › E2) */
+KERNEL_DATA_ARRAY(KernelObjectInstance, object_instance)
+KERNEL_DATA_ARRAY(KernelInstanceLevel, instance_levels)
+KERNEL_DATA_ARRAY(Transform, instance_transforms)
+KERNEL_DATA_ARRAY(float, instance_colors)
 
 /* cameras */
 KERNEL_DATA_ARRAY(DecomposedTransform, camera_motion)

@@ -28,6 +28,21 @@ ccl_device void shader_setup_object_transforms(KernelGlobals kg,
                                                ccl_private ShaderData *ccl_restrict sd,
                                                const float time)
 {
+#ifdef __INSTANCE_NESTING__
+  /* A nested object's placement (USD Nodes ADR 0082 › E2): the levels' transforms composed, cached as a moving
+   * object's are; a mirrored placement has a negative scale of its own. */
+  if (sd->object_flag & SD_OBJECT_NESTED) {
+    sd->ob_tfm_motion = object_instance_transform(kg, sd->object, sd->instance);
+    sd->ob_itfm_motion = transform_inverse(sd->ob_tfm_motion);
+    if (transform_negative_scale(sd->ob_tfm_motion)) {
+      sd->object_flag |= SD_OBJECT_NEGATIVE_SCALE;
+    }
+    else {
+      sd->object_flag &= ~SD_OBJECT_NEGATIVE_SCALE;
+    }
+    return;
+  }
+#endif
 #ifdef __OBJECT_MOTION__
   if (sd->object_flag & SD_OBJECT_MOTION) {
     sd->ob_tfm_motion = object_fetch_transform_motion(kg, sd->object, time);
@@ -60,6 +75,7 @@ ccl_device_inline
   sd->ray_length = isect->t;
   sd->type = isect->type;
   sd->object = isect->object;
+  sd->instance = isect->instance;
   sd->object_flag = kernel_data_fetch(object_flag, sd->object);
   sd->prim = isect->prim;
   sd->runtime_flag = 0;

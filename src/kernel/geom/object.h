@@ -17,6 +17,8 @@
 #include "kernel/globals.h"
 #include "kernel/types.h"
 
+#include "util/hash.h"
+
 CCL_NAMESPACE_BEGIN
 
 /* Object attributes, for now a fixed size and contents */
@@ -96,13 +98,65 @@ ccl_device_inline Transform object_fetch_transform_motion_test(KernelGlobals kg,
   return tfm;
 }
 
+/* Nested instancing (USD Nodes ADR 0082 › E2): a placement of an object placed by instance arrays. */
+
+#ifdef __INSTANCE_NESTING__
+/* The element of a level a placement is in. */
+ccl_device_inline uint object_instance_element(const KernelInstanceLevel level, const uint instance)
+{
+  return (instance / level.stride) % level.count;
+}
+
+/* Object to world: each level's element transform, outer first, then the object's own (its prototype's). */
+ccl_device_inline Transform object_instance_transform(KernelGlobals kg,
+                                                      const int object,
+                                                      const uint instance)
+{
+  const KernelObjectInstance placed = kernel_data_fetch(object_instance, object);
+  Transform tfm = kernel_data_fetch(objects, object).tfm;
+  for (int l = placed.num_levels - 1; l >= 0; l--) {
+    const KernelInstanceLevel level = kernel_data_fetch(instance_levels, placed.levels_offset + l);
+    tfm = kernel_data_fetch(instance_transforms,
+                            level.transform_offset + object_instance_element(level, instance)) *
+          tfm;
+  }
+  return tfm;
+}
+
+/* The innermost level's colour, else the object's. */
+ccl_device_inline float3 object_instance_color(KernelGlobals kg, const int object, const uint instance)
+{
+  const KernelObjectInstance placed = kernel_data_fetch(object_instance, object);
+  for (int l = placed.num_levels - 1; l >= 0; l--) {
+    const KernelInstanceLevel level = kernel_data_fetch(instance_levels, placed.levels_offset + l);
+    if (level.color_offset >= 0) {
+      const int i = level.color_offset + 3 * int(object_instance_element(level, instance));
+      return make_float3(kernel_data_fetch(instance_colors, i),
+                         kernel_data_fetch(instance_colors, i + 1),
+                         kernel_data_fetch(instance_colors, i + 2));
+    }
+  }
+  const ccl_global KernelObject *kobject = &kernel_data_fetch(objects, object);
+  return make_float3(kobject->color[0], kobject->color[1], kobject->color[2]);
+}
+
+/* As the object a placement used to be (InstanceExpansion): hash(geometry name, flattened index). */
+ccl_device_inline float object_instance_random_number(KernelGlobals kg,
+                                                      const int object,
+                                                      const uint instance)
+{
+  const uint hash = hash_uint2(kernel_data_fetch(object_instance, object).name_hash, instance);
+  return (float)hash * (1.0f / (float)0xFFFFFFFF);
+}
+#endif
+
 /* Get transform matrix for shading point. */
 
 ccl_device_inline Transform object_get_transform(KernelGlobals kg,
                                                  const ccl_private ShaderData *sd)
 {
 #ifdef __OBJECT_MOTION__
-  return (sd->object_flag & SD_OBJECT_MOTION) ?
+  return (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) ?
              sd->ob_tfm_motion :
              object_fetch_transform(kg, sd->object, OBJECT_TRANSFORM);
 #else
@@ -114,7 +168,7 @@ ccl_device_inline Transform object_get_inverse_transform(KernelGlobals kg,
                                                          const ccl_private ShaderData *sd)
 {
 #ifdef __OBJECT_MOTION__
-  return (sd->object_flag & SD_OBJECT_MOTION) ?
+  return (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) ?
              sd->ob_itfm_motion :
              object_fetch_transform(kg, sd->object, OBJECT_INVERSE_TRANSFORM);
 #else
@@ -136,7 +190,7 @@ ccl_device_inline void object_position_transform(KernelGlobals kg,
                                                  ccl_private T *P)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     *P = transform_point_auto(&sd->ob_tfm_motion, *P);
     return;
   }
@@ -154,7 +208,7 @@ ccl_device_inline void object_inverse_position_transform(KernelGlobals kg,
                                                          ccl_private T *P)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     *P = transform_point_auto(&sd->ob_itfm_motion, *P);
     return;
   }
@@ -182,7 +236,7 @@ ccl_device_inline void object_inverse_normal_transform(KernelGlobals kg,
                                                        ccl_private float3 *N)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     if (sd->object != OBJECT_NONE) {
       *N = safe_normalize(transform_direction_transposed_auto(&sd->ob_tfm_motion, *N));
     }
@@ -203,7 +257,7 @@ ccl_device_inline void object_normal_transform(KernelGlobals kg,
                                                ccl_private T *N)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     *N = normalize(transform_direction_transposed_auto(&sd->ob_itfm_motion, *N));
     return;
   }
@@ -227,7 +281,7 @@ ccl_device_inline void object_dir_transform(KernelGlobals kg,
                                             ccl_private float3 *D)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     *D = transform_direction_auto(&sd->ob_tfm_motion, *D);
     return;
   }
@@ -244,7 +298,7 @@ ccl_device_inline void object_inverse_dir_transform(KernelGlobals kg,
                                                     ccl_private float3 *D)
 {
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     *D = transform_direction_auto(&sd->ob_itfm_motion, *D);
     return;
   }
@@ -263,7 +317,7 @@ ccl_device_inline float3 object_location(KernelGlobals kg, const ccl_private Sha
   }
 
 #ifdef __OBJECT_MOTION__
-  if (sd->object_flag & SD_OBJECT_MOTION) {
+  if (sd->object_flag & (SD_OBJECT_MOTION | SD_OBJECT_NESTED)) {
     return make_float3(sd->ob_tfm_motion.x.w, sd->ob_tfm_motion.y.w, sd->ob_tfm_motion.z.w);
   }
 #endif
@@ -326,6 +380,27 @@ ccl_device_inline float object_random_number(KernelGlobals kg, const int object)
   }
 
   return kernel_data_fetch(objects, object).random_number;
+}
+
+/* The same for a shading point: a nested object's placement has its own (USD Nodes ADR 0082 › E2). */
+ccl_device_inline float3 object_color(KernelGlobals kg, const ccl_private ShaderData *sd)
+{
+#ifdef __INSTANCE_NESTING__
+  if (sd->object_flag & SD_OBJECT_NESTED) {
+    return object_instance_color(kg, sd->object, sd->instance);
+  }
+#endif
+  return object_color(kg, sd->object);
+}
+
+ccl_device_inline float object_random_number(KernelGlobals kg, const ccl_private ShaderData *sd)
+{
+#ifdef __INSTANCE_NESTING__
+  if (sd->object_flag & SD_OBJECT_NESTED) {
+    return object_instance_random_number(kg, sd->object, sd->instance);
+  }
+#endif
+  return object_random_number(kg, sd->object);
 }
 
 /* Particle ID from which this object was generated */

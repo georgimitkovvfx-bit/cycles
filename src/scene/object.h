@@ -34,6 +34,8 @@ class ObjectManager;
 
 /* Object */
 
+class InstanceArray;
+
 class Object : public Node {
  public:
   NODE_DECLARE
@@ -77,6 +79,10 @@ class Object : public Node {
 
   /* Set during device update. */
   bool intersects_volume;
+
+  /* Nested instancing (USD Nodes ADR 0082 › E2): the root instance array placing this object at every placement,
+   * set by InstanceExpansion. Its own transform is then its prototype's, and the kernel composes the levels'. */
+  const InstanceArray *instance_root = nullptr;
 
   /* Specifies the position of the object in scene->objects and
    * in the device vectors. Gets set in device_update. */

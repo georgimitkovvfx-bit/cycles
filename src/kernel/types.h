@@ -15,6 +15,12 @@
 #  define __EMBREE__
 /* Our Embree has its own API namespace (USD Nodes ADR 0082 › E0); nothing without one. */
 RTC_NAMESPACE_USE
+/* Nested instancing (USD Nodes ADR 0082 › E2): objects placed by instance arrays, traced by an Embree with more than
+ * one instance level, on the CPU. The data and state fields exist on every device (the host lays out the GPU's
+ * state); only this switches their use on. */
+#  if !defined(__KERNEL_GPU__) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
+#    define __INSTANCE_NESTING__
+#  endif
 #endif
 
 #ifdef __APPLE__
@@ -628,6 +634,7 @@ struct differential {
 struct RaySelfPrimitives {
   int prim;         /* Primitive the ray is starting from */
   int object;       /* Instance prim is a part of */
+  int instance;     /* Its placement, when the object is nested (SD_OBJECT_NESTED); unused otherwise */
   int light_prim;   /* Light primitive */
   int light_object; /* Light object */
 };
@@ -654,6 +661,8 @@ struct Intersection {
   int prim;
   int object;
   int type;
+  /* The placement of a nested object (SD_OBJECT_NESTED): its flattened instance index. Unused otherwise. */
+  int instance;
 };
 
 /* On certain GPUs (Apple Silicon), splitting every integrator state field into its own separate
@@ -1066,6 +1075,9 @@ enum ShaderDataObjectFlag : uint {
   SD_OBJECT_HAS_VOLUME_MOTION = (1u << 11),
   /* Geometry has per-corner normals instead of per-vertex. */
   SD_OBJECT_HAS_CORNER_NORMALS = (1u << 12),
+  /* Placed by instance arrays (nested instancing): its transform, colour and random number come from the hit's
+   * placement (ShaderData::instance), composed in shader setup. */
+  SD_OBJECT_NESTED = (1u << 13),
 
   /* object is using caustics */
   SD_OBJECT_CAUSTICS = (SD_OBJECT_CAUSTICS_CASTER | SD_OBJECT_CAUSTICS_RECEIVER),
@@ -1074,7 +1086,7 @@ enum ShaderDataObjectFlag : uint {
                      SD_OBJECT_NEGATIVE_SCALE | SD_OBJECT_HAS_VOLUME |
                      SD_OBJECT_INTERSECTS_VOLUME | SD_OBJECT_SHADOW_CATCHER |
                      SD_OBJECT_HAS_VOLUME_ATTRIBUTES | SD_OBJECT_CAUSTICS |
-                     SD_OBJECT_HAS_VOLUME_MOTION | SD_OBJECT_HAS_CORNER_NORMALS)
+                     SD_OBJECT_HAS_VOLUME_MOTION | SD_OBJECT_HAS_CORNER_NORMALS | SD_OBJECT_NESTED)
 };
 
 struct ccl_align(SHADER_DATA_ALIGNMENT) ShaderData {
@@ -1112,6 +1124,8 @@ struct ccl_align(SHADER_DATA_ALIGNMENT) ShaderData {
   float v;
   /* object id if there is one, ~0 otherwise */
   int object;
+  /* placement of a nested object (Intersection::instance) */
+  int instance;
 
   /* motion blur sample time */
   float time;
@@ -1486,6 +1500,24 @@ struct ccl_align(16) KernelData {
 static_assert_align(KernelData, 16);
 
 /* Kernel data structures. */
+
+/* The instance arrays placing a nested object (USD Nodes ADR 0082 › E2), outermost first. A placement's flattened
+ * index is the sum of each level's element times its stride (the product of the inner levels' counts). */
+struct KernelObjectInstance {
+  int levels_offset; /* into instance_levels, -1 for an object that is not nested */
+  int num_levels;
+  uint name_hash;    /* hash of the geometry's name: random number of a placement */
+  int pad;
+};
+static_assert_align(KernelObjectInstance, 16);
+
+struct KernelInstanceLevel {
+  uint count;
+  uint stride;
+  uint transform_offset; /* into instance_transforms */
+  int color_offset;      /* into instance_colors (3 floats per element), -1 without */
+};
+static_assert_align(KernelInstanceLevel, 16);
 
 struct KernelObject {
   Transform tfm;

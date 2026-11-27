@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "scene/object.h"
+#include "scene/instance.h"
 
 #include "device/device.h"
 #include "kernel/types.h"
@@ -752,6 +753,9 @@ void ObjectManager::device_update_object_transform(UpdateObjectTransformState *s
   if (ob->use_holdout) {
     flag |= SD_OBJECT_HOLDOUT_MASK;
   }
+  if (ob->instance_root) {
+    flag |= SD_OBJECT_NESTED;
+  }
   state->object_flag[ob->index] = flag;
 
   /* Have curves. */
@@ -984,6 +988,9 @@ void ObjectManager::device_update(Device *device,
     progress.set_status("Updating Objects", "Copying Transformations to device");
     device_update_transforms(dscene, scene, progress);
   }
+
+  /* The instance arrays of nested objects, by object index (USD Nodes ADR 0082 › E2). */
+  InstanceExpansion::device_update(dscene, scene);
 
   for (Object *object : scene->objects) {
     object->clear_modified();
@@ -1260,6 +1267,10 @@ void ObjectManager::device_free(Device * /*unused*/, DeviceScene *dscene, bool f
   dscene->object_motion.free_if_need_realloc(force_free);
   dscene->object_flag.free_if_need_realloc(force_free);
   dscene->object_prim_offset.free_if_need_realloc(force_free);
+  dscene->object_instance.free_if_need_realloc(force_free);
+  dscene->instance_levels.free_if_need_realloc(force_free);
+  dscene->instance_transforms.free_if_need_realloc(force_free);
+  dscene->instance_colors.free_if_need_realloc(force_free);
 }
 
 void ObjectManager::apply_static_transforms(DeviceScene *dscene, Scene *scene, Progress &progress)
@@ -1300,8 +1311,9 @@ void ObjectManager::apply_static_transforms(DeviceScene *dscene, Scene *scene, P
      * Could be solved by moving reference counter to Geometry.
      */
     Geometry *geom = object->geometry;
+    /* A nested object's geometry is placed many times (InstanceExpansion), in its own space. */
     bool apply = (geometry_users[geom] == 1) && !geom->has_surface_bssrdf &&
-                 !geom->has_true_displacement();
+                 !geom->has_true_displacement() && !object->instance_root;
 
     if (geom->is_mesh()) {
       Mesh *mesh = static_cast<Mesh *>(geom);

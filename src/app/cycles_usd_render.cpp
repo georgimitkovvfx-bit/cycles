@@ -1130,7 +1130,10 @@ int render(const Options &o)
            peak_mb());
     /* The objects instance arrays placed (USD Nodes ADR 0082 › E1), for tests and benchmarks. */
     if (const InstanceExpansion *expansion = InstanceExpansion::find(session->scene.get())) {
-      printf("CYCLES_USD_RENDER_INSTANCES placed %zu\n", expansion->num_placements());
+      printf("CYCLES_USD_RENDER_INSTANCES placed %zu nested %zu (%zu instances)\n",
+             expansion->num_placements(),
+             expansion->num_nested(),
+             expansion->num_nested_placements());
     }
     printf("CYCLES_USD_RENDER_MEMORY frame %g device_mb %zu device_peak_mb %zu\n",
            frame,

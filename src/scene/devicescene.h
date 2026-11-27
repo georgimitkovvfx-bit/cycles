@@ -44,6 +44,11 @@ class DeviceScene {
   device_vector<DecomposedTransform> object_motion;
   device_vector<uint> object_flag;
   device_vector<uint> object_prim_offset;
+  /* nested instancing (InstanceExpansion::device_update) */
+  device_vector<KernelObjectInstance> object_instance;
+  device_vector<KernelInstanceLevel> instance_levels;
+  device_vector<Transform> instance_transforms;
+  device_vector<float> instance_colors;
 
   /* cameras */
   device_vector<DecomposedTransform> camera_motion;
