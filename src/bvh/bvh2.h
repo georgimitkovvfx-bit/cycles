@@ -52,6 +52,10 @@ class BVH2 : public BVH {
 
   /* pack */
   void pack_nodes(const BVHNode *root);
+  /* A nested object's levels: a BVH per level over its elements, appended to this top-level BVH (ADR 0082 › E3). */
+  void pack_nested_levels(Object *ob, int object_index);
+  /* Appends another BVH's packed data; returns its root as an object_node entry. */
+  int append_packed(const PackedBVH &other);
 
   void pack_leaf(const BVHStackEntry &e, const LeafNode *leaf);
   void pack_inner(const BVHStackEntry &e, const BVHStackEntry &e0, const BVHStackEntry &e1);

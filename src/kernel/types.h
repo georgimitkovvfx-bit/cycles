@@ -22,6 +22,12 @@ RTC_NAMESPACE_USE
 #    define __INSTANCE_NESTING__
 #  endif
 #endif
+/* And on CUDA, with Cycles' own BVH (ADR 0082 › E3; not OptiX). */
+#if defined(__KERNEL_CUDA__) && !defined(__KERNEL_OPTIX__)
+#  define __INSTANCE_NESTING__
+#endif
+/* Instance array levels a nested object may have in Cycles' own BVH (Embree's: RTC_MAX_INSTANCE_LEVEL_COUNT). */
+#define BVH_MAX_INSTANCE_LEVELS 4
 
 #ifdef __APPLE__
 #  include <TargetConditionals.h>

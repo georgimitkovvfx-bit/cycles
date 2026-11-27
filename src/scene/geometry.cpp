@@ -1269,6 +1269,7 @@ void GeometryManager::device_free(Device *device, DeviceScene *dscene, bool forc
   dscene->bvh_nodes.free_if_need_realloc(force_free);
   dscene->bvh_leaf_nodes.free_if_need_realloc(force_free);
   dscene->object_node.free_if_need_realloc(force_free);
+  dscene->instance_bvh_roots.free_if_need_realloc(force_free);
   dscene->prim_type.free_if_need_realloc(force_free);
   dscene->prim_visibility.free_if_need_realloc(force_free);
   dscene->prim_index.free_if_need_realloc(force_free);

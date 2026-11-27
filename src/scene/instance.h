@@ -12,6 +12,7 @@
 
 #include "scene/procedural.h"
 
+#include "util/boundbox.h"
 #include "util/map.h"
 #include "util/param.h"
 #include "util/transform.h"
@@ -98,6 +99,10 @@ class InstanceExpansion : public Procedural {
   const vector<Object *> &placements(const InstanceArray *array) const;
 
   void generate(Scene *scene, Progress &progress) override;
+
+  /* A nested object's bounds in world space (Object::compute_bounds); with `element_bounds`, also each level's elements'
+   * in their parent's space, outer level first (Cycles' own BVH builds a BVH per level from them). */
+  static BoundBox chain_bounds(const Object *object, vector<vector<BoundBox>> *element_bounds = nullptr);
 
   /* The kernel's instance tables (object_instance, instance_levels, instance_transforms, instance_colors) for the
    * nested objects (Object::instance_root), every object's entry. Called by the object manager. */

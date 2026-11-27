@@ -10,6 +10,7 @@
 #include "bvh/bvh2.h"
 
 #include "scene/hair.h"
+#include "scene/instance.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/pointcloud.h"
@@ -641,6 +642,140 @@ void BVH2::pack_instances(size_t nodes_size, size_t leaf_nodes_size)
     nodes_leaf_offset += bvh->pack.leaf_nodes.size();
     prim_offset += bvh->pack.prim_index.size();
   }
+
+  /* Nested objects lead to their levels' BVHs, the innermost to the geometry merged above. */
+  pack.instance_bvh_roots.clear();
+  for (size_t i = 0; i < objects.size(); i++) {
+    if (objects[i]->instance_root && objects[i]->instance_levels_offset >= 0) {
+      pack_nested_levels(objects[i], int(i));
+    }
+  }
+}
+
+namespace {
+
+/* A BVH over one level's elements, one per leaf, split at the median of the longest axis of their centres. `order`
+ * holds element indices; a leaf's prim range is its position in `order`. */
+unique_ptr<BVHNode> build_level_node(const vector<BoundBox> &bounds,
+                                     vector<int> &order,
+                                     const int begin,
+                                     const int end,
+                                     const uint visibility)
+{
+  BoundBox box = BoundBox::empty;
+  BoundBox centres = BoundBox::empty;
+  for (int i = begin; i < end; i++) {
+    box.grow(bounds[order[i]]);
+    centres.grow(bounds[order[i]].center());
+  }
+  if (end - begin == 1) {
+    return make_unique<LeafNode>(box, visibility, begin, end);
+  }
+  const float3 size = centres.size();
+  const int axis = (size.x >= size.y && size.x >= size.z) ? 0 : (size.y >= size.z ? 1 : 2);
+  const int mid = (begin + end) / 2;
+  std::nth_element(order.begin() + begin, order.begin() + mid, order.begin() + end, [&](int a, int b) {
+    return bounds[a].center()[axis] < bounds[b].center()[axis];
+  });
+  unique_ptr<BVHNode> left = build_level_node(bounds, order, begin, mid, visibility);
+  unique_ptr<BVHNode> right = build_level_node(bounds, order, mid, end, visibility);
+  return make_unique<InnerNode>(box, std::move(left), std::move(right));
+}
+
+}  // namespace
+
+int BVH2::append_packed(const PackedBVH &other)
+{
+  const int prim_offset = int(pack.prim_index.size());
+  const int nodes_offset = int(pack.nodes.size());
+  const int leaf_offset = int(pack.leaf_nodes.size());
+
+  const auto append = [](auto &to, const auto &from) {
+    const size_t start = to.size();
+    to.resize(start + from.size());
+    std::copy_n(from.data(), from.size(), to.data() + start);
+  };
+  append(pack.prim_index, other.prim_index);
+  append(pack.prim_type, other.prim_type);
+  append(pack.prim_object, other.prim_object);
+  append(pack.prim_visibility, other.prim_visibility);
+  if (pack.prim_time.size()) {
+    const size_t start = pack.prim_time.size();
+    pack.prim_time.resize(start + other.prim_index.size());
+    std::fill_n(pack.prim_time.data() + start, other.prim_index.size(), make_float2(0.0f, 1.0f));
+  }
+
+  /* Leaves: instance leaves (~prim) and primitive ranges move with the primitives. */
+  const size_t leaf_start = pack.leaf_nodes.size();
+  append(pack.leaf_nodes, other.leaf_nodes);
+  for (size_t i = leaf_start; i < pack.leaf_nodes.size(); i += BVH_NODE_LEAF_SIZE) {
+    int4 &data = pack.leaf_nodes[i];
+    if (data.x < 0) {
+      data.x = ~(~data.x + prim_offset);
+    }
+    else {
+      data.x += prim_offset;
+      data.y += prim_offset;
+    }
+  }
+  /* Inner nodes (aligned only: these BVHs have no curves): child indices move with the nodes. */
+  const size_t node_start = pack.nodes.size();
+  append(pack.nodes, other.nodes);
+  for (size_t i = node_start; i < pack.nodes.size(); i += BVH_NODE_SIZE) {
+    int4 &data = pack.nodes[i];
+    data.z += (data.z < 0) ? -leaf_offset : nodes_offset;
+    data.w += (data.w < 0) ? -leaf_offset : nodes_offset;
+  }
+  return other.root_index == -1 ? -leaf_offset - 1 : nodes_offset;
+}
+
+void BVH2::pack_nested_levels(Object *ob, const int object_index)
+{
+  vector<vector<BoundBox>> element_bounds;
+  InstanceExpansion::chain_bounds(ob, &element_bounds);
+  const int num_levels = int(element_bounds.size());
+  const int offset = ob->instance_levels_offset;
+  if (pack.instance_bvh_roots.size() < size_t(offset + num_levels)) {
+    const size_t old_size = pack.instance_bvh_roots.size();
+    pack.instance_bvh_roots.resize(offset + num_levels);
+    std::fill_n(pack.instance_bvh_roots.data() + old_size, offset + num_levels - old_size, 0);
+  }
+  const uint visibility = ob->visibility_for_tracing();
+
+  /* Innermost first: each level's elements lead to the BVH of the level inside them. */
+  int child_root = pack.object_node[object_index]; /* the geometry, merged by pack_instances */
+  for (int level = num_levels - 1; level >= 0; level--) {
+    const vector<BoundBox> &bounds = element_bounds[level];
+    pack.instance_bvh_roots[offset + level] = child_root;
+    if (bounds.empty()) {
+      child_root = 0;
+      continue;
+    }
+    vector<int> order(bounds.size());
+    for (size_t e = 0; e < order.size(); e++) {
+      order[e] = int(e);
+    }
+    unique_ptr<BVHNode> root = build_level_node(bounds, order, 0, int(order.size()), visibility);
+
+    BVHParams level_params = params;
+    level_params.top_level = false;
+    level_params.use_unaligned_nodes = false;
+    BVH2 level_bvh(level_params, {}, {});
+    PackedBVH &level_pack = level_bvh.pack;
+    level_pack.prim_index.resize(order.size());
+    level_pack.prim_type.resize(order.size());
+    level_pack.prim_object.resize(order.size());
+    level_pack.prim_visibility.resize(order.size());
+    for (size_t i = 0; i < order.size(); i++) {
+      level_pack.prim_index[i] = -1;   /* an instance leaf */
+      level_pack.prim_type[i] = 0;
+      level_pack.prim_object[i] = order[i]; /* the element */
+      level_pack.prim_visibility[i] = visibility;
+    }
+    level_bvh.pack_nodes(root.get());
+    child_root = append_packed(level_pack);
+  }
+  pack.object_node[object_index] = child_root;
 }
 
 CCL_NAMESPACE_END

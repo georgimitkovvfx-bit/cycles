@@ -8,6 +8,7 @@
 #include "kernel/bvh/nodes.h"
 #include "kernel/bvh/types.h"
 #include "kernel/bvh/util.h"
+#include "kernel/bvh/nested.h"
 
 #include "kernel/geom/curve_intersect.h"
 #include "kernel/geom/gsplat_intersect.h"

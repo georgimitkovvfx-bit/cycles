@@ -83,6 +83,8 @@ class Object : public Node {
   /* Nested instancing (USD Nodes ADR 0082 › E2): the root instance array placing this object at every placement,
    * set by InstanceExpansion. Its own transform is then its prototype's, and the kernel composes the levels'. */
   const InstanceArray *instance_root = nullptr;
+  /* Its levels' first entry in the kernel's instance_levels (InstanceExpansion::device_update), for the BVH. */
+  int instance_levels_offset = -1;
 
   /* Specifies the position of the object in scene->objects and
    * in the device vectors. Gets set in device_update. */

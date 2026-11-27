@@ -256,6 +256,19 @@ ccl_device_inline bool intersection_skip_self_shadow(const ccl_ray_data RaySelfP
          ((self.light_prim == prim) && (self.light_object == object));
 }
 
+/* The same for a nested object's placement (ADR 0082 › E3): the same primitive of another placement is not the ray's
+ * own surface. `instance` is -1 outside nested objects. */
+ccl_device_inline bool intersection_skip_self_shadow(const ccl_ray_data RaySelfPrimitives &self,
+                                                     const int object,
+                                                     const int prim,
+                                                     const int instance)
+{
+  if (instance >= 0 && self.instance != instance) {
+    return (self.light_prim == prim) && (self.light_object == object);
+  }
+  return intersection_skip_self_shadow(self, object, prim);
+}
+
 ccl_device_inline bool intersection_skip_self_local(const ccl_ray_data RaySelfPrimitives &self,
                                                     const int prim)
 {

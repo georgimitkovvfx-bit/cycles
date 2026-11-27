@@ -281,18 +281,27 @@ void InstanceExpansion::generate(Scene *scene, Progress & /*progress*/)
 
 bool InstanceExpansion::device_nests(const Scene *scene)
 {
-#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
-  /* The CPU alone with Embree (the kernel's __INSTANCE_NESTING__); OSL reads objects by index and name. */
-  if (!scene->device || scene->device->info.type != DEVICE_CPU || scene->shader_manager->use_osl()) {
+  /* The kernel's __INSTANCE_NESTING__: the CPU with Embree (E2) or Cycles' own BVH, CUDA with Cycles' own BVH (E3).
+   * Not OSL (it reads objects by index and name), not the motion pass. */
+  if (!scene->device || scene->shader_manager->use_osl() ||
+      scene->need_motion() == Scene::MOTION_PASS ||
+      scene->need_motion() == Scene::MOTION_PASS_INTERACTIVE)
+  {
     return false;
   }
+  const DeviceType type = scene->device->info.type;
   const BVHLayout layout = BVHParams::best_bvh_layout(
       scene->params.bvh_layout, scene->device->get_bvh_layout_mask(scene->dscene.data.kernel_features));
-  return layout == BVH_LAYOUT_EMBREE && scene->need_motion() != Scene::MOTION_PASS &&
-         scene->need_motion() != Scene::MOTION_PASS_INTERACTIVE;
+  if (type == DEVICE_CUDA) {
+    return layout == BVH_LAYOUT_BVH2;
+  }
+  if (type != DEVICE_CPU) {
+    return false;
+  }
+#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
+  return layout == BVH_LAYOUT_EMBREE || layout == BVH_LAYOUT_BVH2;
 #else
-  (void)scene;
-  return false;
+  return layout == BVH_LAYOUT_BVH2;
 #endif
 }
 
@@ -311,18 +320,22 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
-#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
-  /* A chain (each group holds one array: the delegate's per-prim chains) of up to Embree's levels, without what the
-   * first version flattens: motion on any level, per-element attributes, and prototypes whose shading keys on one
+  /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
+   * the first version flattens: motion on any level, per-element attributes, and prototypes whose shading keys on one
    * object index or transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking, the
    * instanceId attribute). */
+#if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
+  const int max_levels = std::min(RTC_MAX_INSTANCE_LEVEL_COUNT, BVH_MAX_INSTANCE_LEVELS);
+#else
+  const int max_levels = BVH_MAX_INSTANCE_LEVELS;
+#endif
   const Object *prototype = chain_prototype(root);
   if (!prototype || !prototype->get_geometry()) {
     return false;
   }
   int levels = 0;
   for (const InstanceArray *array = root; array;) {
-    if (++levels > RTC_MAX_INSTANCE_LEVEL_COUNT || array->steps.size() != 1 || !array->attributes.empty()) {
+    if (++levels > max_levels || array->steps.size() != 1 || !array->attributes.empty()) {
       return false;
     }
     array = array->object ? nullptr : array->group->arrays[0];
@@ -335,9 +348,9 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   }
   const Geometry *geom = prototype->get_geometry();
   if (!prototype->get_motion().empty() || geom->is_volume() || geom->is_light() ||
-      geom->get_use_motion_blur() || prototype->get_is_bake_target() ||
+      geom->has_motion_blur() || prototype->get_is_bake_target() ||
       prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
-      prototype->has_shadow_linking() || const_cast<Object *>(prototype)->usable_as_light())
+      prototype->has_shadow_linking() || prototype->usable_as_light())
   {
     return false;
   }
@@ -349,11 +362,37 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   }
   (void)scene;
   return true;
-#else
-  (void)scene;
-  (void)root;
-  return false;
-#endif
+}
+
+BoundBox InstanceExpansion::chain_bounds(const Object *object, vector<vector<BoundBox>> *element_bounds)
+{
+  vector<const InstanceArray *> chain;
+  for (const InstanceArray *array = object->instance_root; array;
+       array = array->object ? nullptr : array->group->arrays[0])
+  {
+    chain.push_back(array);
+  }
+  if (element_bounds) {
+    element_bounds->assign(chain.size(), {});
+  }
+  /* Innermost first: each element's bounds are its child's (the geometry with the object's own transform, or the
+   * level inside it) in its parent's space. */
+  BoundBox child = object->get_geometry()->bounds;
+  for (int level = int(chain.size()) - 1; level >= 0; level--) {
+    const vector<Transform> &transforms = chain[level]->steps[0];
+    const bool innermost = level == int(chain.size()) - 1;
+    BoundBox all = BoundBox::empty;
+    for (size_t e = 0; e < transforms.size(); e++) {
+      const Transform tfm = innermost ? transforms[e] * object->get_tfm() : transforms[e];
+      const BoundBox bounds = child.transformed(&tfm);
+      all.grow(bounds);
+      if (element_bounds) {
+        (*element_bounds)[level].push_back(bounds);
+      }
+    }
+    child = all;
+  }
+  return child;
 }
 
 void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
@@ -364,10 +403,12 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   vector<Transform> transforms;
   vector<float> colors;
   object_instance[0] = {-1, 0, 0, 0};
+  vector<Transform> inverse_transforms;
   for (Object *object : scene->objects) {
     KernelObjectInstance &placed = object_instance[object->index];
     placed = {-1, 0, 0, 0};
     const InstanceArray *root = object->instance_root;
+    object->instance_levels_offset = root ? int(levels.size()) : -1;
     if (!root) {
       continue;
     }
@@ -391,6 +432,11 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
       level.transform_offset = uint(transforms.size());
       level.color_offset = -1;
       transforms.insert(transforms.end(), array->steps[0].begin(), array->steps[0].end());
+      /* Cycles' own BVH enters each element through its inverse, the innermost into the geometry's space. */
+      for (const Transform &tfm : array->steps[0]) {
+        inverse_transforms.push_back(
+            transform_inverse(array->object ? tfm * object->get_tfm() : tfm));
+      }
       if (!array->colors.empty() && !keep_color) {
         level.color_offset = int(colors.size());
         for (const float3 &color : array->colors) {
@@ -415,6 +461,10 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   std::copy(transforms.begin(), transforms.end(), ktransforms);
   float *kcolors = dscene->instance_colors.alloc(std::max(colors.size(), size_t(1)));
   std::copy(colors.begin(), colors.end(), kcolors);
+  Transform *kinverse = dscene->instance_inverse_transforms.alloc(
+      std::max(inverse_transforms.size(), size_t(1)));
+  std::copy(inverse_transforms.begin(), inverse_transforms.end(), kinverse);
+  dscene->instance_inverse_transforms.copy_to_device();
   dscene->instance_levels.copy_to_device();
   dscene->instance_transforms.copy_to_device();
   dscene->instance_colors.copy_to_device();

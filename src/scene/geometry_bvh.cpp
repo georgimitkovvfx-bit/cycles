@@ -179,6 +179,13 @@ void GeometryManager::device_update_bvh(Device *device,
     dscene->prim_time.steal_data(pack.prim_time);
     dscene->prim_time.copy_to_device();
   }
+  /* Nested objects' level roots (ADR 0082 › E3); never empty, the kernel's array must exist. */
+  if (pack.instance_bvh_roots.size() == 0) {
+    pack.instance_bvh_roots.resize(1);
+    pack.instance_bvh_roots[0] = 0;
+  }
+  dscene->instance_bvh_roots.steal_data(pack.instance_bvh_roots);
+  dscene->instance_bvh_roots.copy_to_device();
 
   dscene->data.bvh.root = pack.root_index;
   dscene->data.bvh.use_bvh_steps = (scene->params.num_bvh_time_steps != 0);

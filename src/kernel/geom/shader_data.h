@@ -34,7 +34,10 @@ ccl_device void shader_setup_object_transforms(KernelGlobals kg,
   if (sd->object_flag & SD_OBJECT_NESTED) {
     sd->ob_tfm_motion = object_instance_transform(kg, sd->object, sd->instance);
     sd->ob_itfm_motion = transform_inverse(sd->ob_tfm_motion);
-    if (transform_negative_scale(sd->ob_tfm_motion)) {
+    const Transform &tfm = sd->ob_tfm_motion; /* the sign of its determinant (as transform_negative_scale) */
+    if (dot(cross(make_float3(tfm.x.x, tfm.y.x, tfm.z.x), make_float3(tfm.x.y, tfm.y.y, tfm.z.y)),
+            make_float3(tfm.x.z, tfm.y.z, tfm.z.z)) < 0.0f)
+    {
       sd->object_flag |= SD_OBJECT_NEGATIVE_SCALE;
     }
     else {
