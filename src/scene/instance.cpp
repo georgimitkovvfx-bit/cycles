@@ -321,10 +321,9 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
   /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
-   * the first version flattens: deforming geometry, and prototypes whose shading keys on one object index or
-   * transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking). Per-element attributes
+   * the first version flattens: prototypes whose shading keys on one object index or transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking). Per-element attributes
    * and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE); moving levels and a moving prototype are
-   * interpolated at the ray's time. */
+   * interpolated at the ray's time; a deforming prototype's motion is its geometry's, shared by its placements. */
 #if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
   const int max_levels = std::min(RTC_MAX_INSTANCE_LEVEL_COUNT, BVH_MAX_INSTANCE_LEVELS);
 #else
@@ -342,8 +341,7 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
     array = array->object ? nullptr : array->group->arrays[0];
   }
   const Geometry *geom = prototype->get_geometry();
-  if (geom->is_volume() || geom->is_light() ||
-      geom->has_motion_blur() || prototype->get_is_bake_target() ||
+  if (geom->is_volume() || geom->is_light() || prototype->get_is_bake_target() ||
       prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
       prototype->has_shadow_linking() || prototype->usable_as_light())
   {
