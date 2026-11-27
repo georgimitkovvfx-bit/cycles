@@ -154,7 +154,7 @@ ccl_device_forceinline bool bvh_shadow_all_anyhit_filter(
 #endif
 
   if constexpr ((perform_intersection_tests & ISECT_TEST_SELF_SHADOW) != 0) {
-    if (intersection_skip_self_shadow(ray_self, isect.object, isect.prim)) {
+    if (intersection_skip_self_shadow(ray_self, isect.object, isect.prim, isect.instance)) {
       return true;
     }
   }
@@ -193,7 +193,7 @@ ccl_device_forceinline bool bvh_shadow_all_anyhit_filter(
   if constexpr ((enabled_primitive_types & (PRIMITIVE_ALL & ~PRIMITIVE_CURVE)) != 0) {
     if ((isect.type & PRIMITIVE_CURVE) == 0) {
       if (intersection_skip_shadow_already_recoded(
-              state, isect.object, isect.prim, num_recorded_hits))
+              state, isect.object, isect.prim, isect.instance, num_recorded_hits))
       {
         return true;
       }
@@ -281,7 +281,8 @@ ccl_device_forceinline bool bvh_volume_anyhit_triangle_filter(
     const int object,
     const int prim,
     const ccl_ray_data RaySelfPrimitives &ccl_restrict ray_self,
-    const uint ray_visibility)
+    const uint ray_visibility,
+    const int instance = -1)
 {
 #ifdef __VISIBILITY_FLAG__
   if constexpr (do_visibility_check) {
@@ -295,7 +296,7 @@ ccl_device_forceinline bool bvh_volume_anyhit_triangle_filter(
     return true;
   }
 
-  if (intersection_skip_self(ray_self, object, prim)) {
+  if (intersection_skip_self(ray_self, object, prim, instance)) {
     return true;
   }
 

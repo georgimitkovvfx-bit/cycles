@@ -1205,7 +1205,7 @@ ccl_device_noinline void svm_node_closure_volume(
   }
 
   float density = stack_load(stack, node.density);
-  density = mix_weight * fmaxf(density, 0.0f) * object_volume_density(kg, sd->object);
+  density = mix_weight * fmaxf(density, 0.0f) * object_volume_density(kg, sd);
 
   /* Compute scattering coefficient. */
   Spectrum weight = closure_weight;
@@ -1249,7 +1249,7 @@ ccl_device_noinline void svm_node_volume_coefficients(
   }
 
   /* Compute scattering coefficient. */
-  const float weight = mix_weight * object_volume_density(kg, sd->object);
+  const float weight = mix_weight * object_volume_density(kg, sd);
 
   /* Add closure for volume scattering. */
   if (!is_zero(scatter_coeffs) && CLOSURE_IS_VOLUME_SCATTER(node.closure_type)) {
@@ -1298,7 +1298,7 @@ ccl_device_noinline void svm_node_principled_volume(
   }
 
   /* Compute density. */
-  const float weight = mix_weight * object_volume_density(kg, sd->object);
+  const float weight = mix_weight * object_volume_density(kg, sd);
   float primitive_density = 1.0f;
   float density = stack_load(stack, node.density);
   density = weight * fmaxf(density, 0.0f);
@@ -1408,7 +1408,7 @@ ccl_device_noinline void svm_node_closure_emission(
       /* Don't need emission for shadows and extinction. */
       return;
     }
-    weight *= object_volume_density(kg, sd->object);
+    weight *= object_volume_density(kg, sd);
   }
 
   emission_setup(sd, weight);

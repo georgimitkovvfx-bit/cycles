@@ -32,6 +32,8 @@ ccl_device void integrator_volume_stack_update_for_subsurface(KernelGlobals kg,
   volume_ray.tmin = 0.0f;
   volume_ray.self.object = INTEGRATOR_STATE(state, isect, object);
   volume_ray.self.prim = INTEGRATOR_STATE(state, isect, prim);
+  volume_ray.self.instance = INTEGRATOR_STATE(state, isect, instance);
+  volume_ray.self.light_instance = -1;
   volume_ray.self.light_object = OBJECT_NONE;
   volume_ray.self.light_prim = PRIM_NONE;
   /* Store to avoid global fetches on every intersection step. */
@@ -52,7 +54,7 @@ ccl_device void integrator_volume_stack_update_for_subsurface(KernelGlobals kg,
 
     for (uint hit = 0; hit < num_hits; ++hit, ++isect) {
       /* Ignore self, SSS itself already enters and exits the object. */
-      if (isect->object == volume_ray.self.object) {
+      if (isect->object == volume_ray.self.object && isect->instance == volume_ray.self.instance) {
         continue;
       }
       shader_setup_from_ray(kg, stack_sd, &volume_ray, isect);
@@ -66,7 +68,7 @@ ccl_device void integrator_volume_stack_update_for_subsurface(KernelGlobals kg,
          scene_intersect_volume(kg, &volume_ray, &isect, visibility))
   {
     /* Ignore self, SSS itself already enters and exits the object. */
-    if (isect.object != volume_ray.self.object) {
+    if (isect.object != volume_ray.self.object || isect.instance != volume_ray.self.instance) {
       shader_setup_from_ray(kg, stack_sd, &volume_ray, &isect);
       volume_stack_enter_exit<false>(kg, state, stack_sd);
     }
@@ -74,6 +76,7 @@ ccl_device void integrator_volume_stack_update_for_subsurface(KernelGlobals kg,
     volume_ray.tmin = intersection_t_offset(isect.t);
     volume_ray.self.object = isect.object;
     volume_ray.self.prim = isect.prim;
+    volume_ray.self.instance = isect.instance;
     ++step;
   }
 #  endif
@@ -96,6 +99,8 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
   volume_ray.tmax = FLT_MAX;
   volume_ray.self.object = OBJECT_NONE;
   volume_ray.self.prim = PRIM_NONE;
+  volume_ray.self.instance = -1;
+  volume_ray.self.light_instance = -1;
   volume_ray.self.light_object = OBJECT_NONE;
   volume_ray.self.light_prim = PRIM_NONE;
 
@@ -114,6 +119,7 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
           state, volume_stack, stack_index, object) = kernel_data.background.object_index;
       INTEGRATOR_STATE_ARRAY_WRITE(
           state, volume_stack, stack_index, shader) = kernel_data.background.volume_shader;
+      INTEGRATOR_STATE_ARRAY_WRITE(state, volume_stack, stack_index, instance) = -1;
       stack_index++;
     }
   }
@@ -127,6 +133,7 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
       kg, &volume_ray, hits, 2 * volume_stack_size, visibility);
   if (num_hits > 0) {
     int enclosed_volumes[MAX_VOLUME_STACK_SIZE];
+  int enclosed_instances[MAX_VOLUME_STACK_SIZE];
     Intersection *isect = hits;
 
     qsort(hits, num_hits, sizeof(Intersection), intersections_compare);
@@ -139,20 +146,23 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
           /* If ray exited the volume and never entered to that volume
            * it means that camera is inside such a volume.
            */
-          if (enclosed_volumes[i] == stack_sd->object) {
+          if (enclosed_volumes[i] == stack_sd->object &&
+            enclosed_instances[i] == volume_stack_instance(stack_sd))
+        {
             need_add = false;
           }
         }
         for (int i = 0; i < stack_index && need_add; ++i) {
           /* Don't add intersections twice. */
           const VolumeStack entry = integrator_state_read_volume_stack(state, i);
-          if (entry.object == stack_sd->object) {
+          if (entry.object == stack_sd->object && entry.instance == volume_stack_instance(stack_sd)) {
             need_add = false;
             break;
           }
         }
         if (need_add && stack_index < volume_stack_size - 1) {
-          const VolumeStack new_entry = {stack_sd->object, stack_sd->shader};
+          const VolumeStack new_entry = {
+              stack_sd->object, stack_sd->shader, volume_stack_instance(stack_sd)};
           integrator_state_write_volume_stack(state, stack_index, new_entry);
           ++stack_index;
         }
@@ -161,6 +171,7 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
         /* If ray from camera enters the volume, this volume shouldn't
          * be added to the stack on exit.
          */
+        enclosed_instances[enclosed_index] = volume_stack_instance(stack_sd);
         enclosed_volumes[enclosed_index++] = stack_sd->object;
       }
     }
@@ -168,6 +179,7 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
 #  else
   /* CUDA does not support definition of a variable size arrays, so use the maximum possible. */
   int enclosed_volumes[MAX_VOLUME_STACK_SIZE];
+  int enclosed_instances[MAX_VOLUME_STACK_SIZE];
   int step = 0;
 
   while (stack_index < volume_stack_size - 1 && enclosed_index < MAX_VOLUME_STACK_SIZE - 1 &&
@@ -188,20 +200,23 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
         /* If ray exited the volume and never entered to that volume
          * it means that camera is inside such a volume.
          */
-        if (enclosed_volumes[i] == stack_sd->object) {
+        if (enclosed_volumes[i] == stack_sd->object &&
+            enclosed_instances[i] == volume_stack_instance(stack_sd))
+        {
           need_add = false;
         }
       }
       for (int i = 0; i < stack_index && need_add; ++i) {
         /* Don't add intersections twice. */
         VolumeStack entry = integrator_state_read_volume_stack(state, i);
-        if (entry.object == stack_sd->object) {
+        if (entry.object == stack_sd->object && entry.instance == volume_stack_instance(stack_sd)) {
           need_add = false;
           break;
         }
       }
       if (need_add) {
-        const VolumeStack new_entry = {stack_sd->object, stack_sd->shader};
+        const VolumeStack new_entry = {
+              stack_sd->object, stack_sd->shader, volume_stack_instance(stack_sd)};
         integrator_state_write_volume_stack(state, stack_index, new_entry);
         ++stack_index;
       }
@@ -210,6 +225,7 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
       /* If ray from camera enters the volume, this volume shouldn't
        * be added to the stack on exit.
        */
+      enclosed_instances[enclosed_index] = volume_stack_instance(stack_sd);
       enclosed_volumes[enclosed_index++] = stack_sd->object;
     }
 
@@ -217,12 +233,13 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
     volume_ray.tmin = intersection_t_offset(isect.t);
     volume_ray.self.object = isect.object;
     volume_ray.self.prim = isect.prim;
+    volume_ray.self.instance = isect.instance;
     ++step;
   }
 #  endif
 
   /* Write terminator. */
-  const VolumeStack new_entry = {OBJECT_NONE, SHADER_NONE};
+  const VolumeStack new_entry = {OBJECT_NONE, SHADER_NONE, -1};
   integrator_state_write_volume_stack(state, stack_index, new_entry);
 #endif
 }

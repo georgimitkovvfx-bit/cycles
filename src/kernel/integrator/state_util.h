@@ -204,7 +204,8 @@ ccl_device_forceinline VolumeStack integrator_state_read_volume_stack(ConstInteg
                                                                       const int i)
 {
   VolumeStack entry = {INTEGRATOR_STATE_ARRAY(state, volume_stack, i, object),
-                       INTEGRATOR_STATE_ARRAY(state, volume_stack, i, shader)};
+                       INTEGRATOR_STATE_ARRAY(state, volume_stack, i, shader),
+                       INTEGRATOR_STATE_ARRAY(state, volume_stack, i, instance)};
   return entry;
 }
 
@@ -214,6 +215,7 @@ ccl_device_forceinline void integrator_state_write_volume_stack(IntegratorState 
 {
   INTEGRATOR_STATE_ARRAY_WRITE(state, volume_stack, i, object) = entry.object;
   INTEGRATOR_STATE_ARRAY_WRITE(state, volume_stack, i, shader) = entry.shader;
+  INTEGRATOR_STATE_ARRAY_WRITE(state, volume_stack, i, instance) = entry.instance;
 }
 
 ccl_device_forceinline bool integrator_state_volume_stack_is_empty(KernelGlobals kg,
@@ -236,6 +238,8 @@ ccl_device_forceinline void integrator_state_copy_volume_stack_to_shadow(
       INTEGRATOR_STATE_ARRAY_WRITE(shadow_state, shadow_volume_stack, index, object) =
           INTEGRATOR_STATE_ARRAY(state, volume_stack, index, object);
       INTEGRATOR_STATE_ARRAY_WRITE(shadow_state, shadow_volume_stack, index, shader) = shader;
+      INTEGRATOR_STATE_ARRAY_WRITE(shadow_state, shadow_volume_stack, index, instance) =
+          INTEGRATOR_STATE_ARRAY(state, volume_stack, index, instance);
 
       ++index;
     } while (shader != SHADER_NONE);
@@ -255,6 +259,8 @@ ccl_device_forceinline void integrator_state_copy_volume_stack(KernelGlobals kg,
       INTEGRATOR_STATE_ARRAY_WRITE(to_state, volume_stack, index, object) = INTEGRATOR_STATE_ARRAY(
           state, volume_stack, index, object);
       INTEGRATOR_STATE_ARRAY_WRITE(to_state, volume_stack, index, shader) = shader;
+      INTEGRATOR_STATE_ARRAY_WRITE(to_state, volume_stack, index, instance) =
+          INTEGRATOR_STATE_ARRAY(state, volume_stack, index, instance);
 
       ++index;
     } while (shader != SHADER_NONE);
@@ -265,7 +271,8 @@ ccl_device_forceinline VolumeStack
 integrator_state_read_shadow_volume_stack(ConstIntegratorShadowState state, const int i)
 {
   VolumeStack entry = {INTEGRATOR_STATE_ARRAY(state, shadow_volume_stack, i, object),
-                       INTEGRATOR_STATE_ARRAY(state, shadow_volume_stack, i, shader)};
+                       INTEGRATOR_STATE_ARRAY(state, shadow_volume_stack, i, shader),
+                       INTEGRATOR_STATE_ARRAY(state, shadow_volume_stack, i, instance)};
   return entry;
 }
 
@@ -283,6 +290,7 @@ ccl_device_forceinline void integrator_state_write_shadow_volume_stack(Integrato
 {
   INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_volume_stack, i, object) = entry.object;
   INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_volume_stack, i, shader) = entry.shader;
+  INTEGRATOR_STATE_ARRAY_WRITE(state, shadow_volume_stack, i, instance) = entry.instance;
 }
 
 #endif /* __VOLUME__ */

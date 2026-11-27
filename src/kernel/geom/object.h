@@ -481,6 +481,42 @@ ccl_device_inline float object_volume_density(KernelGlobals kg, const int object
   return 1.0f;
 }
 
+/* An object-space volume's density adjusts to its scale (the host's object_volume_density): a nested object's is
+ * negative, each placement's from its transform (USD Nodes ADR 0082). */
+ccl_device_inline float object_volume_density_of_transform(const Transform &tfm)
+{
+  const float3 unit = normalize(one_float3());
+  return 1.0f / len(transform_direction(&tfm, unit));
+}
+
+ccl_device_inline float object_volume_density(KernelGlobals kg,
+                                              const int object,
+                                              const int instance)
+{
+  const float density = object_volume_density(kg, object);
+#ifdef __INSTANCE_NESTING__
+  if (density < 0.0f) {
+    return object_volume_density_of_transform(
+        object_instance_transform(kg, object, uint(max(instance, 0)), 0.5f));
+  }
+#else
+  (void)instance;
+#endif
+  return density;
+}
+
+/* The same in shading: the placement's transform is the cached one (SD_OBJECT_NESTED). */
+ccl_device_inline float object_volume_density(KernelGlobals kg, const ccl_private ShaderData *sd)
+{
+  const float density = object_volume_density(kg, sd->object);
+#ifdef __INSTANCE_NESTING__
+  if (density < 0.0f) {
+    return object_volume_density_of_transform(sd->ob_tfm_motion);
+  }
+#endif
+  return density;
+}
+
 /* Pass ID for shader */
 
 ccl_device int shader_pass_id(KernelGlobals kg, const ccl_private ShaderData *sd)

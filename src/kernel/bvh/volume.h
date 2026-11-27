@@ -50,12 +50,17 @@ ccl_device_inline
   float3 idir = bvh_inverse_direction(dir);
   const float tmin = ray->tmin;
   int object = OBJECT_NONE;
+#ifdef __INSTANCE_NESTING__
+  BVHNestedState nested;
+  bvh_nested_init(nested);
+#endif
 
   isect->t = ray->tmax;
   isect->u = 0.0f;
   isect->v = 0.0f;
   isect->prim = PRIM_NONE;
   isect->object = OBJECT_NONE;
+  isect->instance = -1;
 
   /* traversal loop */
   do {
@@ -133,13 +138,16 @@ ccl_device_inline
                                             object;
                 const int prim = kernel_data_fetch(prim_index, prim_addr);
                 if (bvh_volume_anyhit_triangle_filter<false>(
-                        kg, prim_object, prim, ray->self, visibility))
+                        kg, prim_object, prim, ray->self, visibility, BVH_NESTED_INSTANCE(nested)))
                 {
                   continue;
                 }
 
-                triangle_intersect(
-                    kg, isect, P, dir, tmin, isect->t, visibility, prim_object, prim, prim_addr);
+                if (triangle_intersect(
+                        kg, isect, P, dir, tmin, isect->t, visibility, prim_object, prim, prim_addr))
+                {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
+                }
               }
               break;
             }
@@ -155,21 +163,24 @@ ccl_device_inline
                                             object;
                 const int prim = kernel_data_fetch(prim_index, prim_addr);
                 if (bvh_volume_anyhit_triangle_filter<false>(
-                        kg, prim_object, prim, ray->self, visibility))
+                        kg, prim_object, prim, ray->self, visibility, BVH_NESTED_INSTANCE(nested)))
                 {
                   continue;
                 }
-                motion_triangle_intersect(kg,
-                                          isect,
-                                          P,
-                                          dir,
-                                          tmin,
-                                          isect->t,
-                                          ray->time,
-                                          visibility,
-                                          prim_object,
-                                          prim,
-                                          prim_addr);
+                if (motion_triangle_intersect(kg,
+                                              isect,
+                                              P,
+                                              dir,
+                                              tmin,
+                                              isect->t,
+                                              ray->time,
+                                              visibility,
+                                              prim_object,
+                                              prim,
+                                              prim_addr))
+                {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
+                }
               }
               break;
             }
@@ -180,10 +191,29 @@ ccl_device_inline
           }
         }
         else {
+#ifdef __INSTANCE_NESTING__
+          /* Inside a nested object an instance leaf is an element of its level (ADR 0082). */
+          if (nested.depth > 0) {
+            ++stack_ptr;
+            kernel_assert(stack_ptr < BVH_STACK_SIZE);
+            traversal_stack[stack_ptr] = ENTRYPOINT_SENTINEL;
+            node_addr = bvh_nested_push_element(
+                kg, nested, -prim_addr - 1, ray->time, &P, &dir, &idir);
+            continue;
+          }
+#endif
           /* instance push */
           object = kernel_data_fetch(prim_object, -prim_addr - 1);
           uint object_flag = kernel_data_fetch(object_flag, object);
           if (object_flag & SD_OBJECT_HAS_VOLUME) {
+#ifdef __INSTANCE_NESTING__
+            if (bvh_nested_enter(kg, nested, object, &node_addr)) {
+              ++stack_ptr;
+              kernel_assert(stack_ptr < BVH_STACK_SIZE);
+              traversal_stack[stack_ptr] = ENTRYPOINT_SENTINEL;
+              continue;
+            }
+#endif
 #if BVH_FEATURE(BVH_MOTION)
             bvh_instance_motion_push(kg, object, ray, &P, &dir, &idir);
 #else
@@ -206,8 +236,17 @@ ccl_device_inline
       }
     } while (node_addr != ENTRYPOINT_SENTINEL);
 
-    if (stack_ptr >= 0) {
+    /* A loop: leaving a nested object's level can meet the sentinel of the level around it. */
+    while (node_addr == ENTRYPOINT_SENTINEL && stack_ptr >= 0) {
       kernel_assert(object != OBJECT_NONE);
+
+#ifdef __INSTANCE_NESTING__
+      if (bvh_nested_pop(nested, &P, &dir, &idir)) {
+        node_addr = traversal_stack[stack_ptr];
+        --stack_ptr;
+        continue;
+      }
+#endif
 
       /* instance pop */
       bvh_instance_pop(ray, &P, &dir, &idir);

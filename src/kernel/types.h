@@ -1239,6 +1239,8 @@ struct ShaderVolumePhases {
 struct VolumeStack {
   int object;
   int shader;
+  /* Its placement, when the object is nested (SD_OBJECT_NESTED, USD Nodes ADR 0082); -1 otherwise. */
+  int instance;
 };
 #endif
 

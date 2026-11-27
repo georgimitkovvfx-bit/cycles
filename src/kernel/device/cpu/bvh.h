@@ -626,7 +626,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_volume_all_func_impl(
     kernel_embree_convert_hit(kg, ray, hit, &current_isect);
 
     if (bvh_volume_anyhit_triangle_filter<false>(
-            kg, current_isect.object, current_isect.prim, cray->self, 0))
+            kg, current_isect.object, current_isect.prim, cray->self, 0, current_isect.instance))
     {
       *args->valid = 0;
       return;

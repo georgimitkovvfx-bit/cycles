@@ -212,6 +212,7 @@ ccl_device_intersect bool scene_intersect(KernelGlobals kg,
   }
 
   isect->object = intersection.instance_id;
+  isect->instance = -1; /* no nested instancing (USD Nodes ADR 0082) */
   isect->t = intersection.distance;
   if (intersection.type == metal::raytracing::intersection_type::triangle) {
     isect->prim = intersection.primitive_id + intersection.user_instance_id;
@@ -539,6 +540,7 @@ ccl_device_intersect bool scene_intersect_volume(KernelGlobals kg,
     isect->u = intersection.triangle_barycentric_coord.x;
     isect->v = intersection.triangle_barycentric_coord.y;
     isect->object = intersection.instance_id;
+    isect->instance = -1; /* no nested instancing (USD Nodes ADR 0082) */
     isect->t = intersection.distance;
     return true;
   }

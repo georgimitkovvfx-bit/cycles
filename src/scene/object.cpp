@@ -726,7 +726,11 @@ void ObjectManager::device_update_object_transform(UpdateObjectTransformState *s
   kobject.num_tfm_steps = ob->motion.size();
   kobject.numverts = object_num_motion_verts(geom);
   if (geom->is_mesh() || geom->is_volume()) {
-    kobject.mesh_volume.volume_density = object_volume_density(tfm, geom);
+    /* A nested object's placements each have a scale of their own: the kernel's from their transforms. */
+    kobject.mesh_volume.volume_density = (ob->instance_root && geom->is_volume() &&
+                                          static_cast<Volume *>(geom)->get_object_space()) ?
+                                             -1.0f :
+                                             object_volume_density(tfm, geom);
     kobject.mesh_volume.num_prims = static_cast<Mesh *>(geom)->num_triangles();
     kobject.mesh_volume.normal_offset = ATTR_STD_NOT_FOUND;
   }
