@@ -8,6 +8,7 @@
 #include "scene/film.h"
 #include "scene/integrator.h"
 #include "scene/light.h"
+#include "scene/instance.h"
 #include "scene/light_tree.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
@@ -756,6 +757,8 @@ struct LightTreeFlatten {
   const uint *object_lookup_offset;
   uint *light_array;
   uint *triangle_array;
+  /* Emissive nested placements' emitters, at their object's offset (Object::instance_light_offset). */
+  uint *instance_light_array;
 
   /* Map from instance node to its node index. */
   std::unordered_map<LightTreeNode *, int> instances;
@@ -812,6 +815,7 @@ static void light_tree_leaf_emitters_copy_and_flatten(LightTreeFlatten &flatten,
     kemitter.energy = emitter.measure.energy;
     kemitter.theta_o = emitter.measure.bcone.theta_o;
     kemitter.theta_e = emitter.measure.bcone.theta_e;
+    kemitter.instance = -1;
 
     if (emitter.is_triangle()) {
       /* Triangle. */
@@ -840,7 +844,14 @@ static void light_tree_leaf_emitters_copy_and_flatten(LightTreeFlatten &flatten,
       kemitter.mesh.object_id = emitter.object_id;
       kemitter.visibility_flag = 0;
       kemitter.object_id = OBJECT_NONE;
-      flatten.light_array[emitter.object_id] = emitter_index;
+      kemitter.instance = emitter.instance;
+      if (emitter.instance >= 0) {
+        const Object *object = flatten.scene->objects[emitter.object_id];
+        flatten.instance_light_array[object->instance_light_offset + emitter.instance] = emitter_index;
+      }
+      else {
+        flatten.light_array[emitter.object_id] = emitter_index;
+      }
 
       /* Create instance node. One instance node will be the same as the
        * reference node, and for that it will recursively build the subtree. */
@@ -1084,6 +1095,17 @@ void LightManager::device_update_tree(Device * /*unused*/,
   /* Lights not in the tree have no entry: keep their lookups deterministic. */
   std::fill_n(flatten.light_array, scene->objects.size(), 0u);
   flatten.triangle_array = dscene->triangle_to_tree.alloc(light_tree.num_triangles);
+  size_t num_instance_lights = 0;
+  for (const Object *object : scene->objects) {
+    if (object->instance_light_offset >= 0) {
+      num_instance_lights = std::max(num_instance_lights,
+                                     size_t(object->instance_light_offset) +
+                                         InstanceExpansion::num_placements(object));
+    }
+  }
+  flatten.instance_light_array = dscene->instance_light_to_tree.alloc(
+      std::max(num_instance_lights, size_t(1)));
+  std::fill_n(flatten.instance_light_array, std::max(num_instance_lights, size_t(1)), 0u);
 
   /* Allocate emitters */
   const size_t num_emitters = light_tree.num_emitters();
@@ -1151,6 +1173,7 @@ void LightManager::device_update_tree(Device * /*unused*/,
   dscene->light_tree_nodes.copy_to_device();
   dscene->light_tree_emitters.copy_to_device();
   dscene->light_to_tree.copy_to_device();
+  dscene->instance_light_to_tree.copy_to_device();
   dscene->object_lookup_offset.copy_to_device();
   dscene->triangle_to_tree.copy_to_device();
 }
@@ -1517,6 +1540,7 @@ void LightManager::device_free(Device * /*unused*/,
   dscene->light_tree_nodes.free();
   dscene->light_tree_emitters.free();
   dscene->light_to_tree.free();
+  dscene->instance_light_to_tree.free();
   dscene->object_lookup_offset.free();
   dscene->triangle_to_tree.free();
 

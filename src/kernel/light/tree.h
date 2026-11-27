@@ -90,15 +90,32 @@ ccl_device_inline bool is_leaf(const ccl_global KernelLightTreeNode *knode)
 template<bool in_volume_segment>
 ccl_device void light_tree_to_local_space(KernelGlobals kg,
                                           const int object_id,
+                                          const int instance,
                                           ccl_private float3 &P,
                                           ccl_private float3 &N_or_D,
                                           ccl_private float &t)
 {
   const uint object_flag = kernel_data_fetch(object_flag, object_id);
   if (!(object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
+#ifdef __INSTANCE_NESTING__
+    /* A nested object's placement (ADR 0082): its levels composed. */
+    const Transform placed = (object_flag & SD_OBJECT_NESTED) ?
+                                 object_instance_transform(kg, object_id, uint(instance), 0.5f) :
+                                 Transform();
+#else
+    (void)instance;
+#endif
 #ifdef __OBJECT_MOTION__
     Transform itfm;
-    object_fetch_transform_motion_test(kg, object_id, 0.5f, &itfm);
+#  ifdef __INSTANCE_NESTING__
+    if (object_flag & SD_OBJECT_NESTED) {
+      itfm = transform_inverse(placed);
+    }
+    else
+#  endif
+    {
+      object_fetch_transform_motion_test(kg, object_id, 0.5f, &itfm);
+    }
 #else
     const Transform itfm = object_fetch_transform(kg, object_id, OBJECT_INVERSE_TRANSFORM);
 #endif
@@ -113,7 +130,13 @@ ccl_device void light_tree_to_local_space(KernelGlobals kg,
     }
     else if (!is_zero(N_or_D)) {
       /* Transform normal. */
+#ifdef __INSTANCE_NESTING__
+      const Transform tfm = (object_flag & SD_OBJECT_NESTED) ?
+                                placed :
+                                object_fetch_transform(kg, object_id, OBJECT_TRANSFORM);
+#else
       const Transform tfm = object_fetch_transform(kg, object_id, OBJECT_TRANSFORM);
+#endif
       N_or_D = normalize(transform_direction_transposed(&tfm, N_or_D));
     }
   }
@@ -672,7 +695,8 @@ ccl_device int light_tree_cluster_select_emitter(KernelGlobals kg,
 
   if (is_mesh(kemitter)) {
     /* Transform ray from world to local space. */
-    light_tree_to_local_space<in_volume_segment>(kg, kemitter->mesh.object_id, P, N_or_D, t);
+    light_tree_to_local_space<in_volume_segment>(
+        kg, kemitter->mesh.object_id, kemitter->instance, P, N_or_D, t);
 
     *node_index = kemitter->mesh.node_id;
     const ccl_global KernelLightTreeNode *knode = &kernel_data_fetch(light_tree_nodes,
@@ -759,6 +783,7 @@ ccl_device bool light_tree_sample(KernelGlobals kg,
   int selected_emitter = -1;
   int node_index = light_tree_root_node_index(kg, object_receiver);
   float rand_selection = rand;
+  ls->instance = -1; /* a nested placement's mesh light sets it */
 
   float3 local_P = P;
 
@@ -779,8 +804,9 @@ ccl_device bool light_tree_sample(KernelGlobals kg,
         break;
       }
 
-      /* Continue with the picked mesh light. */
+      /* Continue with the picked mesh light (a nested object's: its placement). */
       ls->object = kernel_data_fetch(light_tree_emitters, selected_emitter).mesh.object_id;
+      ls->instance = kernel_data_fetch(light_tree_emitters, selected_emitter).instance;
       continue;
     }
 
@@ -817,6 +843,7 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
                                 const float dt,
                                 const uint32_t path_flag,
                                 const int object_emitter,
+                                const int instance_emitter,
                                 const uint index_emitter,
                                 const int object_receiver)
 {
@@ -831,7 +858,17 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
   if (is_triangle(kemitter)) {
     /* If the target is an emissive triangle, first traverse the top level tree to find the mesh
      * light emitter, then traverse the subtree. */
+#ifdef __INSTANCE_NESTING__
+    /* A nested object's placement has an emitter of its own. */
+    const int light_offset = (instance_emitter >= 0) ?
+                                 kernel_data_fetch(object_instance, object_emitter).light_offset :
+                                 -1;
+    target_emitter = (light_offset >= 0) ?
+                         kernel_data_fetch(instance_light_to_tree, light_offset + instance_emitter) :
+                         kernel_data_fetch(light_to_tree, object_emitter);
+#else
     target_emitter = kernel_data_fetch(light_to_tree, object_emitter);
+#endif
     const ccl_global KernelLightTreeEmitter *kmesh = &kernel_data_fetch(light_tree_emitters,
                                                                         target_emitter);
     subtree_root_index = kmesh->mesh.node_id;
@@ -890,7 +927,8 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
       if (subtree_root_index != -1) {
         /* Arrived at the mesh light. Continue with the subtree. */
         float unused;
-        light_tree_to_local_space<in_volume_segment>(kg, object_emitter, P, N, unused);
+        light_tree_to_local_space<in_volume_segment>(
+            kg, object_emitter, instance_emitter, P, N, unused);
 
         node_index = subtree_root_index;
         subtree_root_index = -1;
@@ -934,6 +972,7 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
                                 const PathRayVisibility path_visibility,
                                 const uint32_t path_flag,
                                 const int emitter_object,
+                                const int emitter_instance,
                                 const uint emitter_id,
                                 const int object_receiver)
 {
@@ -942,11 +981,11 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
     const float3 D = normalize(D_times_t);
     P = P - D_times_t;
     return light_tree_pdf<true>(
-        kg, P, D, dt, path_flag, emitter_object, emitter_id, object_receiver);
+        kg, P, D, dt, path_flag, emitter_object, emitter_instance, emitter_id, object_receiver);
   }
 
   return light_tree_pdf<false>(
-      kg, P, N, 0.0f, path_flag, emitter_object, emitter_id, object_receiver);
+      kg, P, N, 0.0f, path_flag, emitter_object, emitter_instance, emitter_id, object_receiver);
 }
 
 CCL_NAMESPACE_END

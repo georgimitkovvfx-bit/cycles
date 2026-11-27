@@ -54,6 +54,7 @@ class DeviceScene {
   device_vector<int> instance_bvh_roots;
   device_vector<KernelInstanceAttribute> instance_attributes;
   device_vector<float> instance_attribute_values;
+  device_vector<uint> instance_light_to_tree;
 
   /* cameras */
   device_vector<DecomposedTransform> camera_motion;

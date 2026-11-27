@@ -189,16 +189,24 @@ struct LightTreeEmitter {
   int prim_id;
   /* Object index. */
   int object_id;
+  /* A mesh emitter of a nested object's placement (USD Nodes ADR 0082): its flattened index and transform; -1 for
+   * other emitters. */
+  int instance = -1;
+  Transform tfm = transform_identity();
   float3 centroid;
   uint64_t light_set_membership;
 
   LightTreeMeasure measure;
 
   LightTreeEmitter(Object *object, const int object_id); /* Mesh emitter. */
+  /* Mesh emitter of a nested object's placement. */
+  LightTreeEmitter(Object *object, const int object_id, const int instance, const Transform &tfm);
+  /* With `need_transformation`, in world space: by `tfm` when given, else by the object's transform. */
   LightTreeEmitter(Scene *scene,
                    const int prim_id,
                    const int object_id,
-                   bool need_transformation = false);
+                   bool need_transformation = false,
+                   const Transform *tfm = nullptr);
 
   __forceinline bool is_mesh() const
   {

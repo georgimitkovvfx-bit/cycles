@@ -143,7 +143,8 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
 
     if (isect.type & PRIMITIVE_TRIANGLE) {
       /* Triangles. */
-      const float2 uv = triangle_light_uv(kg, isect.object, isect.prim, ray.time, ray.P, ray.D);
+      const float2 uv = triangle_light_uv(
+          kg, isect.object, isect.prim, isect.instance, ray.time, ray.P, ray.D);
       isect.u = uv.x;
       isect.v = uv.y;
     }

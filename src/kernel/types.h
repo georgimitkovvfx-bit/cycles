@@ -641,6 +641,7 @@ struct RaySelfPrimitives {
   int prim;         /* Primitive the ray is starting from */
   int object;       /* Instance prim is a part of */
   int instance;     /* Its placement, when the object is nested (SD_OBJECT_NESTED); unused otherwise */
+  int light_instance; /* The light's placement, when it is a nested emissive object; unused otherwise */
   int light_prim;   /* Light primitive */
   int light_object; /* Light object */
 };
@@ -1516,7 +1517,9 @@ struct KernelObjectInstance {
   int levels_offset; /* into instance_levels, -1 for an object that is not nested */
   int num_levels;
   uint name_hash;    /* hash of the geometry's name: random number of a placement */
-  int pad;
+  /* Its placements' light tree emitters (an emissive object): from here in instance_light_to_tree, by flattened
+   * index; -1 for others. */
+  int light_offset;
 };
 static_assert_align(KernelObjectInstance, 16);
 
@@ -1795,6 +1798,10 @@ struct KernelLightTreeEmitter {
 
   /* Bit trail from root node to leaf node containing emitter. */
   int bit_trail;
+
+  /* A mesh emitter of a nested object's placement (its flattened index), -1 otherwise. */
+  int instance;
+  int pad[3];
 };
 static_assert_align(KernelLightTreeEmitter, 16);
 

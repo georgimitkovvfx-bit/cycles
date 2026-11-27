@@ -298,6 +298,7 @@ ccl_device_inline void shadow_ray_setup(const ccl_private ShaderData *ccl_restri
   ray->self.prim = (skip_self) ? sd->prim : PRIM_NONE;
   ray->self.instance = sd->instance;
   ray->self.light_object = ls->object;
+  ray->self.light_instance = ls->instance;
   ray->self.light_prim = ls->prim;
 }
 
@@ -501,6 +502,7 @@ ccl_device_inline float light_sample_mis_weight_forward_surface(
                           path_visibility,
                           path_flag,
                           sd->object,
+                          sd->instance,
                           triangle,
                           light_link_receiver_forward(kg, state));
   }
@@ -541,6 +543,7 @@ ccl_device_inline float light_sample_mis_weight_forward_lamp(
                           path_visibility,
                           path_flag,
                           0,
+                          -1,
                           kernel_data_fetch(light_to_tree, object_id),
                           light_link_receiver_forward(kg, state));
   }
@@ -596,6 +599,7 @@ ccl_device_inline float light_sample_mis_weight_forward_background(
                           path_visibility,
                           path_flag,
                           0,
+                          -1,
                           light,
                           light_link_receiver_forward(kg, state));
   }

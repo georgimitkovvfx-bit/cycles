@@ -263,10 +263,12 @@ ccl_device_inline bool intersection_skip_self_shadow(const ccl_ray_data RaySelfP
                                                      const int prim,
                                                      const int instance)
 {
-  if (instance >= 0 && self.instance != instance) {
-    return (self.light_prim == prim) && (self.light_object == object);
+  if (instance < 0) {
+    return intersection_skip_self_shadow(self, object, prim);
   }
-  return intersection_skip_self_shadow(self, object, prim);
+  return ((self.prim == prim) && (self.object == object) && (self.instance == instance)) ||
+         ((self.light_prim == prim) && (self.light_object == object) &&
+          (self.light_instance == instance));
 }
 
 ccl_device_inline bool intersection_skip_self_local(const ccl_ray_data RaySelfPrimitives &self,

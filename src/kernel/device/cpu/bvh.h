@@ -180,12 +180,10 @@ ccl_device_inline bool kernel_embree_is_self_intersection(const KernelGlobals kg
   }
 
 #ifdef __INSTANCE_NESTING__
-  /* The same primitive of another placement of a nested object is not the ray's own surface. */
-  if (ray->self.object == object && ray->self.prim == prim &&
-      kernel_data_fetch(object_instance, object).num_levels > 0 &&
-      kernel_embree_get_hit_instance(kg, object, hit->instPrimID) != ray->self.instance)
-  {
-    return (ray->self.light_prim == prim) && (ray->self.light_object == object);
+  /* The same primitive of another placement of a nested object is neither the ray's own surface nor its light. */
+  if (kernel_data_fetch(object_instance, object).num_levels > 0) {
+    return intersection_skip_self_shadow(
+        ray->self, object, prim, kernel_embree_get_hit_instance(kg, object, hit->instPrimID));
   }
 #endif
   return intersection_skip_self_shadow(ray->self, object, prim);
