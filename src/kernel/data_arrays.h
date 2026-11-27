@@ -36,6 +36,9 @@ KERNEL_DATA_ARRAY(float, instance_colors)
  * root of the BVH inside its elements (the next level's, or the geometry's) (ADR 0082 › E3) */
 KERNEL_DATA_ARRAY(Transform, instance_inverse_transforms)
 KERNEL_DATA_ARRAY(int, instance_bvh_roots)
+/* per-placement attributes (ATTR_ELEMENT_INSTANCE) */
+KERNEL_DATA_ARRAY(KernelInstanceAttribute, instance_attributes)
+KERNEL_DATA_ARRAY(float, instance_attribute_values)
 
 /* cameras */
 KERNEL_DATA_ARRAY(DecomposedTransform, camera_motion)

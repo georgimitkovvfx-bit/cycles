@@ -51,6 +51,8 @@ class DeviceScene {
   device_vector<float> instance_colors;
   device_vector<Transform> instance_inverse_transforms;
   device_vector<int> instance_bvh_roots;
+  device_vector<KernelInstanceAttribute> instance_attributes;
+  device_vector<float> instance_attribute_values;
 
   /* cameras */
   device_vector<DecomposedTransform> camera_motion;

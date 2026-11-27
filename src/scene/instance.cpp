@@ -321,9 +321,9 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
   /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
-   * the first version flattens: motion on any level, per-element attributes, and prototypes whose shading keys on one
-   * object index or transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking, the
-   * instanceId attribute). */
+   * the first version flattens: motion on any level, and prototypes whose shading keys on one object index or
+   * transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking). Per-element attributes
+   * and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE). */
 #if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
   const int max_levels = std::min(RTC_MAX_INSTANCE_LEVEL_COUNT, BVH_MAX_INSTANCE_LEVELS);
 #else
@@ -335,16 +335,10 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   }
   int levels = 0;
   for (const InstanceArray *array = root; array;) {
-    if (++levels > max_levels || array->steps.size() != 1 || !array->attributes.empty()) {
+    if (++levels > max_levels || array->steps.size() != 1) {
       return false;
     }
     array = array->object ? nullptr : array->group->arrays[0];
-  }
-  static const ustring instance_id("instanceId");
-  for (const ParamValue &attribute : prototype->attributes) {
-    if (attribute.name() == instance_id) {
-      return false;
-    }
   }
   const Geometry *geom = prototype->get_geometry();
   if (!prototype->get_motion().empty() || geom->is_volume() || geom->is_light() ||
@@ -404,13 +398,45 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   vector<float> colors;
   object_instance[0] = {-1, 0, 0, 0};
   vector<Transform> inverse_transforms;
+  vector<KernelInstanceAttribute> attributes;
+  vector<float> attribute_values;
+  static const ustring instance_id("instanceId");
   for (Object *object : scene->objects) {
     KernelObjectInstance &placed = object_instance[object->index];
     placed = {-1, 0, 0, 0};
     const InstanceArray *root = object->instance_root;
     object->instance_levels_offset = root ? int(levels.size()) : -1;
+    object->instance_attribute_refs.clear();
     if (!root) {
       continue;
+    }
+
+    /* Per-placement attributes: each level's primvars (an inner level's wins, as when expanded), and the instanceId
+     * the prototype carries when shaders read it. */
+    vector<const InstanceArray *> chain;
+    for (const InstanceArray *array = root; array;
+         array = array->object ? nullptr : array->group->arrays[0])
+    {
+      chain.push_back(array);
+    }
+    for (int level = int(chain.size()) - 1; level >= 0; level--) {
+      for (const InstanceAttribute &attribute : chain[level]->attributes) {
+        const bool known = std::any_of(object->instance_attribute_refs.begin(),
+                                       object->instance_attribute_refs.end(),
+                                       [&](const auto &ref) { return ref.name == attribute.name; });
+        if (known || attribute.width < 1 || attribute.width > 4) {
+          continue;
+        }
+        object->instance_attribute_refs.push_back({attribute.name, int(attributes.size()), attribute.width});
+        attributes.push_back({level, attribute.width, int(attribute_values.size()), 0});
+        attribute_values.insert(attribute_values.end(), attribute.values.begin(), attribute.values.end());
+      }
+    }
+    for (const ParamValue &attribute : object->attributes) {
+      if (attribute.name() == instance_id) {
+        object->instance_attribute_refs.push_back({instance_id, int(attributes.size()), 1});
+        attributes.push_back({-1, 1, 0, 0});
+      }
     }
     placed.levels_offset = int(levels.size());
     placed.name_hash = hash_string(object->get_geometry()->name.c_str());
@@ -461,6 +487,14 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   std::copy(transforms.begin(), transforms.end(), ktransforms);
   float *kcolors = dscene->instance_colors.alloc(std::max(colors.size(), size_t(1)));
   std::copy(colors.begin(), colors.end(), kcolors);
+  KernelInstanceAttribute *kattributes = dscene->instance_attributes.alloc(
+      std::max(attributes.size(), size_t(1)));
+  std::copy(attributes.begin(), attributes.end(), kattributes);
+  dscene->instance_attributes.copy_to_device();
+  float *kattribute_values = dscene->instance_attribute_values.alloc(
+      std::max(attribute_values.size(), size_t(1)));
+  std::copy(attribute_values.begin(), attribute_values.end(), kattribute_values);
+  dscene->instance_attribute_values.copy_to_device();
   Transform *kinverse = dscene->instance_inverse_transforms.alloc(
       std::max(inverse_transforms.size(), size_t(1)));
   std::copy(inverse_transforms.begin(), inverse_transforms.end(), kinverse);

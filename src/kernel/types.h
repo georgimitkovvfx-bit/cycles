@@ -814,6 +814,9 @@ enum AttributeElement {
   ATTR_ELEMENT_IS_MOTION = (1 << 8),
   ATTR_ELEMENT_IS_NORMAL = (1 << 9),
   ATTR_ELEMENT_IS_BYTE = (1 << 10),
+  /* A nested object's per-placement attribute (USD Nodes ADR 0082): the offset is its entry in instance_attributes,
+   * the value its element's at its level, or the placement's flattened index (instanceId). */
+  ATTR_ELEMENT_INSTANCE = (1 << 11),
 
   /* Only these combinations are supported by the kernel and can be
    * created on geometry. */
@@ -1524,6 +1527,15 @@ struct KernelInstanceLevel {
   int color_offset;      /* into instance_colors (3 floats per element), -1 without */
 };
 static_assert_align(KernelInstanceLevel, 16);
+
+/* A per-placement attribute of a nested object (ATTR_ELEMENT_INSTANCE). */
+struct KernelInstanceAttribute {
+  int level;        /* its instance array level, outer first; -1: the flattened index (instanceId) */
+  int width;        /* floats per element, 1 to 4 */
+  int value_offset; /* into instance_attribute_values */
+  int pad;
+};
+static_assert_align(KernelInstanceAttribute, 16);
 
 struct KernelObject {
   Transform tfm;
