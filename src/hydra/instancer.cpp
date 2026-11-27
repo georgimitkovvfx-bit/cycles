@@ -232,7 +232,7 @@ static std::vector<HdCyclesInstancer::Primvar> ComposeNested(
   return inner;
 }
 
-std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeInstanceTransforms(
+std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeLocalInstanceTransforms(
     const SdfPath &prototypeId, const std::vector<float> &times, std::vector<Primvar> *primvars)
 {
   HdSceneDelegate *const sceneDelegate = GetDelegate();
@@ -297,21 +297,44 @@ std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeInstanceTransforms(
       }
       localPrimvars.push_back({pv.name, pv.width, std::move(values), std::move(elements)});
     }
+    *primvars = std::move(localPrimvars);
   }
+  return transforms;
+}
 
-  /* Recurse into the parent instancer. */
-  HdInstancedBySchema instancedBy = HdInstancedBySchema::GetFromParent(prim.dataSource);
-  SdfPath parentId;
-  if (auto pathsDs = instancedBy.GetPaths()) {
+SdfPath HdCyclesInstancer::GetParentInstancerId() const
+{
+  const HdSceneIndexPrim prim = GetPrim(GetDelegate(), GetId());
+  if (auto pathsDs = HdInstancedBySchema::GetFromParent(prim.dataSource).GetPaths()) {
     const VtArray<SdfPath> parentPaths = pathsDs->GetTypedValue(0.0f);
     if (!parentPaths.empty()) {
-      parentId = parentPaths.front();
+      return parentPaths.front();
     }
   }
-  if (parentId.IsEmpty()) {
-    parentId = GetParentId();
-  }
+  return GetParentId();
+}
 
+bool HdCyclesInstancer::HasInstanceSettings() const
+{
+  return std::any_of(
+      _primvars.begin(), _primvars.end(), [](const Primvar &pv) { return !pv.elements.empty(); });
+}
+
+std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeInstanceTransforms(
+    const SdfPath &prototypeId, const std::vector<float> &times, std::vector<Primvar> *primvars)
+{
+  HdSceneDelegate *const sceneDelegate = GetDelegate();
+  const SdfPath &id = GetId();
+  const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
+  HdInstancerTopologySchema topology = HdInstancerTopologySchema::GetFromParent(prim.dataSource);
+  const size_t numLocal = topology ? topology.ComputeInstanceIndicesForProto(prototypeId).size() : 0;
+
+  std::vector<Primvar> localPrimvars;
+  const std::vector<VtMatrix4dArray> transforms = ComputeLocalInstanceTransforms(
+      prototypeId, times, primvars ? &localPrimvars : nullptr);
+
+  /* Recurse into the parent instancer. */
+  const SdfPath parentId = GetParentInstancerId();
   if (!parentId.IsEmpty()) {
     auto *const parentInstancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(parentId));
@@ -335,10 +358,8 @@ std::vector<VtMatrix4dArray> HdCyclesInstancer::ComputeInstanceTransforms(
         }
       }
       if (primvars) {
-        *primvars = ComposeNested(std::move(localPrimvars),
-                                  parentPrimvars,
-                                  parentTransforms.front().size(),
-                                  instanceIndices.size());
+        *primvars = ComposeNested(
+            std::move(localPrimvars), parentPrimvars, parentTransforms.front().size(), numLocal);
       }
       return resultTransforms;
     }

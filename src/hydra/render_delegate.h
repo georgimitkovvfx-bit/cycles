@@ -51,6 +51,7 @@ HDCYCLES_NAMESPACE_OPEN_SCOPE
     ((aoFactor, "cycles:ao_factor")) \
     ((houdiniViewport, "houdini:viewport")) \
     ((windowDepth, "cycles:viewport:window_depth")) \
+    ((instanceArrays, "cycles:instance_arrays")) \
     ((sunIntensityScale, "cycles:light:sun_intensity_scale")) \
     ((domeCameraVisibleDefault, "cycles:background:camera_visible_default")) \
     (resolution) \

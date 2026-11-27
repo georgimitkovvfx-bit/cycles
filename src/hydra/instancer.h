@@ -47,6 +47,19 @@ class HdCyclesInstancer final : public PXR_NS::HdInstancer {
       const std::vector<float> &times,
       std::vector<Primvar> *primvars = nullptr);
 
+  /* The same for this instancer's level only (instance arrays, USD Nodes ADR 0082): the instance transforms with
+   * this instancer's own, without its parents'. */
+  std::vector<PXR_NS::VtMatrix4dArray> ComputeLocalInstanceTransforms(
+      const PXR_NS::SdfPath &prototypeId,
+      const std::vector<float> &times,
+      std::vector<Primvar> *primvars = nullptr);
+
+  /* The instancer instancing this one, empty if none. */
+  PXR_NS::SdfPath GetParentInstancerId() const;
+
+  /* Whether a primvar sets an object setting per instance ("cycles:object:*", Primvar::elements). */
+  bool HasInstanceSettings() const;
+
  private:
   /* Instancer transform and instance transform primvars at one time. */
   struct Sample {

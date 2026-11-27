@@ -13,7 +13,11 @@
 #include <pxr/imaging/hd/rprim.h>
 #include <pxr/imaging/hd/tokens.h>
 
+#include "scene/instance.h"
+#include "scene/object.h"
+
 #include <functional>
+#include <memory>
 #include <vector>
 
 HDCYCLES_NAMESPACE_OPEN_SCOPE
@@ -79,7 +83,11 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   static PXR_NS::VtValue GetObjectSetting(const PXR_NS::HdPrimvarsSchema &primvars,
                                           const std::string &setting);
 
+  /* The world transform of the first instance (subdivision dicing). */
+  CCL_NS::Transform FirstInstanceTransform() const;
+
   CyclesBase *_geom = nullptr;
+  /* The objects of the instances; with instance arrays, only the prototype. */
   std::vector<CCL_NS::Object *> _instances;
   // Ray visibility of the instances from the prim, and whether its render tag is drawn
   unsigned int _visibility = ~0u;
@@ -95,6 +103,29 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void Initialize(PXR_NS::HdRenderParam *renderParam);
 
   void InitializeInstance(const int index);
+
+  /* Instance arrays (USD Nodes ADR 0082 › E1): an instanced prim is one prototype object outside the scene, placed by
+   * a chain of arrays, innermost first: _arrays[0] places the prototype at its instancer's instances, _arrays[k] the
+   * group _groups[k - 1] holding _arrays[k - 1] at the k-th instancer's. Cycles makes the objects of the instances
+   * (InstanceExpansion). Not for what the arrays do not carry yet (UseInstanceArrays). */
+  bool UseInstanceArrays(PXR_NS::HdSceneDelegate *sceneDelegate,
+                         const PXR_NS::HdContainerDataSourceHandle &primDs) const;
+  /* Makes the instance objects again for the other mode, with the scene locked. */
+  void SetInstanceMode(PXR_NS::HdRenderParam *renderParam, CCL_NS::Scene *scene, bool arrays);
+  void SyncInstanceArrays(PXR_NS::HdSceneDelegate *sceneDelegate,
+                          PXR_NS::HdRenderParam *renderParam,
+                          CCL_NS::Scene *scene,
+                          const PXR_NS::HdContainerDataSourceHandle &primDs,
+                          bool primvarsDirty);
+  void SetArrayPrimvars(CCL_NS::Scene *scene,
+                        const PXR_NS::HdContainerDataSourceHandle &primDs,
+                        const std::vector<std::vector<HdCyclesInstancer::Primvar>> &levels);
+  void DeleteArrays(CCL_NS::Scene *scene);
+
+  std::unique_ptr<CCL_NS::Object> _prototype;
+  std::vector<CCL_NS::InstanceArray *> _arrays;
+  std::vector<CCL_NS::InstanceGroup *> _groups;
+  CCL_NS::Transform _firstInstanceTfm = CCL_NS::transform_identity();
   bool NeedsIdAttribute(CCL_NS::Scene *scene, const PXR_NS::TfToken &name) const;
   void SetPrimIdAttribute(CCL_NS::Object *instance, bool needed) const;
   void UpdateObjectSettings(const PXR_NS::HdContainerDataSourceHandle &primDs);

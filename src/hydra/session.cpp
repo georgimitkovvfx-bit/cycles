@@ -7,6 +7,7 @@
 #include "hydra/bake.h"
 #include "hydra/material.h"
 #include "hydra/render_buffer.h"
+#include "scene/instance.h"
 #include "scene/object.h"
 #include "scene/shader.h"
 // Have to include shader.h before background.h so that 'set_shader' uses the correct 'set'
@@ -935,7 +936,22 @@ void HdCyclesSession::UpdateLightLinking()
     return bits;
   };
 
+  /* The placements of instance arrays take their prototype's sets (InstanceExpansion), which can hold their
+   * instancers' categories too: they are skipped, by the prototype's name. */
+  std::unordered_set<ustring> prototypeNames;
+  for (const Object *prototype : _prototypes) {
+    prototypeNames.insert(prototype->name);
+  }
+  std::vector<Object *> objects;
+  objects.reserve(scene->objects.size() + _prototypes.size());
   for (Object *object : scene->objects) {
+    if (!prototypeNames.count(object->name)) {
+      objects.push_back(object);
+    }
+  }
+  objects.insert(objects.end(), _prototypes.begin(), _prototypes.end());
+  bool prototypesChanged = false;
+  for (Object *object : objects) {
     std::array<uint, 2> objectSet = {0, 0};
     std::pair<TfToken, TfToken> links;
     /* Lights, and mesh lights (cylinder lights, geometry lights) by their name. Geometry lights
@@ -957,8 +973,16 @@ void HdCyclesSession::UpdateLightLinking()
     object->set_light_set_membership(membership(0, links.first));
     object->set_shadow_set_membership(membership(1, links.second));
     if (object->is_modified()) {
-      object->tag_update(scene);
+      if (_prototypes.count(object)) {
+        prototypesChanged = true;
+      }
+      else {
+        object->tag_update(scene);
+      }
     }
+  }
+  if (prototypesChanged) {
+    InstanceExpansion::get(scene)->tag_update(scene);
   }
 }
 

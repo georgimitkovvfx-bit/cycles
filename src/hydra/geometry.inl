@@ -24,6 +24,7 @@
 #include <pxr/imaging/hd/instanceCategoriesSchema.h>
 #include <pxr/imaging/hd/instancedBySchema.h>
 #include <pxr/imaging/hd/instancerTopologySchema.h>
+#include <pxr/imaging/hd/lightSchema.h>
 #include <pxr/imaging/hd/materialBindingSchema.h>
 #include <pxr/imaging/hd/materialBindingsSchema.h>
 #include <pxr/imaging/hd/primvarsSchema.h>
@@ -92,6 +93,21 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   const SdfPath &id = Base::GetId();
   const HdSceneIndexPrim prim = GetPrim(sceneDelegate, id);
   const HdContainerDataSourceHandle &primDs = prim.dataSource;
+
+  /* Instanced prims are instance arrays unless they need what the arrays do not carry yet. Changing mode makes the
+   * instance objects again, so every setting is applied to them. */
+  if (HdChangeTracker::IsInstancerDirty(*dirtyBits, id) || HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
+      (*dirtyBits & (HdChangeTracker::DirtyPrimvar | HdChangeTracker::DirtyCategories)))
+  {
+    const bool arrays = UseInstanceArrays(sceneDelegate, primDs);
+    if (arrays != bool(_prototype)) {
+      SetInstanceMode(renderParam, lock.scene, arrays);
+      *dirtyBits |= HdChangeTracker::DirtyTransform | HdChangeTracker::DirtyInstancer |
+                    HdChangeTracker::DirtyInstanceIndex | HdChangeTracker::DirtyPrimvar |
+                    HdChangeTracker::DirtyVisibility | HdChangeTracker::DirtyCategories |
+                    HdChangeTracker::DirtyPrimID | HdChangeTracker::DirtyMaterialId;
+    }
+  }
 
   if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
     SdfPath materialId;
@@ -216,7 +232,10 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   const bool instancePrimvarsDirty = HdChangeTracker::IsInstancerDirty(*dirtyBits, id) ||
                                      (*dirtyBits & (HdChangeTracker::DirtyPrimvar |
                                                     HdChangeTracker::DirtyMaterialId));
-  if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) || instancePrimvarsDirty) {
+  if (_prototype && (HdChangeTracker::IsTransformDirty(*dirtyBits, id) || instancePrimvarsDirty)) {
+    SyncInstanceArrays(sceneDelegate, renderParam, lock.scene, primDs, instancePrimvarsDirty);
+  }
+  else if (HdChangeTracker::IsTransformDirty(*dirtyBits, id) || instancePrimvarsDirty) {
     auto *const instancer = static_cast<HdCyclesInstancer *>(
         sceneDelegate->GetRenderIndex().GetInstancer(Base::GetInstancerId()));
 
@@ -416,7 +435,12 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
   _attributesChanged = false;
 
   for (Object *instance : _instances) {
-    instance->tag_update(scene);
+    if (instance != _prototype.get()) {
+      instance->tag_update(scene);
+    }
+  }
+  if (_prototype && _prototype->is_modified()) {
+    InstanceExpansion::get(scene)->tag_update(scene);
   }
 
   *dirtyBits = HdChangeTracker::Clean;
@@ -432,7 +456,12 @@ void HdCyclesGeometry<Base, CyclesBase>::SetRenderTagVisible(Scene *scene, const
   for (size_t i = 0; i < _instances.size(); ++i) {
     _instances[i]->set_visibility(
         visible ? (i < _instanceVisibility.size() ? _instanceVisibility[i] : _visibility) : 0);
-    _instances[i]->tag_update(scene);
+    if (_instances[i] != _prototype.get()) {
+      _instances[i]->tag_update(scene);
+    }
+  }
+  if (_prototype) {
+    InstanceExpansion::get(scene)->tag_update(scene);
   }
 }
 
@@ -875,15 +904,30 @@ void HdCyclesGeometry<Base, CyclesBase>::Finalize(HdRenderParam *renderParam)
   static_cast<HdCyclesSession *>(renderParam)->RemoveLinking(Base::GetId().GetString());
   _light.Finalize(static_cast<HdCyclesSession *>(renderParam), keep_nodes);
 
+  HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+  if (_prototype) {
+    if (keep_nodes) {
+      /* The placements stay with the scene; nothing may place the prototype any more. */
+      for (InstanceArray *array : _arrays) {
+        array->object = nullptr;
+      }
+    }
+    else {
+      DeleteArrays(lock.scene);
+    }
+    session->RemovePrototype(_prototype.get());
+  }
   if (!keep_nodes) {
-    HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
     for (Object *instance : _instances) {
-      session->DeleteNode(instance);
+      if (instance != _prototype.get()) {
+        session->DeleteNode(instance);
+      }
     }
     session->DeleteNode(_geom);
   }
   _instances.clear();
   _instances.shrink_to_fit();
+  _prototype.reset();
 
   _geom = nullptr;
 }
@@ -905,6 +949,235 @@ void HdCyclesGeometry<Base, CyclesBase>::Initialize(HdRenderParam *renderParam)
   // Create default instance
   _instances.push_back(lock.scene->create_node<Object>());
   InitializeInstance(0);
+}
+
+template<typename Base, typename CyclesBase>
+Transform HdCyclesGeometry<Base, CyclesBase>::FirstInstanceTransform() const
+{
+  if (_prototype) {
+    return _firstInstanceTfm;
+  }
+  return _instances.empty() ? transform_identity() : _instances[0]->get_tfm();
+}
+
+template<typename Base, typename CyclesBase>
+bool HdCyclesGeometry<Base, CyclesBase>::UseInstanceArrays(HdSceneDelegate *sceneDelegate,
+                                                           const HdContainerDataSourceHandle &primDs) const
+{
+  HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
+  const auto *instancer = static_cast<const HdCyclesInstancer *>(
+      renderIndex.GetInstancer(Base::GetInstancerId()));
+  /* What ADR 0082 flattens first (volumes, geometry lights, the bake target and cage), and per-instance data the
+   * arrays do not carry: link categories of single instances, object settings per instance. */
+  if (!instancer || !_session->UseInstanceArrays() || _geom->is_volume() ||
+      HdLightSchema::GetFromParent(primDs).GetContainer())
+  {
+    return false;
+  }
+  const BakeSettings bake = _session->GetBake();
+  const std::string &path = Base::GetId().GetString();
+  if (!bake.object.empty() && (path == bake.object || path == bake.cage)) {
+    return false;
+  }
+  if (HdInstanceCategoriesSchema::GetFromParent(GetPrim(sceneDelegate, instancer->GetId()).dataSource)
+          .GetCategoriesValues())
+  {
+    return false;
+  }
+  for (int depth = 0; instancer && depth < 16; ++depth) {
+    if (instancer->HasInstanceSettings()) {
+      return false;
+    }
+    instancer = static_cast<const HdCyclesInstancer *>(
+        renderIndex.GetInstancer(instancer->GetParentInstancerId()));
+  }
+  return true;
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetInstanceMode(HdRenderParam *renderParam,
+                                                         Scene *scene,
+                                                         const bool arrays)
+{
+  HdCyclesSession *const session = static_cast<HdCyclesSession *>(renderParam);
+  if (_prototype) {
+    DeleteArrays(scene);
+    session->RemovePrototype(_prototype.get());
+    _prototype.reset();
+  }
+  else {
+    for (Object *instance : _instances) {
+      session->DeleteNode(instance);
+    }
+  }
+  _instances.clear();
+  _instanceVisibility.clear();
+  _instanceSettings.clear();
+  if (arrays) {
+    _prototype = std::make_unique<Object>();
+    _instances.push_back(_prototype.get());
+    session->AddPrototype(_prototype.get());
+  }
+  else {
+    _instances.push_back(scene->create_node<Object>());
+  }
+  InitializeInstance(0);
+  session->TagLightLinking();
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::DeleteArrays(Scene *scene)
+{
+  InstanceExpansion *const expansion = InstanceExpansion::get(scene);
+  for (InstanceGroup *group : _groups) {
+    expansion->delete_group(scene, group);
+  }
+  for (InstanceArray *array : _arrays) {
+    expansion->delete_array(scene, array);
+  }
+  _groups.clear();
+  _arrays.clear();
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SyncInstanceArrays(HdSceneDelegate *sceneDelegate,
+                                                            HdRenderParam *renderParam,
+                                                            Scene *scene,
+                                                            const HdContainerDataSourceHandle &primDs,
+                                                            const bool primvarsDirty)
+{
+  HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
+
+  /* The levels, innermost first: each instancer with what it places (this prim, or the instancer below). */
+  std::vector<std::pair<HdCyclesInstancer *, SdfPath>> levels;
+  SdfPath placed = Base::GetId();
+  auto *instancer = static_cast<HdCyclesInstancer *>(renderIndex.GetInstancer(Base::GetInstancerId()));
+  while (instancer && levels.size() < 16) {
+    levels.emplace_back(instancer, placed);
+    placed = instancer->GetId();
+    instancer = static_cast<HdCyclesInstancer *>(renderIndex.GetInstancer(instancer->GetParentInstancerId()));
+  }
+
+  InstanceExpansion *const expansion = InstanceExpansion::get(scene);
+  if (_arrays.size() != levels.size()) {
+    DeleteArrays(scene);
+    for (size_t k = 0; k < levels.size(); ++k) {
+      InstanceArray *array = expansion->create_array();
+      if (k == 0) {
+        array->object = _prototype.get();
+      }
+      else {
+        InstanceGroup *group = expansion->create_group();
+        group->arrays.push_back(_arrays[k - 1]);
+        _groups.push_back(group);
+        array->group = group;
+      }
+      _arrays.push_back(array);
+    }
+    static_cast<HdCyclesSession *>(renderParam)->TagLightLinking();
+  }
+
+  /* Each level's own instance transforms (with its instancer's transform), at the motion steps when they move. */
+  const std::vector<float> times = GetObjectMotionTimes(HdXformSchema::GetFromParent(primDs).GetMatrix());
+  std::vector<std::vector<HdCyclesInstancer::Primvar>> primvars(levels.size());
+  _firstInstanceTfm = convert_transform(_geomTransform);
+  for (size_t k = 0; k < levels.size(); ++k) {
+    const std::vector<VtMatrix4dArray> steps = levels[k].first->ComputeLocalInstanceTransforms(
+        levels[k].second, times, primvarsDirty ? &primvars[k] : nullptr);
+    InstanceArray *const array = _arrays[k];
+    array->steps.resize(steps.size());
+    for (size_t step = 0; step < steps.size(); ++step) {
+      array->steps[step].resize(steps[step].size());
+      for (size_t i = 0; i < steps[step].size(); ++i) {
+        array->steps[step][i] = convert_transform(steps[step][i]);
+      }
+    }
+    array->modified = true;
+    if (array->size()) {
+      _firstInstanceTfm = array->steps[array->steps.size() / 2][0] * _firstInstanceTfm;
+    }
+  }
+  if (primvarsDirty) {
+    SetArrayPrimvars(scene, primDs, primvars);
+  }
+
+  /* The prim's own transform is the prototype's. */
+  _prototype->set_tfm(convert_transform(_geomTransform));
+  array<Transform> motion(_geomTransformMotion.size());
+  for (size_t step = 0; step < motion.size(); ++step) {
+    motion[step] = convert_transform(_geomTransformMotion[step]);
+  }
+  _prototype->set_motion(motion);
+
+  /* The prototype carries the IDs shaders read; each placement's instanceId is its flattened index. */
+  static const ustring instanceIdName(HdAovTokens->instanceId.GetString());
+  if (NeedsIdAttribute(scene, HdAovTokens->instanceId)) {
+    const float zero = 0.0f;
+    SetObjectAttribute(_prototype.get(), instanceIdName, 1, &zero);
+  }
+  else {
+    RemoveObjectAttribute(_prototype.get(), instanceIdName);
+  }
+  SetPrimIdAttribute(_prototype.get(), NeedsIdAttribute(scene, HdAovTokens->primId));
+
+  expansion->tag_update(scene);
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetArrayPrimvars(
+    Scene *scene,
+    const HdContainerDataSourceHandle &primDs,
+    const std::vector<std::vector<HdCyclesInstancer::Primvar>> &levels)
+{
+  /* As SetInstancePrimvars, per level: the attributes that shaders read, and the Object Info colour from a
+   * per-instance displayColor (Cd when no level has displayColor) unless the prim has its own constant colour. The
+   * expansion takes the innermost level's, as the flattened primvars let the inner instancer win. */
+  static const TfToken Cd("Cd");
+  const auto has = [&](const TfToken &name) {
+    for (const std::vector<HdCyclesInstancer::Primvar> &level : levels) {
+      for (const HdCyclesInstancer::Primvar &pv : level) {
+        if (pv.name == name && pv.width > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  const HdPrimvarsSchema ownPrimvars = HdPrimvarsSchema::GetFromParent(primDs);
+  bool ownColor = false;
+  for (const TfToken &name : {HdTokens->displayColor, Cd}) {
+    ownColor |= ReadPrimvarInterpolation(ownPrimvars, name) == HdInterpolationConstant &&
+                PrimvarStandard(ownPrimvars, name, TfToken()) == ATTR_STD_VERTEX_COLOR;
+  }
+  const TfToken &colorName = has(HdTokens->displayColor) ? HdTokens->displayColor : Cd;
+  if (!ownColor) {
+    _prototype->set_color(make_float3(0.8f, 0.8f, 0.8f));
+  }
+  _arrays[0]->keep_object_color = ownColor;
+
+  for (size_t k = 0; k < levels.size(); ++k) {
+    InstanceArray *const array = _arrays[k];
+    array->colors.clear();
+    array->attributes.clear();
+    for (const HdCyclesInstancer::Primvar &pv : levels[k]) {
+      if (pv.width == 0) {
+        continue; /* Not numeric (object settings only). */
+      }
+      if (pv.name == colorName && pv.width == 3 && !ownColor) {
+        array->colors.resize(array->size());
+        for (size_t i = 0; i < array->colors.size() && (i + 1) * 3 <= pv.values.size(); ++i) {
+          array->colors[i] = make_float3(pv.values[i * 3], pv.values[i * 3 + 1], pv.values[i * 3 + 2]);
+        }
+      }
+      for (const ustring &name : RequestedPrimvarNames(_geom, scene, has, pv.name, ATTR_STD_NONE)) {
+        InstanceAttribute &attribute = array->attributes.emplace_back();
+        attribute.name = name;
+        attribute.width = int(pv.width);
+        attribute.values.assign(pv.values.begin(), pv.values.end());
+      }
+    }
+    array->modified = true;
+  }
 }
 
 template<typename Base, typename CyclesBase>
