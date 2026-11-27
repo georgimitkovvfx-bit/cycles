@@ -190,8 +190,8 @@ void HdCyclesRenderPass::_Execute(const HdRenderPassStateSharedPtr &renderPassSt
         bakeChanged)
     {
       if (_renderParam->SyncAovBindings(aovBindings)) {
-        // Every shader writes the primvar AOVs: rebuild the shaders, then export the primvars
-        // the geometry did not need before.
+        // Every shader writes the primvar and ID AOVs: rebuild the shaders, then export the
+        // primvars and IDs the geometry did not need before.
         _renderParam->RequestResync(true, true);
         _renderParam->UpdateDefaultSurface();
       }

@@ -38,7 +38,7 @@ const std::unordered_map<TfToken, PassType, TfToken::HashFunctor> kAovToPass = {
     {HdAovTokens->color, PASS_COMBINED},
     {HdAovTokens->depth, PASS_DEPTH},
     {HdAovTokens->normal, PASS_NORMAL},
-    // Written by every shader from object attributes (HdCyclesMaterial::AddIdAOVs)
+    // Written by the shaders from object attributes while bound (HdCyclesMaterial::AddIdAOVs)
     {HdAovTokens->primId, PASS_AOV_VALUE},
     {HdAovTokens->instanceId, PASS_AOV_VALUE},
     // Source names of Karma's render vars (Karma Render Settings LOP)
@@ -188,6 +188,15 @@ PassType AovToPassType(const HdRenderPassAovBinding &aovBinding)
 }
 
 }  // namespace
+
+TfToken HdCyclesSession::GetIdAov(const TfToken &sourceName)
+{
+  if (sourceName == TfToken("ray:primid")) {
+    return HdAovTokens->primId;
+  }
+  return sourceName == HdAovTokens->primId || sourceName == HdAovTokens->instanceId ? sourceName :
+                                                                                      TfToken();
+}
 
 string HdCyclesSession::GetPrimvar(const string &sourceName, const TfToken &sourceType)
 {
@@ -1002,6 +1011,7 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
 
   std::unordered_map<int, const Pass *> passOfType;
   std::vector<std::pair<string, string>> primvarAovs;
+  std::vector<TfToken> idAovs;
   bool motionPassBound = false;
   for (const HdRenderPassAovBinding &aovBinding : aovBindings) {
     const string sourceName = GetSourceName(aovBinding).GetString();
@@ -1070,9 +1080,12 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
         primvarAovs.emplace_back(aovBinding.aovName.GetString(), primvar);
       }
       else {
-        // Karma's prim ID is the primId AOV every shader writes
-        const TfToken &passName = sourceName == TfToken("ray:primid") ? HdAovTokens->primId :
-                                                                         sourceName;
+        // Karma's prim ID is the primId AOV
+        const TfToken idAov = GetIdAov(sourceName);
+        const TfToken &passName = idAov.IsEmpty() ? sourceName : idAov;
+        if (!idAov.IsEmpty() && std::find(idAovs.begin(), idAovs.end(), idAov) == idAovs.end()) {
+          idAovs.push_back(idAov);
+        }
         if (passName != aovBinding.aovName) {
           pass->set_name(ustring(passName.GetString()));
           _passNames[aovBinding.aovName] = passName.GetString();
@@ -1120,9 +1133,10 @@ bool HdCyclesSession::SyncAovBindings(const HdRenderPassAovBindingVector &aovBin
     RequestResync(false, true);
   }
 
-  const bool primvarAovsChanged = primvarAovs != _primvarAovs;
+  const bool changed = primvarAovs != _primvarAovs || idAovs != _idAovs;
   _primvarAovs = std::move(primvarAovs);
-  return primvarAovsChanged;
+  _idAovs = std::move(idAovs);
+  return changed;
 }
 
 std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
@@ -1162,34 +1176,43 @@ std::vector<float> HdCyclesSession::GetMotionTimes(const float shutterOpen,
   return times;
 }
 
-void HdCyclesSession::SetRenderSettingsPrimvarAovs(const SdfPath &id,
-                                                   const bool active,
-                                                   std::vector<std::pair<string, string>> &&aovs)
+void HdCyclesSession::SetRenderSettingsAovs(const SdfPath &id,
+                                            const bool active,
+                                            std::vector<std::pair<string, string>> &&primvarAovs,
+                                            std::vector<TfToken> &&idAovs)
 {
-  if (aovs.empty() && !active) {
-    _renderSettingsPrimvarAovs.erase(id);
+  if (primvarAovs.empty() && idAovs.empty() && !active) {
+    _renderSettingsAovs.erase(id);
   }
   else {
-    _renderSettingsPrimvarAovs[id] = {active, std::move(aovs)};
+    _renderSettingsAovs[id] = {active, std::move(primvarAovs), std::move(idAovs)};
   }
 
-  std::vector<std::pair<string, string>> primvarAovs;
-  for (const auto &[path, settings] : _renderSettingsPrimvarAovs) {
-    if (settings.first) {
-      primvarAovs = settings.second;
-      break;
-    }
-    for (const auto &aov : settings.second) {
-      if (std::find(primvarAovs.begin(), primvarAovs.end(), aov) == primvarAovs.end()) {
-        primvarAovs.push_back(aov);
+  std::vector<std::pair<string, string>> allPrimvarAovs;
+  std::vector<TfToken> allIdAovs;
+  const auto addAll = [](auto &all, const auto &aovs) {
+    for (const auto &aov : aovs) {
+      if (std::find(all.begin(), all.end(), aov) == all.end()) {
+        all.push_back(aov);
       }
     }
+  };
+  for (const auto &[path, settings] : _renderSettingsAovs) {
+    if (settings.active) {
+      allPrimvarAovs = settings.primvarAovs;
+      allIdAovs = settings.idAovs;
+      break;
+    }
+    addAll(allPrimvarAovs, settings.primvarAovs);
+    addAll(allIdAovs, settings.idAovs);
   }
 
-  if (primvarAovs != _primvarAovs) {
-    _primvarAovs = std::move(primvarAovs);
+  if (allPrimvarAovs != _primvarAovs || allIdAovs != _idAovs) {
+    _primvarAovs = std::move(allPrimvarAovs);
+    _idAovs = std::move(allIdAovs);
     UpdateDefaultSurface();
-    /* Every shader writes the primvar AOVs, and geometry exports the primvars shaders read. */
+    /* Every shader writes the primvar and ID AOVs, and geometry exports the primvars and IDs
+     * shaders read. */
     RequestResync(true, true);
   }
 }
@@ -1249,7 +1272,7 @@ void HdCyclesSession::UpdateDefaultSurface(unique_ptr<ShaderGraph> graph)
     }
   }
 
-  HdCyclesMaterial::AddIdAOVs(graph.get());
+  HdCyclesMaterial::AddIdAOVs(graph.get(), _idAovs);
   HdCyclesMaterial::AddPrimvarAOVs(graph.get(), _primvarAovs);
   const AttributeRequestSet attributes = scene->default_surface->attributes;
   scene->default_surface->set_graph(std::move(graph));

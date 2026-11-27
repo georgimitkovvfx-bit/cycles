@@ -191,6 +191,9 @@ const std::unordered_map<std::string, LayerInfo> kLayers = {
     {"uv", {"UV", "UVA"}},
     {"object_index", {"Object Index", "X"}},
     {"material_index", {"Material Index", "X"}},
+    /* Hydra's ID AOVs: -1 for the background and for a prim without instancer (kIdAovs) */
+    {"primId", {"Prim ID", "X"}},
+    {"instanceId", {"Instance ID", "X"}},
     {"diffuse_direct", {"Diffuse Direct", "RGB"}},
     {"diffuse_indirect", {"Diffuse Indirect", "RGB"}},
     {"diffuse_color", {"Diffuse Color", "RGB"}},
@@ -208,6 +211,8 @@ const std::unordered_map<std::string, LayerInfo> kLayers = {
     {"shadow_catcher", {"Shadow Catcher", "RGB"}},
 };
 const char *const kViewLayer = "ViewLayer";
+/* Their passes hold the ID plus one (HdCyclesMaterial::AddIdAOVs), as the Hydra render buffers convert them. */
+const char *const kIdAovs[] = {"primId", "instanceId"};
 
 struct Layer {
   string pass;     /* Cycles pass name (the AOV name) */
@@ -381,6 +386,11 @@ class LayerOutputDriver : public OutputDriver {
       vector<float> buffer(size_t(width) * height * count);
       if (!tile.get_pass_pixels(layer.pass, count, buffer.data())) {
         printf("CYCLES_USD_RENDER_NOTE no pixels for pass %s\n", layer.pass.c_str());
+      }
+      if (std::find(std::begin(kIdAovs), std::end(kIdAovs), layer.pass) != std::end(kIdAovs)) {
+        for (float &value : buffer) {
+          value -= 1.0f;
+        }
       }
       /* Cycles' buffers are bottom-up, images top-down. */
       for (int y = 0; y < height; ++y) {

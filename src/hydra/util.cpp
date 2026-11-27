@@ -20,6 +20,8 @@
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/tokens.h>
 
+#include <algorithm>
+
 HDCYCLES_NAMESPACE_OPEN_SCOPE
 
 HdSceneIndexPrim GetPrim(HdSceneDelegate *delegate, const SdfPath &id)
@@ -303,6 +305,15 @@ void SetObjectAttribute(Object *object, const ustring &name, size_t width, const
     }
   }
   object->attributes.push_back(param);
+}
+
+void RemoveObjectAttribute(Object *object, const ustring &name)
+{
+  auto &attributes = object->attributes;
+  attributes.erase(std::remove_if(attributes.begin(),
+                                  attributes.end(),
+                                  [&](const ParamValue &attribute) { return attribute.name() == name; }),
+                   attributes.end());
 }
 
 void ApplyPrimvars(AttributeSet &attributes,

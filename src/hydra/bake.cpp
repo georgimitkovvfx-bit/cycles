@@ -11,6 +11,8 @@
 #include "scene/scene.h"
 #include "util/tbb.h"
 
+#include <pxr/imaging/hd/tokens.h>
+
 #ifdef WITH_EMBREE
 #  include <embree4/rtcore.h>
 #endif
@@ -30,14 +32,18 @@ const char *const kBakeObjectPass = "BakeObject";
 
 namespace {
 
-/* The instanceId of an object, its first attribute (HdCyclesGeometry::InitializeInstance): -1
- * for a prim without instancer, which counts as instance 0. */
+/* The instanceId of an object, an attribute the bake target and cage always have
+ * (HdCyclesGeometry::NeedsIdAttribute): -1 for a prim without instancer, which counts as
+ * instance 0. */
 int InstanceIndex(const Object *object)
 {
-  if (object->attributes.empty() || object->attributes.front().type() != TypeFloat) {
-    return 0;
+  static const ustring instanceId(HdAovTokens->instanceId.GetString());
+  for (const ParamValue &attribute : object->attributes) {
+    if (attribute.name() == instanceId && attribute.type() == TypeFloat) {
+      return std::max(0, int(attribute.get<float>()));
+    }
   }
-  return std::max(0, int(object->attributes.front().get<float>()));
+  return 0;
 }
 
 Object *FindBakeObject(Scene *scene, const std::string &name, const int instance)

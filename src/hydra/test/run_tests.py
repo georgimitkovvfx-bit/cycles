@@ -437,8 +437,110 @@ def test_preview_shading(render):
     assert shaded > 0.0 and abs(preview - shaded) < 1e-3 * shaded, (preview, shaded)
 
 
+def id_stage(aovs=()) -> str:
+    """Three instances of a box in a row (a point instancer) and a small box above them on its own, seen from the
+    front; the instances glow with their instanceId (white 0, 1, 2), the box is plain (a material: the
+    default surface is cycles_usd_render's own). ``aovs``: RenderVars."""
+    proto = (box("proto", 0, 0, 0, 1, 1, 1)
+             .replace('def Mesh "proto"', 'def Mesh "proto" (prepend apiSchemas = ["MaterialBindingAPI"])')
+             .replace('uniform token subdivisionScheme = "none"',
+                      'uniform token subdivisionScheme = "none"\n        rel material:binding = </world/glow>'))
+    single = (box("single", 0, 0, 2.5, 0.4, 0.4, 0.4)
+              .replace('def Mesh "single"', 'def Mesh "single" (prepend apiSchemas = ["MaterialBindingAPI"])')
+              .replace('uniform token subdivisionScheme = "none"',
+                       'uniform token subdivisionScheme = "none"\n        rel material:binding = </world/plain>'))
+    stage = HEADER % 1 + 'def Xform "world"\n{\n' + camera(35, (0, -12, 0), (0, 0, 0)) + f"""    def PointInstancer "row"
+    {{
+        point3f[] positions = [(-3, 0, 0), (0, 0, 0), (3, 0, 0)]
+        int[] protoIndices = [0, 0, 0]
+        rel prototypes = </world/row/protos/proto>
+        def Scope "protos"
+        {{
+{proto}        }}
+    }}
+{single}    def Material "plain"
+    {{
+        token outputs:surface.connect = </world/plain/surface.outputs:surface>
+        def Shader "surface"
+        {{
+            uniform token info:id = "UsdPreviewSurface"
+            token outputs:surface
+        }}
+    }}
+    def Material "glow"
+    {{
+        token outputs:surface.connect = </world/glow/surface.outputs:surface>
+        def Shader "surface"
+        {{
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0, 0, 0)
+            int inputs:useSpecularWorkflow = 1
+            color3f inputs:specularColor = (0, 0, 0)
+            color3f inputs:emissiveColor.connect = </world/glow/id.outputs:result>
+            token outputs:surface
+        }}
+        def Shader "id"
+        {{
+            uniform token info:id = "UsdPrimvarReader_float3"
+            token inputs:varname = "instanceId"
+            float3 outputs:result
+        }}
+    }}
+}}
+"""
+    if aovs:
+        stage = stage.replace("    metersPerUnit = 1\n",
+                              '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n', 1)
+        targets = ", ".join(f"</Render/product/{a}>" for a in aovs)
+        variables = "".join(f"""        def RenderVar "{a}"
+        {{
+            uniform token dataType = "int"
+            uniform string sourceName = "{a}"
+        }}
+""" for a in aovs)
+        stage += f"""
+def Scope "Render"
+{{
+    def RenderSettings "settings"
+    {{
+        rel camera = </world/cam>
+        rel products = </Render/product>
+    }}
+    def RenderProduct "product"
+    {{
+        rel orderedVars = [{targets}]
+{variables}    }}
+}}
+"""
+    return stage
+
+
+def test_id_aovs(render):
+    """Hydra's ID AOVs (picking): the instanceId is the instance's index in its instancer and -1 for a prim without
+    instancer and the background; the primId one per prim, -1 for the background. Shaders write them only while a
+    render pass binds them, and objects carry the IDs only when their shaders read them (USD Nodes plan 28 › C3); a
+    shader reading the instanceId primvar gets it without the AOVs."""
+    size = (96, 54)
+    points = {"left": (27, 22), "middle": (27, 48), "right": (27, 73), "single": (7, 48), "background": (50, 5)}
+
+    def ids(name, channel):
+        pixels = render(name, id_stage(("primId", "instanceId")), size=size, samples=8, channel=channel)
+        return {k: round(float(pixels[r, c])) for k, (r, c) in points.items()}
+
+    instance = ids("ids_instance", "Instance ID.X")
+    assert instance == {"left": 0, "middle": 1, "right": 2, "single": -1, "background": -1}, instance
+    prim = ids("ids_prim", "Prim ID.X")
+    assert prim["left"] == prim["middle"] == prim["right"] >= 0 and prim["single"] >= 0, prim
+    assert prim["single"] != prim["left"] and prim["background"] == -1, prim
+
+    glow = render("ids_shader", id_stage(), size=size, samples=8)
+    values = [float(glow[r, c].mean()) for r, c in (points["left"], points["middle"], points["right"])]
+    assert values[0] < 0.01 and abs(values[1] - 1) < 0.02 and abs(values[2] - 2) < 0.04, values
+
+
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
-         test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading]
+         test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
+         test_id_aovs]
 
 
 def main() -> int:
