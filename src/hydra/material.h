@@ -37,8 +37,9 @@ class HdCyclesMaterial final : public PXR_NS::HdMaterial {
   }
 
   // Write primvars to AOVs, given as (pass name, primvar name)
-  /* AOV outputs of the instanceId and primId object attributes, which every shader writes. */
-  static void AddIdAOVs(CCL_NS::ShaderGraph *graph);
+  /* AOV outputs of the instanceId and primId object attributes, for the ID AOVs a render pass
+   * binds (HdCyclesSession::GetIdAovs). Only then: objects carry the IDs their shaders read. */
+  static void AddIdAOVs(CCL_NS::ShaderGraph *graph, const std::vector<PXR_NS::TfToken> &aovs);
 
   static void AddPrimvarAOVs(CCL_NS::ShaderGraph *graph,
                              const std::vector<std::pair<std::string, std::string>> &aovs);

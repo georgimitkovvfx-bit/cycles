@@ -157,6 +157,9 @@ void SetObjectAttribute(CCL_NS::Object *object,
                         size_t width,
                         const float *data);
 
+/* Remove the object attribute of that name, if it has one. */
+void RemoveObjectAttribute(CCL_NS::Object *object, const CCL_NS::ustring &name);
+
 /* Convert a float array primvar value to a Cycles attribute, if it has the attribute's size.
  * With `dropExtraValues`, values after the attribute's size are left out. */
 void ApplyPrimvars(CCL_NS::AttributeSet &attributes,

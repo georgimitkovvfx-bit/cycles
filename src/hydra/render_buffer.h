@@ -18,10 +18,6 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
   HdCyclesRenderBuffer(const PXR_NS::SdfPath &bprimId);
   ~HdCyclesRenderBuffer() override;
 
-  void Sync(PXR_NS::HdSceneDelegate *sceneDelegate,
-            PXR_NS::HdRenderParam *renderParam,
-            PXR_NS::HdDirtyBits *dirtyBits) override;
-
   void Finalize(PXR_NS::HdRenderParam *renderParam) override;
 
   bool Allocate(const PXR_NS::GfVec3i &dimensions,
@@ -97,7 +93,6 @@ class HdCyclesRenderBuffer final : public PXR_NS::HdRenderBuffer {
   unsigned int _height = 0u;
   PXR_NS::HdFormat _format = PXR_NS::HdFormatInvalid;
   size_t _dataSize = 0;
-  bool _floatIds = false;
 
   std::vector<uint8_t> _data;
   std::recursive_mutex _dataMutex;

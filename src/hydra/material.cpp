@@ -979,11 +979,12 @@ static void ApplyMaterialSettings(Shader *shader,
   }
 }
 
-void HdCyclesMaterial::AddIdAOVs(ShaderGraph *graph)
+void HdCyclesMaterial::AddIdAOVs(ShaderGraph *graph, const std::vector<TfToken> &aovs)
 {
-  /* Instance and prim ID AOVs are provided for every network, to make picking work. They are
-   * object attributes (HdCyclesGeometry::InitializeInstance). */
-  for (const TfToken &aov : {HdAovTokens->instanceId, HdAovTokens->primId}) {
+  /* The instance and prim ID AOVs (picking) are object attributes (HdCyclesGeometry::Sync), plus
+   * one: the background is 0, and the render buffers subtract one from integer AOVs, so the
+   * background and a prim without instancer are -1, as in Hydra. */
+  for (const TfToken &aov : aovs) {
     const ustring name(aov.GetString());
 
     OutputAOVNode *aovNode = graph->create_node<OutputAOVNode>();
@@ -992,7 +993,12 @@ void HdCyclesMaterial::AddIdAOVs(ShaderGraph *graph)
     AttributeNode *attributeNode = graph->create_node<AttributeNode>();
     attributeNode->set_attribute(name);
 
-    graph->connect(attributeNode->output("Fac"), aovNode->input("Value"));
+    MathNode *plusOne = graph->create_node<MathNode>();
+    plusOne->set_math_type(NODE_MATH_ADD);
+    plusOne->set_value2(1.0f);
+
+    graph->connect(attributeNode->output("Fac"), plusOne->input("Value1"));
+    graph->connect(plusOne->output("Value"), aovNode->input("Value"));
   }
 }
 
@@ -1292,7 +1298,7 @@ void HdCyclesMaterial::Sync(HdSceneDelegate *sceneDelegate,
       HdCyclesSession::AdjustWorld(graph.get(), exp2f(world->exposure), world->saturation);
       session->ExpandDomeTextures(graph.get(), *world);
     }
-    AddIdAOVs(graph.get());
+    AddIdAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetIdAovs());
     AddPrimvarAOVs(graph.get(), static_cast<HdCyclesSession *>(renderParam)->GetPrimvarAovs());
 
     const bool existed = _shader != nullptr;

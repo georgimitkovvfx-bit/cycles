@@ -133,8 +133,9 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
 
   /* A prototype that no point of its instancer uses has no instances. */
   if (HdChangeTracker::IsPrimIdDirty(*dirtyBits, id) && !_instances.empty()) {
+    const bool needed = NeedsIdAttribute(lock.scene, HdAovTokens->primId);
     for (Object *instance : _instances) {
-      SetPrimIdAttribute(instance);
+      SetPrimIdAttribute(instance, needed);
     }
   }
 
@@ -251,17 +252,25 @@ void HdCyclesGeometry<Base, CyclesBase>::Sync(HdSceneDelegate *sceneDelegate,
       static_cast<HdCyclesSession *>(renderParam)->TagLightLinking();
     }
 
-    // Update transforms and instance IDs of all instances. The prototype and the instances move over the same
-    // motion steps, or one of them does not move.
+    // Update transforms and IDs of all instances. The prototype and the instances move over the same motion steps,
+    // or one of them does not move.
+    static const ustring instanceIdName(HdAovTokens->instanceId.GetString());
+    const bool instanceIdNeeded = NeedsIdAttribute(lock.scene, HdAovTokens->instanceId);
+    const bool primIdNeeded = NeedsIdAttribute(lock.scene, HdAovTokens->primId);
     const size_t numSteps = std::max(_geomTransformMotion.size(),
                                      stepTransforms.size() > 1 ? stepTransforms.size() : 0);
     for (size_t i = 0; i < transforms.size(); ++i) {
       Object *const instance = _instances[i];
       instance->set_tfm(convert_transform(_geomTransform * transforms[i]));
 
-      // The first object attribute is the instanceId, see InitializeInstance()
-      instance->attributes.front() = ParamValue(HdAovTokens->instanceId.GetString(),
-                                                instancer ? static_cast<float>(i) : -1.0f);
+      if (instanceIdNeeded) {
+        const float instanceId = instancer ? static_cast<float>(i) : -1.0f;
+        SetObjectAttribute(instance, instanceIdName, 1, &instanceId);
+      }
+      else {
+        RemoveObjectAttribute(instance, instanceIdName);
+      }
+      SetPrimIdAttribute(instance, primIdNeeded);
 
       array<Transform> motion(numSteps);
       for (size_t step = 0; step < numSteps; ++step) {
@@ -683,7 +692,17 @@ void HdCyclesGeometry<Base, CyclesBase>::SetInstancePrimvars(
                                                          make_float3(0.8f, 0.8f, 0.8f));
     }
 
-    instance->attributes.resize(2); /* Keep the instanceId and primId. */
+    /* Keep the IDs (Sync). */
+    static const ustring instanceId(HdAovTokens->instanceId.GetString());
+    static const ustring primId(HdAovTokens->primId.GetString());
+    auto &objectAttributes = instance->attributes;
+    objectAttributes.erase(std::remove_if(objectAttributes.begin(),
+                                          objectAttributes.end(),
+                                          [](const ParamValue &attribute) {
+                                            return attribute.name() != instanceId &&
+                                                   attribute.name() != primId;
+                                          }),
+                           objectAttributes.end());
     for (const auto &[name, pv] : attributes) {
       SetObjectAttribute(instance, name, pv->width, &pv->values[i * pv->width]);
     }
@@ -809,13 +828,37 @@ VtValue HdCyclesGeometry<Base, CyclesBase>::GetObjectSetting(const HdPrimvarsSch
 }
 
 template<typename Base, typename CyclesBase>
-void HdCyclesGeometry<Base, CyclesBase>::SetPrimIdAttribute(Object *instance) const
+bool HdCyclesGeometry<Base, CyclesBase>::NeedsIdAttribute(Scene *scene, const TfToken &name) const
 {
-  /* The primId AOV (Houdini's viewport picking) is written by every shader from this attribute,
-   * like the instanceId, because the object's pass index is the Blender Pass Index. Plus one, so
-   * the background is -1 after the conversion of ID AOVs. */
-  instance->attributes[1] = ParamValue(HdAovTokens->primId.GetString(),
-                                       static_cast<float>(Base::GetPrimId() + 1));
+  /* Only objects whose shaders read an ID carry it: the ID AOVs a render pass binds
+   * (HdCyclesMaterial::AddIdAOVs), a shader reading the primvar. On every object, the attribute
+   * and its attribute map cost each instance about 175 B. Texture baking finds the baked instance
+   * of the target, and the cage, by their instanceId (bake.cpp). */
+  if (_geom->need_attribute(scene, ustring(name.GetString()))) {
+    return true;
+  }
+  if (name != HdAovTokens->instanceId) {
+    return false;
+  }
+  const BakeSettings bake = _session->GetBake();
+  const std::string &path = Base::GetId().GetString();
+  return !bake.object.empty() && (path == bake.object || path == bake.cage);
+}
+
+template<typename Base, typename CyclesBase>
+void HdCyclesGeometry<Base, CyclesBase>::SetPrimIdAttribute(Object *instance,
+                                                            const bool needed) const
+{
+  /* The primId AOV (Houdini's viewport picking) is written from this attribute, like the
+   * instanceId, because the object's pass index is the Blender Pass Index. */
+  static const ustring primId(HdAovTokens->primId.GetString());
+  if (needed) {
+    const float value = static_cast<float>(Base::GetPrimId());
+    SetObjectAttribute(instance, primId, 1, &value);
+  }
+  else {
+    RemoveObjectAttribute(instance, primId);
+  }
 }
 
 template<typename Base, typename CyclesBase>
@@ -870,11 +913,7 @@ void HdCyclesGeometry<Base, CyclesBase>::InitializeInstance(int index)
   Object *instance = _instances[index];
   instance->set_geometry(_geom);
 
-  // Value is set in Sync()
-  instance->attributes.emplace_back(HdAovTokens->instanceId.GetString(), -1.0f);
-  instance->attributes.emplace_back(HdAovTokens->primId.GetString(), 0.0f);
-  SetPrimIdAttribute(instance);
-
+  // The IDs are set in Sync(), when shaders read them
   instance->set_color(index > 0 ? _instances[0]->get_color() : make_float3(0.8f, 0.8f, 0.8f));
   instance->set_random_id(hash_uint2(hash_string(_geom->name.c_str()), index));
   // Pass Index of the object, like in Blender (UpdateObjectSettings)

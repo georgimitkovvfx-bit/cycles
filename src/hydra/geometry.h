@@ -95,7 +95,8 @@ class HdCyclesGeometry : public Base, public HdCyclesRenderTagVisibility {
   void Initialize(PXR_NS::HdRenderParam *renderParam);
 
   void InitializeInstance(const int index);
-  void SetPrimIdAttribute(CCL_NS::Object *instance) const;
+  bool NeedsIdAttribute(CCL_NS::Scene *scene, const PXR_NS::TfToken &name) const;
+  void SetPrimIdAttribute(CCL_NS::Object *instance, bool needed) const;
   void UpdateObjectSettings(const PXR_NS::HdContainerDataSourceHandle &primDs);
   void SetInstancePrimvars(CCL_NS::Scene *scene,
                            const PXR_NS::HdContainerDataSourceHandle &primDs,

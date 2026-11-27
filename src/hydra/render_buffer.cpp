@@ -16,17 +16,6 @@ HdCyclesRenderBuffer::HdCyclesRenderBuffer(const SdfPath &bprimId) : HdRenderBuf
 
 HdCyclesRenderBuffer::~HdCyclesRenderBuffer() = default;
 
-void HdCyclesRenderBuffer::Sync(HdSceneDelegate *sceneDelegate,
-                                HdRenderParam *renderParam,
-                                HdDirtyBits *dirtyBits)
-{
-  // husk writes integer render vars ("primid", ...) as zero, but reads float buffers. Outside the
-  // viewport (which needs integer IDs for selection), IDs are floats: object pass index, 0 = none.
-  _floatIds = !static_cast<const HdCyclesSession *>(renderParam)->IsViewport();
-
-  HdRenderBuffer::Sync(sceneDelegate, renderParam, dirtyBits);
-}
-
 void HdCyclesRenderBuffer::Finalize(HdRenderParam *renderParam)
 {
   // Remove this render buffer from AOV bindings
@@ -43,10 +32,6 @@ bool HdCyclesRenderBuffer::Allocate(const GfVec3i &dimensions,
   if (dimensions[2] != 1) {
     TF_RUNTIME_ERROR("HdCyclesRenderBuffer::Allocate called with dimensions that are not 2D.");
     return false;
-  }
-
-  if (format == HdFormatInt32 && _floatIds) {
-    format = HdFormatFloat32;
   }
 
   const auto lock = LockData();

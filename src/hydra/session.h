@@ -389,8 +389,8 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _aovBindings;
   }
 
-  // Returns true when the primvar AOVs changed: materials then need to be rebuilt, and geometry
-  // to export the primvars.
+  // Returns true when the primvar or ID AOVs changed: materials then need to be rebuilt, and
+  // geometry to export the primvars and IDs.
   bool SyncAovBindings(const PXR_NS::HdRenderPassAovBindingVector &aovBindings);
 
   // Primvar AOVs as (Cycles pass name, primvar name): every shader writes the primvar to the pass
@@ -399,12 +399,21 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
     return _primvarAovs;
   }
 
-  // Primvar AOVs of a render settings prim, synced before shaders are built, with the scene
-  // locked. The active render settings are used, or all of them when none is active (husk).
-  void SetRenderSettingsPrimvarAovs(
-      const PXR_NS::SdfPath &id,
-      bool active,
-      std::vector<std::pair<std::string, std::string>> &&primvarAovs);
+  // The ID AOVs (primId, instanceId) the render pass binds or the render settings ask for:
+  // shaders write them only then, so objects carry their IDs only then (an attribute and its map
+  // per instance).
+  const std::vector<PXR_NS::TfToken> &GetIdAovs() const
+  {
+    return _idAovs;
+  }
+
+  // Primvar and ID AOVs of a render settings prim, synced before shaders are built (husk binds
+  // its AOVs after), with the scene locked. The active render settings are used, or all of them
+  // when none is active (husk).
+  void SetRenderSettingsAovs(const PXR_NS::SdfPath &id,
+                             bool active,
+                             std::vector<std::pair<std::string, std::string>> &&primvarAovs,
+                             std::vector<PXR_NS::TfToken> &&idAovs);
 
   // Rebuild the default surface shader with the primvar AOVs, with the scene locked: the graph
   // of the material override if given, else clay for the "clay" override, else displayColor
@@ -419,6 +428,10 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   // Primvar a render var reads: source type "primvar" or a "primvars:<name>" source name, unless
   // it is a Cycles pass (Karma's "st" is the UV pass). Empty if none.
   static std::string GetPrimvar(const std::string &sourceName, const PXR_NS::TfToken &sourceType);
+
+  // The ID AOV (primId, instanceId) a render var's source name is, Karma's "ray:primid" the
+  // primId. Empty if none.
+  static PXR_NS::TfToken GetIdAov(const PXR_NS::TfToken &sourceName);
 
   // Name of the Cycles pass holding an AOV, which can be shared with other AOVs
   std::string GetPassName(const PXR_NS::TfToken &aovName) const;
@@ -577,8 +590,13 @@ class HdCyclesSession final : public PXR_NS::HdRenderParam {
   PXR_NS::HdRenderPassAovBindingVector _aovBindings;
   std::unordered_map<PXR_NS::TfToken, std::string, PXR_NS::TfToken::HashFunctor> _passNames;
   std::vector<std::pair<std::string, std::string>> _primvarAovs;
-  std::map<PXR_NS::SdfPath, std::pair<bool, std::vector<std::pair<std::string, std::string>>>>
-      _renderSettingsPrimvarAovs;
+  std::vector<PXR_NS::TfToken> _idAovs;
+  struct RenderSettingsAovs {
+    bool active = false;
+    std::vector<std::pair<std::string, std::string>> primvarAovs;
+    std::vector<PXR_NS::TfToken> idAovs;
+  };
+  std::map<PXR_NS::SdfPath, RenderSettingsAovs> _renderSettingsAovs;
   // Render settings prim: (active, has a motion pass)
   std::map<PXR_NS::SdfPath, std::pair<bool, bool>> _motionPassSettings;
   bool _motionPassBound = false;
