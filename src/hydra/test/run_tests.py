@@ -539,17 +539,23 @@ def test_id_aovs(render):
     assert values[0] < 0.01 and abs(values[1] - 1) < 0.02 and abs(values[2] - 2) < 0.04, values
 
 
-def nested_forest(arrays: bool, motion: bool, tint: bool = True) -> str:
+def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False) -> str:
     """Two trees of a nested point instancer seen from above, the second turned and scaled, each a trunk and an
     instancer of three leaves: per-tree displayColor on the forest (the trunks' default surface), a per-leaf "tint" on
     the leaves (their emission; ``tint`` false: a constant green). ``arrays``: cycles:instance_arrays; ``motion``: both
-    levels move over the shutter."""
+    levels move over the shutter; ``deform``: the leaf's points move (it flutters)."""
     def positions(still, moved):
         return (f"point3f[] positions.timeSamples = {{ 1: {still}, 2: {moved} }}" if motion
                 else f"point3f[] positions = {still}")
     tile = """int[] faceVertexCounts = [4]
                         int[] faceVertexIndices = [0, 1, 2, 3]
                         point3f[] points = [(-{s}, -{s}, 0), ({s}, -{s}, 0), ({s}, {s}, 0), (-{s}, {s}, 0)]"""
+    flutter = """int[] faceVertexCounts = [4]
+                        int[] faceVertexIndices = [0, 1, 2, 3]
+                        point3f[] points.timeSamples = {
+                            1: [(-0.6, -0.6, 0), (0.6, -0.6, 0), (0.6, 0.6, 0), (-0.6, 0.6, 0)],
+                            2: [(-0.6, -0.6, 0), (0.6, -0.6, 0), (0.9, 0.9, 0.3), (-0.3, 0.9, 0.3)]
+                        }"""
     stage = HEADER % 1
     stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n'
                           "    timeCodesPerSecond = 24\n    startTimeCode = 1\n    endTimeCode = 2\n", 1)
@@ -582,7 +588,7 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True) -> str:
                     {{
                         def Mesh "leaf" (prepend apiSchemas = ["MaterialBindingAPI"])
                         {{
-                        {tile.format(s=0.6)}
+                        {flutter if deform else tile.format(s=0.6)}
                         rel material:binding = </world/glow>
                         }}
                     }}
@@ -641,14 +647,15 @@ def test_instance_arrays(render):
     the CPU (Embree, E2) and CUDA (Cycles' own BVH, E3), chains without what the first version flattens are nested
     (one object, the kernel places it, its colour, random number, primvars and motion per placement); the others are
     expanded into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
-    cases = [("still", False, True), ("motion", True, True), ("plain", False, False)]
-    for name, motion, tint in cases:
-        on = render(f"arrays_{name}", nested_forest(True, motion, tint), size=(96, 96), samples=16)
+    cases = [("still", False, True, False), ("motion", True, True, False), ("plain", False, False, False),
+             ("deform", True, True, True)]
+    for name, motion, tint, deform in cases:
+        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform), size=(96, 96), samples=16)
         placed = render.output
-        off = render(f"objects_{name}", nested_forest(False, motion, tint), size=(96, 96), samples=16)
+        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform), size=(96, 96), samples=16)
         assert "CYCLES_USD_RENDER_INSTANCES" not in render.output, name
         # 2 trunks and 6 leaves, nested: the leaves' per-leaf tint a per-placement attribute, both levels' motion
-        # interpolated at the ray's time.
+        # interpolated at the ray's time, the fluttering leaf's motion its geometry's.
         expected = "placed 2 nested 2 (8 instances)"
         assert f"CYCLES_USD_RENDER_INSTANCES {expected}" in placed, (name, placed[-500:])
         difference = abs(on - off).max(axis=2)
