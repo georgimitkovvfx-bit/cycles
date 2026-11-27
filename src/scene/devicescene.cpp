@@ -34,6 +34,7 @@ DeviceScene::DeviceScene(Device *device)
       instance_levels(device, "instance_levels", MEM_GLOBAL),
       instance_transforms(device, "instance_transforms", MEM_GLOBAL),
       instance_colors(device, "instance_colors", MEM_GLOBAL),
+      instance_motion(device, "instance_motion", MEM_GLOBAL),
       instance_inverse_transforms(device, "instance_inverse_transforms", MEM_GLOBAL),
       instance_bvh_roots(device, "instance_bvh_roots", MEM_GLOBAL),
       instance_attributes(device, "instance_attributes", MEM_GLOBAL),

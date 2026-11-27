@@ -107,17 +107,44 @@ ccl_device_inline uint object_instance_element(const KernelInstanceLevel level, 
   return (instance / level.stride) % level.count;
 }
 
-/* Object to world: each level's element transform, outer first, then the object's own (its prototype's). */
+/* A level's element transform at a time: interpolated between its motion steps when it moves. */
+ccl_device_inline Transform object_instance_level_transform(KernelGlobals kg,
+                                                            const KernelInstanceLevel level,
+                                                            const uint element,
+                                                            const float time)
+{
+#  ifdef __OBJECT_MOTION__
+  if (level.num_steps > 1) {
+    const ccl_global DecomposedTransform *motion = &kernel_data_fetch(
+        instance_motion, level.motion_offset + element * level.num_steps);
+    Transform tfm;
+    transform_motion_array_interpolate(&tfm, motion, level.num_steps, time);
+    return tfm;
+  }
+#  else
+  (void)time;
+#  endif
+  return kernel_data_fetch(instance_transforms, level.transform_offset + element);
+}
+
+/* Object to world at a time: each level's element transform, outer first, then the object's own (its
+ * prototype's). */
 ccl_device_inline Transform object_instance_transform(KernelGlobals kg,
                                                       const int object,
-                                                      const uint instance)
+                                                      const uint instance,
+                                                      const float time)
 {
   const KernelObjectInstance placed = kernel_data_fetch(object_instance, object);
+#  ifdef __OBJECT_MOTION__
+  Transform tfm = (kernel_data_fetch(object_flag, object) & SD_OBJECT_MOTION) ?
+                      object_fetch_transform_motion(kg, object, time) :
+                      kernel_data_fetch(objects, object).tfm;
+#  else
   Transform tfm = kernel_data_fetch(objects, object).tfm;
+#  endif
   for (int l = placed.num_levels - 1; l >= 0; l--) {
     const KernelInstanceLevel level = kernel_data_fetch(instance_levels, placed.levels_offset + l);
-    tfm = kernel_data_fetch(instance_transforms,
-                            level.transform_offset + object_instance_element(level, instance)) *
+    tfm = object_instance_level_transform(kg, level, object_instance_element(level, instance), time) *
           tfm;
   }
   return tfm;

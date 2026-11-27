@@ -1523,8 +1523,13 @@ static_assert_align(KernelObjectInstance, 16);
 struct KernelInstanceLevel {
   uint count;
   uint stride;
-  uint transform_offset; /* into instance_transforms */
+  uint transform_offset; /* into instance_transforms (the centre step) */
   int color_offset;      /* into instance_colors (3 floats per element), -1 without */
+  /* Elements that move over the shutter: num_steps decomposed transforms each, from motion_offset into
+   * instance_motion; num_steps 1 when they do not. */
+  int motion_offset;
+  int num_steps;
+  int pad[2];
 };
 static_assert_align(KernelInstanceLevel, 16);
 

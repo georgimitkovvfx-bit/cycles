@@ -321,9 +321,10 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
   /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
-   * the first version flattens: motion on any level, and prototypes whose shading keys on one object index or
+   * the first version flattens: deforming geometry, and prototypes whose shading keys on one object index or
    * transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking). Per-element attributes
-   * and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE). */
+   * and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE); moving levels and a moving prototype are
+   * interpolated at the ray's time. */
 #if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
   const int max_levels = std::min(RTC_MAX_INSTANCE_LEVEL_COUNT, BVH_MAX_INSTANCE_LEVELS);
 #else
@@ -335,13 +336,13 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   }
   int levels = 0;
   for (const InstanceArray *array = root; array;) {
-    if (++levels > max_levels || array->steps.size() != 1) {
+    if (++levels > max_levels) {
       return false;
     }
     array = array->object ? nullptr : array->group->arrays[0];
   }
   const Geometry *geom = prototype->get_geometry();
-  if (!prototype->get_motion().empty() || geom->is_volume() || geom->is_light() ||
+  if (geom->is_volume() || geom->is_light() ||
       geom->has_motion_blur() || prototype->get_is_bake_target() ||
       prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
       prototype->has_shadow_linking() || prototype->usable_as_light())
@@ -370,15 +371,24 @@ BoundBox InstanceExpansion::chain_bounds(const Object *object, vector<vector<Bou
     element_bounds->assign(chain.size(), {});
   }
   /* Innermost first: each element's bounds are its child's (the geometry with the object's own transform, or the
-   * level inside it) in its parent's space. */
+   * level inside it) in its parent's space, at every motion step (the object's own steps too). */
+  const array<Transform> &own_motion = object->get_motion();
   BoundBox child = object->get_geometry()->bounds;
   for (int level = int(chain.size()) - 1; level >= 0; level--) {
-    const vector<Transform> &transforms = chain[level]->steps[0];
+    const vector<vector<Transform>> &steps = chain[level]->steps;
     const bool innermost = level == int(chain.size()) - 1;
+    const size_t num_steps = std::max(steps.size(), innermost ? size_t(own_motion.size()) : size_t(1));
     BoundBox all = BoundBox::empty;
-    for (size_t e = 0; e < transforms.size(); e++) {
-      const Transform tfm = innermost ? transforms[e] * object->get_tfm() : transforms[e];
-      const BoundBox bounds = child.transformed(&tfm);
+    for (size_t e = 0; e < chain[level]->size(); e++) {
+      BoundBox bounds = BoundBox::empty;
+      for (size_t s = 0; s < num_steps; s++) {
+        Transform tfm = steps[std::min(s, steps.size() - 1)][e];
+        if (innermost) {
+          tfm = tfm * (own_motion.empty() ? object->get_tfm() :
+                                            own_motion[std::min(s, own_motion.size() - 1)]);
+        }
+        bounds.grow(child.transformed(&tfm));
+      }
       all.grow(bounds);
       if (element_bounds) {
         (*element_bounds)[level].push_back(bounds);
@@ -398,6 +408,7 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   vector<float> colors;
   object_instance[0] = {-1, 0, 0, 0};
   vector<Transform> inverse_transforms;
+  vector<DecomposedTransform> motion;
   vector<KernelInstanceAttribute> attributes;
   vector<float> attribute_values;
   static const ustring instance_id("instanceId");
@@ -457,9 +468,28 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
       level.stride = 1;
       level.transform_offset = uint(transforms.size());
       level.color_offset = -1;
-      transforms.insert(transforms.end(), array->steps[0].begin(), array->steps[0].end());
+      level.motion_offset = 0;
+      level.num_steps = 1;
+      level.pad[0] = level.pad[1] = 0;
+      /* The centre step (the frame) for still use, all steps decomposed when the elements move. */
+      const vector<Transform> &centre = array->steps[array->steps.size() / 2];
+      transforms.insert(transforms.end(), centre.begin(), centre.end());
+      if (array->steps.size() > 1) {
+        level.motion_offset = int(motion.size());
+        level.num_steps = int(array->steps.size());
+        /* Each element's steps decomposed together: consecutive rotations take the short way. */
+        vector<Transform> element_steps(array->steps.size());
+        vector<DecomposedTransform> decomposed(array->steps.size());
+        for (size_t e = 0; e < array->size(); e++) {
+          for (size_t s = 0; s < array->steps.size(); s++) {
+            element_steps[s] = array->steps[s][e];
+          }
+          transform_motion_decompose(decomposed.data(), element_steps.data(), element_steps.size());
+          motion.insert(motion.end(), decomposed.begin(), decomposed.end());
+        }
+      }
       /* Cycles' own BVH enters each element through its inverse, the innermost into the geometry's space. */
-      for (const Transform &tfm : array->steps[0]) {
+      for (const Transform &tfm : centre) {
         inverse_transforms.push_back(
             transform_inverse(array->object ? tfm * object->get_tfm() : tfm));
       }
@@ -487,6 +517,9 @@ void InstanceExpansion::device_update(DeviceScene *dscene, Scene *scene)
   std::copy(transforms.begin(), transforms.end(), ktransforms);
   float *kcolors = dscene->instance_colors.alloc(std::max(colors.size(), size_t(1)));
   std::copy(colors.begin(), colors.end(), kcolors);
+  DecomposedTransform *kmotion = dscene->instance_motion.alloc(std::max(motion.size(), size_t(1)));
+  std::copy(motion.begin(), motion.end(), kmotion);
+  dscene->instance_motion.copy_to_device();
   KernelInstanceAttribute *kattributes = dscene->instance_attributes.alloc(
       std::max(attributes.size(), size_t(1)));
   std::copy(attributes.begin(), attributes.end(), kattributes);

@@ -17,6 +17,8 @@ struct BVHNestedState {
   /* 0 outside a nested object; 1 in its outermost level's BVH; num_levels + 1 in its geometry. */
   int depth;
   int levels_offset;
+  int num_levels;
+  int object;
   /* The flattened index of the placement so far, -1 outside a nested object. */
   int instance;
   /* At each depth, the ray and the index before entering it. */
@@ -45,6 +47,8 @@ ccl_device_inline bool bvh_nested_enter(KernelGlobals kg,
   }
   nested.depth = 1;
   nested.levels_offset = placed.levels_offset;
+  nested.num_levels = placed.num_levels;
+  nested.object = object;
   nested.instance = 0;
   *node_addr = kernel_data_fetch(object_node, object);
   return true;
@@ -54,6 +58,7 @@ ccl_device_inline bool bvh_nested_enter(KernelGlobals kg,
 ccl_device_inline int bvh_nested_push_element(KernelGlobals kg,
                                               ccl_private BVHNestedState &nested,
                                               const int leaf_prim,
+                                              const float time,
                                               ccl_private float3 *P,
                                               ccl_private float3 *dir,
                                               ccl_private float3 *idir)
@@ -68,8 +73,31 @@ ccl_device_inline int bvh_nested_push_element(KernelGlobals kg,
   nested.instance_before[nested.depth] = nested.instance;
   nested.instance += element * int(level.stride);
 
-  const Transform itfm = kernel_data_fetch(instance_inverse_transforms,
-                                           level.transform_offset + element);
+  /* Still elements have their inverse precomputed; moving ones, and the innermost when the object itself moves,
+   * are interpolated at the ray's time. */
+  Transform itfm;
+  const bool innermost = nested.depth == nested.num_levels;
+#  ifdef __OBJECT_MOTION__
+  const bool object_moves = innermost &&
+                            (kernel_data_fetch(object_flag, nested.object) & SD_OBJECT_MOTION);
+#  else
+  const bool object_moves = false;
+#  endif
+  if (level.num_steps > 1 || object_moves) {
+    Transform tfm = object_instance_level_transform(kg, level, uint(element), time);
+    if (innermost) {
+#  ifdef __OBJECT_MOTION__
+      tfm = tfm * (object_moves ? object_fetch_transform_motion(kg, nested.object, time) :
+                                  kernel_data_fetch(objects, nested.object).tfm);
+#  else
+      tfm = tfm * kernel_data_fetch(objects, nested.object).tfm;
+#  endif
+    }
+    itfm = transform_inverse(tfm);
+  }
+  else {
+    itfm = kernel_data_fetch(instance_inverse_transforms, level.transform_offset + element);
+  }
   *P = transform_point(&itfm, *P);
   *dir = bvh_clamp_direction(transform_direction(&itfm, *dir));
   *idir = bvh_inverse_direction(*dir);
