@@ -13,6 +13,8 @@
 #  include <embree4/rtcore.h>
 #  include <embree4/rtcore_scene.h>
 #  define __EMBREE__
+/* Our Embree has its own API namespace (USD Nodes ADR 0082 › E0); nothing without one. */
+RTC_NAMESPACE_USE
 #endif
 
 #ifdef __APPLE__

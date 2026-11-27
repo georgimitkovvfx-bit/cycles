@@ -8,6 +8,7 @@
 
 #  include <embree4/rtcore.h>
 #  include <embree4/rtcore_scene.h>
+RTC_NAMESPACE_USE
 
 #  include "bvh/bvh.h"
 #  include "bvh/params.h"

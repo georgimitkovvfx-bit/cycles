@@ -10,6 +10,9 @@
 #include <embree4/rtcore_ray.h>
 #include <embree4/rtcore_scene.h>
 
+/* Our Embree has its own API namespace (USD Nodes ADR 0082 › E0); nothing without one. */
+RTC_NAMESPACE_USE
+
 #ifdef __KERNEL_ONEAPI__
 #  include "kernel/device/oneapi/compat.h"
 #  include "kernel/device/oneapi/globals.h"
@@ -122,7 +125,9 @@ ccl_device_inline void kernel_embree_setup_rayhit(const Ray &ray,
 {
   kernel_embree_setup_ray(ray, rayhit.ray, visibility);
   rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-  rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+  for (int level = 0; level < RTC_MAX_INSTANCE_LEVEL_COUNT; level++) {
+    rayhit.hit.instID[level] = RTC_INVALID_GEOMETRY_ID;
+  }
 }
 
 ccl_device_inline int kernel_embree_get_hit_object(const RTCHit *hit)
@@ -262,7 +267,8 @@ ccl_device_forceinline void kernel_embree_custom_intersection_func_impl(
     const RTCIntersectFunctionNArguments *args)
 {
   kernel_assert(args->N == 1);
-  static_assert(RTC_MAX_INSTANCE_LEVEL_COUNT == 1);
+  /* Scenes have one instance level; an Embree built with more (ADR 0082) reads level 0 the same. */
+  static_assert(RTC_MAX_INSTANCE_LEVEL_COUNT >= 1);
 
 #if defined(__GSPLATS__)
   CCLFirstHitContext *ctx = (CCLFirstHitContext *)(args->context);
@@ -310,7 +316,13 @@ ccl_device_forceinline void kernel_embree_custom_intersection_func_impl(
   potential_hit.v = 0.0f;
   potential_hit.primID = args->primID;
   potential_hit.geomID = args->geomID;
-  potential_hit.instID[0] = ctx->instID[0];
+  /* The instance stack of every level (an Embree built with more levels, ADR 0082). */
+  for (int level = 0; level < RTC_MAX_INSTANCE_LEVEL_COUNT; level++) {
+    potential_hit.instID[level] = ctx->instID[level];
+#  if defined(RTC_GEOMETRY_INSTANCE_ARRAY)
+    potential_hit.instPrimID[level] = ctx->instPrimID[level];
+#  endif
+  }
 
   const float old_tfar = ray_hit->ray.tfar;
   ray_hit->ray.tfar = isect_t;
@@ -341,7 +353,8 @@ ccl_device_forceinline void kernel_embree_custom_occluded_func_impl(
     const RTCOccludedFunctionNArguments *args)
 {
   kernel_assert(args->N == 1);
-  static_assert(RTC_MAX_INSTANCE_LEVEL_COUNT == 1);
+  /* Scenes have one instance level; an Embree built with more (ADR 0082) reads level 0 the same. */
+  static_assert(RTC_MAX_INSTANCE_LEVEL_COUNT >= 1);
 
 #if defined(__GSPLATS__)
   if (!args->valid[0]) {

@@ -16,6 +16,7 @@
 
 #ifdef WITH_EMBREE
 #  include <embree4/rtcore.h>
+RTC_NAMESPACE_USE
 #endif
 
 #include "device/cpu/kernel.h"

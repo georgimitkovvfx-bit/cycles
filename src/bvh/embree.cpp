@@ -19,6 +19,7 @@
 #ifdef WITH_EMBREE
 
 #  include <embree4/rtcore_geometry.h>
+RTC_NAMESPACE_USE
 
 #  include "bvh/embree.h"
 
