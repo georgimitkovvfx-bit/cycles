@@ -456,6 +456,7 @@ ccl_device_inline bool volume_shader_eval_entry(KernelGlobals kg,
    * switching should be quick. */
   sd->object = entry.object;
   sd->shader = entry.shader;
+  sd->instance = entry.instance;
 
   sd->shader_flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
   sd->object_flag &= ~SD_OBJECT_FLAGS;

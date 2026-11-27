@@ -967,9 +967,10 @@ bool HdCyclesGeometry<Base, CyclesBase>::UseInstanceArrays(HdSceneDelegate *scen
   HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
   const auto *instancer = static_cast<const HdCyclesInstancer *>(
       renderIndex.GetInstancer(Base::GetInstancerId()));
-  /* What ADR 0082 flattens first (volumes, geometry lights, the bake target and cage), and per-instance data the
-   * arrays do not carry: link categories of single instances, object settings per instance. */
-  if (!instancer || !_session->UseInstanceArrays() || _geom->is_volume() ||
+  /* What ADR 0082 flattens first (geometry lights, the bake target and cage), and per-instance data the arrays do
+   * not carry: link categories of single instances, object settings per instance. Cycles decides per chain whether
+   * a volume nests (InstanceExpansion::chain_nests). */
+  if (!instancer || !_session->UseInstanceArrays() ||
       HdLightSchema::GetFromParent(primDs).GetContainer())
   {
     return false;

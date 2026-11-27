@@ -184,7 +184,14 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   /* Setup volume stack entry. */
   in = input[offset * 2 + 1];
   const int shader = in.object;
-  const VolumeStack entry = {sd.object, shader};
+#  ifdef __INSTANCE_NESTING__
+  /* A nested object's octree is shared by its placements (its shader varies by no position): evaluated through
+   * the first placement's transform, as the shader goes back to object space through it. */
+  const bool nested = kernel_data_fetch(object_flag, sd.object) & SD_OBJECT_NESTED;
+  const VolumeStack entry = {sd.object, shader, nested ? 0 : -1};
+#  else
+  const VolumeStack entry = {sd.object, shader, -1};
+#  endif
 
   const float3 voxel_size = make_float3(__int_as_float(in.prim), in.u, in.v);
   Extrema<float> extrema = {FLT_MAX, -FLT_MAX};
@@ -194,9 +201,11 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
 
   const bool need_transformation = !(kernel_data_fetch(object_flag, sd.object) &
                                      SD_OBJECT_TRANSFORM_APPLIED);
-  const Transform tfm = need_transformation ?
-                            object_fetch_transform(kg, sd.object, OBJECT_TRANSFORM) :
-                            Transform();
+  const Transform tfm = !need_transformation ? Transform() :
+#  ifdef __INSTANCE_NESTING__
+                        nested ? object_instance_transform(kg, sd.object, 0u, 0.5f) :
+#  endif
+                                 object_fetch_transform(kg, sd.object, OBJECT_TRANSFORM);
   /* Velocity moves the density in object space over the shutter (volume_shader_motion_blur), also
    * where there is none at the center time: take the extrema over the shutter. */
   const bool volume_motion = kernel_data_fetch(object_flag, sd.object) &
@@ -214,9 +223,12 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
     }
     if (need_transformation) {
       /* Convert to world space, at the time the shader converts back to object space at. */
-      const Transform object_tfm = volume_motion ? object_fetch_transform_motion_test(
-                                                       kg, sd.object, sd.time, nullptr) :
-                                                   tfm;
+      const Transform object_tfm =
+#  ifdef __INSTANCE_NESTING__
+          (volume_motion && nested) ? object_instance_transform(kg, sd.object, 0u, sd.time) :
+#  endif
+          volume_motion ? object_fetch_transform_motion_test(kg, sd.object, sd.time, nullptr) :
+                          tfm;
       sd.P = transform_point(&object_tfm, sd.P);
     }
     sd.closure_transparent_extinction = zero_float3();
@@ -240,7 +252,7 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   }
 
   /* Write output. */
-  const float scale = object_volume_density(kg, sd.object);
+  const float scale = object_volume_density(kg, sd.object, entry.instance);
   output[offset * 2 + 0] = extrema.min / scale;
   output[offset * 2 + 1] = extrema.max / scale;
 #endif

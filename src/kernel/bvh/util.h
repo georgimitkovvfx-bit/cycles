@@ -248,6 +248,15 @@ ccl_device_inline bool intersection_skip_self(const ccl_ray_data RaySelfPrimitiv
   return (self.prim == prim) && (self.object == object);
 }
 
+/* The same for a nested object's placement (ADR 0082): `instance` is -1 outside nested objects. */
+ccl_device_inline bool intersection_skip_self(const ccl_ray_data RaySelfPrimitives &self,
+                                              const int object,
+                                              const int prim,
+                                              const int instance)
+{
+  return (self.prim == prim) && (self.object == object) && (instance < 0 || self.instance == instance);
+}
+
 ccl_device_inline bool intersection_skip_self_shadow(const ccl_ray_data RaySelfPrimitives &self,
                                                      const int object,
                                                      const int prim)
@@ -313,16 +322,21 @@ ccl_device_inline bool intersection_skip_shadow_link(KernelGlobals kg,
 /* Check whether an intersection denoted by its object and primitive is to be skipped due to it
  * being already recoded.
  * The situation when primitive is already recoded happens when BVH spatial splits are used. */
+/* `instance`: a nested object's placement (ADR 0082), -1 otherwise: the same primitive of another placement is
+ * another hit (overlapping placements' volume bounds are entered through the same triangle). */
 ccl_device_forceinline bool intersection_skip_shadow_already_recoded(IntegratorShadowState state,
                                                                      const int object,
                                                                      const int prim,
+                                                                     const int instance,
                                                                      const uint num_hits)
 {
   const uint num_recorded_hits = min(num_hits, INTEGRATOR_SHADOW_ISECT_SIZE);
   for (uint i = 0; i < num_recorded_hits; ++i) {
     const int isect_object = INTEGRATOR_STATE_ARRAY(state, shadow_isect, i, object);
     const int isect_prim = INTEGRATOR_STATE_ARRAY(state, shadow_isect, i, prim);
-    if (object == isect_object && prim == isect_prim) {
+    if (object == isect_object && prim == isect_prim &&
+        (instance < 0 || INTEGRATOR_STATE_ARRAY(state, shadow_isect, i, instance) == instance))
+    {
       return true;
     }
   }

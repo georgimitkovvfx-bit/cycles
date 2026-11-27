@@ -15,6 +15,7 @@
 #include "scene/devicescene.h"
 #include "scene/film.h"
 #include "scene/hair.h"
+#include "scene/instance.h"
 #include "scene/integrator.h"
 #include "scene/light.h"
 #include "scene/mesh.h"
@@ -791,6 +792,11 @@ int Scene::get_volume_stack_size() const
       continue;
     }
 
+    if (object->instance_root) {
+      /* A nested object's placements inside one another (USD Nodes ADR 0082), each a volume of its own. */
+      volume_stack_size += InstanceExpansion::num_overlapping_placements(object, MAX_VOLUME_STACK_SIZE);
+    }
+
     if (object->intersects_volume) {
       /* Object intersects another volume, assume it's possible to go deeper in
        * the stack. */
@@ -807,7 +813,7 @@ int Scene::get_volume_stack_size() const
 
     has_volume_object = true;
 
-    if (volume_stack_size == MAX_VOLUME_STACK_SIZE) {
+    if (volume_stack_size >= MAX_VOLUME_STACK_SIZE) {
       break;
     }
   }

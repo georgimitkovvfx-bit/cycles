@@ -44,6 +44,17 @@ ccl_device_forceinline void volume_stack_write(IntegratorGenericState state,
   }
 }
 
+/* The placement of the surface's object in the volume stack: a nested object's placements are separate volumes. */
+ccl_device_forceinline int volume_stack_instance(const ccl_private ShaderData *sd)
+{
+#  ifdef __INSTANCE_NESTING__
+  return (sd->object_flag & SD_OBJECT_NESTED) ? sd->instance : -1;
+#  else
+  (void)sd;
+  return -1;
+#  endif
+}
+
 template<const bool shadow, typename IntegratorGenericState>
 ccl_device_inline void volume_stack_exit(IntegratorGenericState state, const int exit_i)
 {
@@ -62,7 +73,7 @@ ccl_device_inline void volume_stack_exit(IntegratorGenericState state, const int
   }
 
   /* Write sentinel value. */
-  volume_stack_write<shadow>(state, i, {OBJECT_NONE, SHADER_NONE});
+  volume_stack_write<shadow>(state, i, {OBJECT_NONE, SHADER_NONE, -1});
 }
 
 template<const bool shadow, typename IntegratorGenericState>
@@ -86,6 +97,8 @@ ccl_device void volume_stack_enter_exit(KernelGlobals kg,
     return;
   }
 
+  const int instance = volume_stack_instance(sd);
+
   if (sd->runtime_flag & SR_BACKFACING) {
     /* Exit volume object: remove from stack. */
     for (int i = 0;; i++) {
@@ -94,7 +107,7 @@ ccl_device void volume_stack_enter_exit(KernelGlobals kg,
         break;
       }
 
-      if (entry.object == sd->object && entry.shader == sd->shader) {
+      if (entry.object == sd->object && entry.shader == sd->shader && entry.instance == instance) {
         volume_stack_exit<shadow>(state, i);
         return;
       }
@@ -110,7 +123,7 @@ ccl_device void volume_stack_enter_exit(KernelGlobals kg,
       }
 
       /* Already in the stack? then we have nothing to do. */
-      if (entry.object == sd->object && entry.shader == sd->shader) {
+      if (entry.object == sd->object && entry.shader == sd->shader && entry.instance == instance) {
         return;
       }
     }
@@ -121,8 +134,8 @@ ccl_device void volume_stack_enter_exit(KernelGlobals kg,
     }
 
     /* Add to the end of the stack. */
-    const VolumeStack new_entry = {sd->object, sd->shader};
-    const VolumeStack empty_entry = {OBJECT_NONE, SHADER_NONE};
+    const VolumeStack new_entry = {sd->object, sd->shader, instance};
+    const VolumeStack empty_entry = {OBJECT_NONE, SHADER_NONE, -1};
     volume_stack_write<shadow>(state, i, new_entry);
     volume_stack_write<shadow>(state, i + 1, empty_entry);
   }

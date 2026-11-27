@@ -165,7 +165,7 @@ struct OctreeTracing {
   uint3 current_P;
 
   /* Object and shader which the octree represents. */
-  VolumeStack entry = {OBJECT_NONE, SHADER_NONE};
+  VolumeStack entry = {OBJECT_NONE, SHADER_NONE, -1};
 
   /* Scale of the current active leaf node, relative to the smallest possible size representable by
    * float. Initialize to the number of float mantissa bits. */
@@ -373,7 +373,7 @@ ccl_device_inline Extrema<float> volume_object_get_extrema(KernelGlobals kg,
   const int shader_flag = kernel_data_fetch(shaders, (octree.entry.shader & SHADER_MASK)).flags;
   if ((path_visibility & PATH_RAY_VISIBILITY_CAMERA) || !(shader_flag & SD_HAS_LIGHT_PATH_NODE)) {
     /* Use the baked volume density extrema. */
-    return octree.node->sigma * object_volume_density(kg, octree.entry.object);
+    return octree.node->sigma * object_volume_density(kg, octree.entry.object, octree.entry.instance);
   }
 
 #  ifdef __KERNEL_HIP__
@@ -417,7 +417,7 @@ ccl_device bool volume_octree_setup_single(KernelGlobals kg,
     return false;
   }
 
-  if (entry.object == skip.object && entry.shader == skip.shader) {
+  if (entry.object == skip.object && entry.shader == skip.shader && entry.instance == skip.instance) {
     return true;
   }
 
@@ -432,7 +432,17 @@ ccl_device bool volume_octree_setup_single(KernelGlobals kg,
     /* At the ray time, like the shader evaluates the density: with transform motion blur the
      * octree of the object is elsewhere in world space at other times. */
     Transform itfm;
-    object_fetch_transform_motion_test(kg, entry.object, ray->time, &itfm);
+#  ifdef __INSTANCE_NESTING__
+    if (entry.instance >= 0) {
+      /* A nested object's placement: its octree is the object's, in the object's space. */
+      itfm = transform_inverse(
+          object_instance_transform(kg, entry.object, uint(entry.instance), ray->time));
+    }
+    else
+#  endif
+    {
+      object_fetch_transform_motion_test(kg, entry.object, ray->time, &itfm);
+    }
     local_P = transform_point(&itfm, ray->P);
     local_D = transform_direction(&itfm, ray->D);
   }

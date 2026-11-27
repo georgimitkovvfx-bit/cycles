@@ -723,9 +723,127 @@ def test_instance_arrays(render):
             (name, difference.mean(), (difference > 0.02).mean())
 
 
+def write_cloud(path: Path) -> None:
+    """A fog ball of radius 1 (5 cm voxels) whose density varies from voxel to voxel: a heterogeneous VDB volume."""
+    import numpy as np
+    import openvdb
+
+    n = 20
+    ijk = np.indices((2 * n, 2 * n, 2 * n)).transpose(1, 2, 3, 0) - n + 0.5
+    inside = (ijk ** 2).sum(axis=3) < n * n
+    noise = np.random.default_rng(7).uniform(0.5, 1.0, inside.shape)
+    grid = openvdb.FloatGrid()
+    grid.copyFromArray(np.where(inside, 2.0 * noise, 0.0).astype(np.float32), ijk=(-n, -n, -n))
+    grid.name = "density"
+    grid.transform = openvdb.createLinearTransform(voxelSize=1.0 / n)
+    openvdb.write(str(path), grids=[grid])
+
+
+def nested_clouds(arrays: bool, inside: bool = False) -> str:
+    """Two clusters of a nested point instancer seen from above, the second turned and scaled, each three VDB clouds
+    (two of them overlapping) over a white ground under a sun and a dome: the clouds' shadows on the ground. ``inside``:
+    the camera is in the first cluster's third cloud (its volume stack starts there). The clouds are at slightly
+    different heights: translated copies at one height have coplanar boundary faces, whose hits at one distance
+    Cycles' volume stack misses (the second is skipped), as for expanded instances."""
+    camera = "(-2.5, -1, 0.007)" if inside else "(0, 0, 14)"
+    stage = HEADER % 1
+    stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n', 1)
+    return stage + f"""def Xform "world"
+{{
+    def PointInstancer "field"
+    {{
+        rel prototypes = [</world/field/protos/cluster>]
+        int[] protoIndices = [0, 0]
+        point3f[] positions = [(-2.5, 0, 0), (2.5, 0, 0)]
+        quath[] orientations = [(1, 0, 0, 0), (0.7071068, 0, 0, 0.7071068)]
+        float3[] scales = [(1, 1, 1), (1.3, 1.3, 1.3)]
+        def Scope "protos"
+        {{
+            def Xform "cluster"
+            {{
+                def PointInstancer "clouds"
+                {{
+                    rel prototypes = [</world/field/protos/cluster/clouds/protos/cloud>]
+                    int[] protoIndices = [0, 0, 0]
+                    point3f[] positions = [(-0.6, 0.8, 0.013), (0.6, 0.8, -0.021), (0, -1, 0.007)]
+                    def Scope "protos"
+                    {{
+                        def Volume "cloud"
+                        {{
+                            rel field:density = </world/field/protos/cluster/clouds/protos/cloud/density>
+                            def OpenVDBAsset "density"
+                            {{
+                                asset filePath = @./cloud.vdb@
+                                token fieldName = "density"
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+    }}
+    def Mesh "ground"
+    {{
+        point3f[] points = [(-30, -30, -2), (30, -30, -2), (30, 30, -2), (-30, 30, -2)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        color3f[] primvars:displayColor = [(0.8, 0.8, 0.8)]
+    }}
+    def DistantLight "sun"
+    {{
+        float inputs:intensity = 3
+        bool inputs:normalize = 1
+        float3 xformOp:rotateXYZ = (30, 20, 0)
+        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+    }}
+    def DomeLight "dome"
+    {{
+        float inputs:intensity = 0.3
+    }}
+    def Camera "cam"
+    {{
+        float focalLength = 35
+        float horizontalAperture = 36
+        float verticalAperture = 36
+        double3 xformOp:translate = {camera}
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }}
+}}
+
+def Scope "Render"
+{{
+    def RenderSettings "settings"
+    {{
+        rel camera = </world/cam>
+        custom bool cycles:instance_arrays = {1 if arrays else 0}
+        custom bool cycles:integrator:use_adaptive_sampling = 0
+    }}
+}}
+"""
+
+
+def test_nested_volumes(render):
+    """Volumes of nested placements (USD Nodes ADR 0082) render as the per-instance objects do: one VDB cloud object
+    placed six times, each placement a volume of its own in the volume stack (two overlap), entered through its
+    transform into the object's octree; shadows through them; a camera inside one (the volume stack from the
+    camera)."""
+    write_cloud(render.folder / "cloud.vdb")
+    for name, inside in (("above", False), ("inside", True)):
+        on = render(f"arrays_clouds_{name}", nested_clouds(True, inside), size=(96, 96), samples=64)
+        placed = render.output
+        off = render(f"objects_clouds_{name}", nested_clouds(False, inside), size=(96, 96), samples=64)
+        expected = "placed 1 nested 1 (6 instances)"
+        assert f"CYCLES_USD_RENDER_INSTANCES {expected}" in placed, (name, placed[-500:])
+        assert 0.02 < on.mean() < 2.0, (name, on.mean())
+        # random walks through the clouds: noise of 64 samples (no adaptive sampling), the same on average and in
+        # each 12 x 12 block (a missed placement in the overlaps or in their shadows moved blocks by 0.05)
+        blocks = abs((on - off).mean(axis=2).reshape(8, 12, 8, 12).mean(axis=(1, 3)))  # a bias, not the noise
+        assert abs(on.mean() - off.mean()) < 0.005 * off.mean() and blocks.max() < 0.01, \
+            (name, on.mean(), off.mean(), blocks.max())
+
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
-         test_id_aovs, test_instance_arrays]
+         test_id_aovs, test_instance_arrays, test_nested_volumes]
 
 
 def main() -> int:

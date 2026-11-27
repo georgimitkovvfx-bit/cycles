@@ -109,6 +109,10 @@ class InstanceExpansion : public Procedural {
   static size_t num_placements(const Object *object);
   static void placement_transforms(const Object *object, vector<Transform> &transforms);
 
+  /* How many of a nested volume object's placements overlap another of them (up to `limit`): the volume stack depth
+   * they may need, as Scene::get_volume_stack_size counts the objects that intersect another volume. */
+  static int num_overlapping_placements(const Object *object, int limit);
+
   /* The kernel's instance tables (object_instance, instance_levels, instance_transforms, instance_colors) for the
    * nested objects (Object::instance_root), every object's entry. Called by the object manager. */
   static void device_update(DeviceScene *dscene, Scene *scene);

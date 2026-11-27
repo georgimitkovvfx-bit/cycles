@@ -43,6 +43,7 @@ ccl_device_inline void set_intersect_point(const hiprtHit &hit, ccl_private Inte
   isect->v = hit.uv.y;
 
   isect->object = object;
+  isect->instance = -1; /* no nested instancing (USD Nodes ADR 0082) */
 
   if (primitive_type & PRIMITIVE_CURVE) {
     const KernelCurveSegment segment = kernel_data_fetch(curve_segments, prim);

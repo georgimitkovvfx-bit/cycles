@@ -319,8 +319,8 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
   /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
-   * the first version flattens: prototypes whose shading keys on one object index or transform (volumes, emission,
-   * caustics, shadow links, baking). Subsurface, bevel and AO trace the placement's geometry (local queries).
+   * the first version flattens: prototypes whose shading keys on one object index or transform (position-dependent
+   * volumes, emission without the light tree, caustics, shadow links, baking). Subsurface, bevel and AO trace the placement's geometry (local queries).
    * Per-element attributes and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE); moving levels and a moving prototype are
    * interpolated at the ray's time; a deforming prototype's motion is its geometry's, shared by its placements. */
 #if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
@@ -340,7 +340,7 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
     array = array->object ? nullptr : array->group->arrays[0];
   }
   const Geometry *geom = prototype->get_geometry();
-  if (geom->is_volume() || geom->is_light() || prototype->get_is_bake_target() ||
+  if (geom->is_light() || prototype->get_is_bake_target() ||
       prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
       prototype->has_shadow_linking())
   {
@@ -351,8 +351,15 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
    * scene has no bounds and is never traceable. */
   for (const Node *node : geom->get_used_shaders()) {
     const Shader *shader = static_cast<const Shader *>(node);
-    if (shader->has_volume || (shader->emission_sampling != EMISSION_SAMPLING_NONE &&
-                               !scene->integrator->get_use_light_tree()))
+    if (shader->emission_sampling != EMISSION_SAMPLING_NONE && !scene->integrator->get_use_light_tree()) {
+      return false;
+    }
+    /* Volumes: a placement is entered through its transform into the object's octree, shared by the placements
+     * (VolumeManager), as instances share one when the shader varies by no position (texture coordinates would
+     * differ per placement); ray marching's step size is the object's scale. An object-space density is each
+     * placement's (object_volume_density in the kernel). */
+    if (shader->has_volume &&
+        (shader->has_volume_spatial_varying || scene->integrator->get_volume_ray_marching()))
     {
       return false;
     }
@@ -385,6 +392,59 @@ void InstanceExpansion::placement_transforms(const Object *object, vector<Transf
     }
     transforms = std::move(next);
   }
+}
+
+int InstanceExpansion::num_overlapping_placements(const Object *object, const int limit)
+{
+  vector<Transform> transforms;
+  placement_transforms(object, transforms);
+  const BoundBox &local = object->get_geometry()->bounds;
+  vector<BoundBox> boxes;
+  boxes.reserve(transforms.size());
+  BoundBox all = BoundBox::empty;
+  for (const Transform &tfm : transforms) {
+    boxes.push_back(local.transformed(&tfm));
+    all.grow(boxes.back());
+  }
+
+  /* A sweep along the longest axis; a field too dense to sweep cheaply gets the most. */
+  const float3 size = all.size();
+  const int axis = (size.x >= size.y && size.x >= size.z) ? 0 : (size.y >= size.z ? 1 : 2);
+  vector<int> order(boxes.size());
+  for (size_t i = 0; i < order.size(); i++) {
+    order[i] = int(i);
+  }
+  std::sort(order.begin(), order.end(), [&](const int a, const int b) {
+    return boxes[a].min[axis] < boxes[b].min[axis];
+  });
+  vector<bool> overlapping(boxes.size(), false);
+  vector<int> active;
+  int count = 0;
+  size_t tests = 0;
+  constexpr size_t max_tests = 50000000;
+  for (const int i : order) {
+    active.erase(std::remove_if(active.begin(),
+                                active.end(),
+                                [&](const int a) { return boxes[a].max[axis] < boxes[i].min[axis]; }),
+                 active.end());
+    for (const int a : active) {
+      if (++tests > max_tests) {
+        return limit;
+      }
+      if (boxes[a].intersects(boxes[i])) {
+        for (const int j : {a, i}) {
+          if (!overlapping[j]) {
+            overlapping[j] = true;
+            if (++count >= limit) {
+              return limit;
+            }
+          }
+        }
+      }
+    }
+    active.push_back(i);
+  }
+  return count;
 }
 
 BoundBox InstanceExpansion::chain_bounds(const Object *object, vector<vector<BoundBox>> *element_bounds)

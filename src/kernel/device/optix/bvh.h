@@ -61,6 +61,7 @@ ccl_device_forceinline Intersection get_intersection()
   isect.t = optixGetRayTmax();
   isect.prim = optixGetPrimitiveIndex();
   isect.object = get_object_id();
+  isect.instance = -1; /* no nested instancing (USD Nodes ADR 0082) */
 
   if (optixIsTriangleHit()) {
     /* Triangle. */
