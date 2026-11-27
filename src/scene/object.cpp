@@ -169,6 +169,12 @@ void Object::update_motion(const Scene::MotionType need_motion)
 
 void Object::compute_bounds(bool motion_blur)
 {
+  /* A nested object is at all its placements (ADR 0082). */
+  if (instance_root) {
+    bounds = InstanceExpansion::chain_bounds(this);
+    return;
+  }
+
   const BoundBox mbounds = geometry->bounds;
 
   if (motion_blur && use_motion()) {
@@ -1271,6 +1277,7 @@ void ObjectManager::device_free(Device * /*unused*/, DeviceScene *dscene, bool f
   dscene->instance_levels.free_if_need_realloc(force_free);
   dscene->instance_transforms.free_if_need_realloc(force_free);
   dscene->instance_colors.free_if_need_realloc(force_free);
+  dscene->instance_inverse_transforms.free_if_need_realloc(force_free);
 }
 
 void ObjectManager::apply_static_transforms(DeviceScene *dscene, Scene *scene, Progress &progress)

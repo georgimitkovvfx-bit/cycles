@@ -52,6 +52,9 @@ struct PackedBVH {
   array<int> prim_object;
   /* Time range of BVH primitive. */
   array<float2> prim_time;
+  /* Nested objects (USD Nodes ADR 0082 › E3): per instance array level (Object::instance_levels_offset), the root of
+   * the BVH inside its elements: the next level's, the innermost the geometry's. */
+  array<int> instance_bvh_roots;
 
   /* index of the root node. */
   int root_index;

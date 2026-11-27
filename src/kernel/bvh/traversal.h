@@ -47,12 +47,17 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
   float3 idir = bvh_inverse_direction(dir);
   const float tmin = ray->tmin;
   int object = OBJECT_NONE;
+#ifdef __INSTANCE_NESTING__
+  BVHNestedState nested;
+  bvh_nested_init(nested);
+#endif
 
   isect->t = ray->tmax;
   isect->u = 0.0f;
   isect->v = 0.0f;
   isect->prim = PRIM_NONE;
   isect->object = OBJECT_NONE;
+  isect->instance = -1;
 
   /* traversal loop */
   do {
@@ -126,7 +131,9 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                                         kernel_data_fetch(prim_object, prim_addr) :
                                         object;
             const int prim = kernel_data_fetch(prim_index, prim_addr);
-            if (intersection_skip_self_shadow(ray->self, prim_object, prim)) {
+            if (intersection_skip_self_shadow(
+                    ray->self, prim_object, prim, BVH_NESTED_INSTANCE(nested)))
+            {
               continue;
             }
 
@@ -149,6 +156,7 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                                        prim,
                                        prim_addr))
                 {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
                   /* shadow ray early termination */
                   if (visibility & PATH_RAY_VISIBILITY_SHADOW_OPAQUE) {
                     return true;
@@ -170,6 +178,7 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                                               prim,
                                               prim_addr))
                 {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
                   /* shadow ray early termination */
                   if (visibility & PATH_RAY_VISIBILITY_SHADOW_OPAQUE)
                     return true;
@@ -195,6 +204,7 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                 const bool hit = curve_intersect(
                     kg, isect, P, dir, tmin, isect->t, prim_object, prim, ray->time, curve_type);
                 if (hit) {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
                   /* shadow ray early termination */
                   if (visibility & PATH_RAY_VISIBILITY_SHADOW_OPAQUE)
                     return true;
@@ -217,6 +227,7 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                 const bool hit = point_intersect(
                     kg, isect, P, dir, tmin, isect->t, prim_object, prim, ray->time, point_type);
                 if (hit) {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
                   /* shadow ray early termination */
                   if (visibility & PATH_RAY_VISIBILITY_SHADOW_OPAQUE)
                     return true;
@@ -238,6 +249,7 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
                 const bool hit = gsplat_intersect(
                     kg, isect, P, dir, tmin, isect->t, prim_object, prim, ray->time, point_type);
                 if (hit) {
+                  isect->instance = BVH_NESTED_INSTANCE(nested);
                   /* shadow ray early termination */
                   if (visibility & PATH_RAY_VISIBILITY_SHADOW_OPAQUE)
                     return true;
@@ -250,8 +262,27 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
           }
         }
         else {
+#ifdef __INSTANCE_NESTING__
+          /* Inside a nested object an instance leaf is an element of its level (ADR 0082 › E3). */
+          if (nested.depth > 0) {
+            ++stack_ptr;
+            kernel_assert(stack_ptr < BVH_STACK_SIZE);
+            traversal_stack[stack_ptr] = ENTRYPOINT_SENTINEL;
+            node_addr = bvh_nested_push_element(kg, nested, -prim_addr - 1, &P, &dir, &idir);
+            continue;
+          }
+#endif
           /* instance push */
           object = kernel_data_fetch(prim_object, -prim_addr - 1);
+
+#ifdef __INSTANCE_NESTING__
+          if (bvh_nested_enter(kg, nested, object, &node_addr)) {
+            ++stack_ptr;
+            kernel_assert(stack_ptr < BVH_STACK_SIZE);
+            traversal_stack[stack_ptr] = ENTRYPOINT_SENTINEL;
+            continue;
+          }
+#endif
 
 #if BVH_FEATURE(BVH_MOTION)
           bvh_instance_motion_push(kg, object, ray, &P, &dir, &idir);
@@ -268,9 +299,17 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
       }
     } while (node_addr != ENTRYPOINT_SENTINEL);
 
-    if (stack_ptr >= 0) {
+    /* A loop: leaving a nested object's level can meet the sentinel of the level around it. */
+    while (node_addr == ENTRYPOINT_SENTINEL && stack_ptr >= 0) {
       kernel_assert(object != OBJECT_NONE);
 
+#ifdef __INSTANCE_NESTING__
+      if (bvh_nested_pop(nested, &P, &dir, &idir)) {
+        node_addr = traversal_stack[stack_ptr];
+        --stack_ptr;
+        continue;
+      }
+#endif
       /* instance pop */
       bvh_instance_pop(ray, &P, &dir, &idir);
 
