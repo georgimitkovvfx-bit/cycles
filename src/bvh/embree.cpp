@@ -339,19 +339,65 @@ void BVHEmbree::add_instance_arrays(Object *ob, const int i)
 
   RTCScene child = instance_bvh->scene;
   for (int level = int(chain.size()) - 1; level >= 0; level--) {
-    const vector<Transform> &transforms = chain[level]->steps[0];
+    const vector<vector<Transform>> &steps = chain[level]->steps;
+    const size_t count = chain[level]->size();
+    const bool innermost = level == int(chain.size()) - 1;
+    /* The innermost level carries the object's own motion too, step by step. */
+    const array<Transform> &own_motion = ob->get_motion();
+    const bool own_moves = innermost && ob->use_motion() && !own_motion.empty();
+    const size_t num_steps = min(max(steps.size(), own_moves ? size_t(own_motion.size()) : size_t(1)),
+                                 size_t(RTC_MAX_TIME_STEP_COUNT));
+    const auto element_transform = [&](const size_t step, const size_t e) {
+      Transform tfm = steps[min(step, steps.size() - 1)][e];
+      if (innermost) {
+        tfm = tfm * (own_moves ? own_motion[min(step, size_t(own_motion.size()) - 1)] : ob->get_tfm());
+      }
+      return tfm;
+    };
+
     RTCGeometry geom_id = rtcNewGeometry(rtc_device, RTC_GEOMETRY_TYPE_INSTANCE_ARRAY);
     rtcSetGeometryInstancedScene(geom_id, child); /* one scene for all elements: no index buffer */
-    rtcSetGeometryTimeStepCount(geom_id, 1);
-    Transform *buffer = static_cast<Transform *>(rtcSetNewGeometryBuffer(geom_id,
-                                                                         RTC_BUFFER_TYPE_TRANSFORM,
-                                                                         0,
-                                                                         RTC_FORMAT_FLOAT3X4_ROW_MAJOR,
-                                                                         sizeof(Transform),
-                                                                         transforms.size()));
-    const bool innermost = level == int(chain.size()) - 1;
-    for (size_t e = 0; e < transforms.size(); e++) {
-      buffer[e] = innermost ? transforms[e] * ob->get_tfm() : transforms[e];
+    rtcSetGeometryTimeStepCount(geom_id, num_steps);
+    if (num_steps == 1) {
+      Transform *buffer = static_cast<Transform *>(rtcSetNewGeometryBuffer(
+          geom_id, RTC_BUFFER_TYPE_TRANSFORM, 0, RTC_FORMAT_FLOAT3X4_ROW_MAJOR, sizeof(Transform), count));
+      for (size_t e = 0; e < count; e++) {
+        buffer[e] = element_transform(steps.size() / 2, e);
+      }
+    }
+    else {
+      /* Moving elements: quaternion decompositions per time step, as add_instance gives a moving object; each
+       * element's steps decomposed together. */
+      vector<RTCQuaternionDecomposition *> buffers(num_steps);
+      for (size_t step = 0; step < num_steps; step++) {
+        buffers[step] = static_cast<RTCQuaternionDecomposition *>(
+            rtcSetNewGeometryBuffer(geom_id,
+                                    RTC_BUFFER_TYPE_TRANSFORM,
+                                    step,
+                                    RTC_FORMAT_QUATERNION_DECOMPOSITION,
+                                    sizeof(RTCQuaternionDecomposition),
+                                    count));
+      }
+      vector<Transform> element_steps(num_steps);
+      vector<DecomposedTransform> decomp(num_steps);
+      for (size_t e = 0; e < count; e++) {
+        for (size_t step = 0; step < num_steps; step++) {
+          element_steps[step] = element_transform(step, e);
+        }
+        transform_motion_decompose(decomp.data(), element_steps.data(), num_steps);
+        for (size_t step = 0; step < num_steps; step++) {
+          RTCQuaternionDecomposition &rtc_decomp = buffers[step][e];
+          rtcInitQuaternionDecomposition(&rtc_decomp);
+          rtcQuaternionDecompositionSetQuaternion(
+              &rtc_decomp, decomp[step].x.w, decomp[step].x.x, decomp[step].x.y, decomp[step].x.z);
+          rtcQuaternionDecompositionSetScale(
+              &rtc_decomp, decomp[step].y.w, decomp[step].z.w, decomp[step].w.w);
+          rtcQuaternionDecompositionSetTranslation(
+              &rtc_decomp, decomp[step].y.x, decomp[step].y.y, decomp[step].y.z);
+          rtcQuaternionDecompositionSetSkew(
+              &rtc_decomp, decomp[step].z.x, decomp[step].z.y, decomp[step].w.x);
+        }
+      }
     }
     rtcSetGeometryUserData(geom_id,
 #  if RTC_VERSION >= 40400

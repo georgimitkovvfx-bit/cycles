@@ -1277,6 +1277,7 @@ void ObjectManager::device_free(Device * /*unused*/, DeviceScene *dscene, bool f
   dscene->instance_levels.free_if_need_realloc(force_free);
   dscene->instance_transforms.free_if_need_realloc(force_free);
   dscene->instance_colors.free_if_need_realloc(force_free);
+  dscene->instance_motion.free_if_need_realloc(force_free);
   dscene->instance_inverse_transforms.free_if_need_realloc(force_free);
   dscene->instance_attributes.free_if_need_realloc(force_free);
   dscene->instance_attribute_values.free_if_need_realloc(force_free);

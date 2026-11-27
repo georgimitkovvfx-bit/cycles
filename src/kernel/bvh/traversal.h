@@ -268,7 +268,8 @@ ccl_device_noinline bool BVH_FUNCTION_FULL_NAME(BVH)(KernelGlobals kg,
             ++stack_ptr;
             kernel_assert(stack_ptr < BVH_STACK_SIZE);
             traversal_stack[stack_ptr] = ENTRYPOINT_SENTINEL;
-            node_addr = bvh_nested_push_element(kg, nested, -prim_addr - 1, &P, &dir, &idir);
+            node_addr = bvh_nested_push_element(
+                kg, nested, -prim_addr - 1, ray->time, &P, &dir, &idir);
             continue;
           }
 #endif

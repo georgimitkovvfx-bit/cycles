@@ -639,17 +639,17 @@ def test_instance_arrays(render):
     """Instance arrays (USD Nodes ADR 0082: instanced prims placed by Cycles) render nested instancing as the
     per-instance objects do: transforms through both levels, the inner and outer primvars, motion of both levels. On
     the CPU (Embree, E2) and CUDA (Cycles' own BVH, E3), chains without what the first version flattens are nested
-    (one object, the kernel places it, its colour, random number and primvars per placement); the others are expanded
-    into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
+    (one object, the kernel places it, its colour, random number, primvars and motion per placement); the others are
+    expanded into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
     cases = [("still", False, True), ("motion", True, True), ("plain", False, False)]
     for name, motion, tint in cases:
         on = render(f"arrays_{name}", nested_forest(True, motion, tint), size=(96, 96), samples=16)
         placed = render.output
         off = render(f"objects_{name}", nested_forest(False, motion, tint), size=(96, 96), samples=16)
         assert "CYCLES_USD_RENDER_INSTANCES" not in render.output, name
-        # 2 trunks and 6 leaves: nested, the leaves' per-leaf tint a per-placement attribute; with motion expanded.
-        expected = {"still": "placed 2 nested 2 (8 instances)", "plain": "placed 2 nested 2 (8 instances)",
-                    "motion": "placed 8 nested 0 (0 instances)"}[name]
+        # 2 trunks and 6 leaves, nested: the leaves' per-leaf tint a per-placement attribute, both levels' motion
+        # interpolated at the ray's time.
+        expected = "placed 2 nested 2 (8 instances)"
         assert f"CYCLES_USD_RENDER_INSTANCES {expected}" in placed, (name, placed[-500:])
         difference = abs(on - off).max(axis=2)
         # the leaves' red, green and blue tints, the trunks' colours under the sun, a black background

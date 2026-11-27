@@ -32,6 +32,7 @@ KERNEL_DATA_ARRAY(KernelObjectInstance, object_instance)
 KERNEL_DATA_ARRAY(KernelInstanceLevel, instance_levels)
 KERNEL_DATA_ARRAY(Transform, instance_transforms)
 KERNEL_DATA_ARRAY(float, instance_colors)
+KERNEL_DATA_ARRAY(DecomposedTransform, instance_motion)
 /* Cycles' own BVH: each element's inverse transform (the innermost level's with the object's own), and per level the
  * root of the BVH inside its elements (the next level's, or the geometry's) (ADR 0082 › E3) */
 KERNEL_DATA_ARRAY(Transform, instance_inverse_transforms)
