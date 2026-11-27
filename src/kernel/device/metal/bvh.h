@@ -305,7 +305,8 @@ ccl_device_intersect bool scene_intersect_local(KernelGlobals kg,
                                                 ccl_private LocalIntersection *local_isect,
                                                 const int local_object,
                                                 ccl_private uint *lcg_state,
-                                                const int max_hits)
+                                                const int max_hits,
+                                                const int local_instance = -1)
 {
   uint primitive_id_offset = kernel_data_fetch(object_prim_offset, local_object);
 

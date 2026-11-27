@@ -318,8 +318,9 @@ const Object *InstanceExpansion::chain_prototype(const InstanceArray *root)
 bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *root)
 {
   /* A chain (each group holds one array: the delegate's per-prim chains) of up to the device's levels, without what
-   * the first version flattens: prototypes whose shading keys on one object index or transform (volumes, emission, subsurface, bevel / AO, caustics, shadow links, baking). Per-element attributes
-   * and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE); moving levels and a moving prototype are
+   * the first version flattens: prototypes whose shading keys on one object index or transform (volumes, emission,
+   * caustics, shadow links, baking). Subsurface, bevel and AO trace the placement's geometry (local queries).
+   * Per-element attributes and instanceId are per-placement attributes (ATTR_ELEMENT_INSTANCE); moving levels and a moving prototype are
    * interpolated at the ray's time; a deforming prototype's motion is its geometry's, shared by its placements. */
 #if defined(WITH_EMBREE) && RTC_MAX_INSTANCE_LEVEL_COUNT > 1
   const int max_levels = std::min(RTC_MAX_INSTANCE_LEVEL_COUNT, BVH_MAX_INSTANCE_LEVELS);
@@ -340,13 +341,15 @@ bool InstanceExpansion::chain_nests(const Scene *scene, const InstanceArray *roo
   const Geometry *geom = prototype->get_geometry();
   if (geom->is_volume() || geom->is_light() || prototype->get_is_bake_target() ||
       prototype->get_is_caustics_caster() || prototype->get_is_caustics_receiver() ||
-      prototype->has_shadow_linking() || prototype->usable_as_light())
+      prototype->has_shadow_linking())
   {
     return false;
   }
+  /* Emission sampled as a light (mesh lights, the light tree, one object index each). Its shaders, not
+   * usable_as_light(): a prototype outside the scene has no bounds and is never traceable. */
   for (const Node *node : geom->get_used_shaders()) {
     const Shader *shader = static_cast<const Shader *>(node);
-    if (shader->has_volume || shader->has_surface_bssrdf || shader->has_surface_raytrace) {
+    if (shader->has_volume || shader->emission_sampling != EMISSION_SAMPLING_NONE) {
       return false;
     }
   }

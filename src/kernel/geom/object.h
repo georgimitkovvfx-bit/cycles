@@ -603,6 +603,25 @@ ccl_device_inline void bvh_instance_motion_push(KernelGlobals kg,
 
 #endif
 
+#ifdef __INSTANCE_NESTING__
+/* Transform ray into a nested object's placement (ADR 0082): its levels composed at the ray's time. For local
+ * queries (subsurface, bevel, AO), which go straight to the object's geometry. */
+ccl_device_inline void bvh_instance_push_nested(KernelGlobals kg,
+                                                const int object,
+                                                const int instance,
+                                                const ccl_private Ray *ray,
+                                                ccl_private float3 *P,
+                                                ccl_private float3 *dir,
+                                                ccl_private float3 *idir)
+{
+  const Transform tfm = transform_inverse(
+      object_instance_transform(kg, object, uint(instance), ray->time));
+  *P = transform_point(&tfm, ray->P);
+  *dir = bvh_clamp_direction(transform_direction(&tfm, ray->D));
+  *idir = bvh_inverse_direction(*dir);
+}
+#endif
+
 /* Transform ray to exit static object in BVH. */
 
 ccl_device_inline void bvh_instance_pop(const ccl_private Ray *ray,

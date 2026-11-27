@@ -786,6 +786,7 @@ ccl_device_intersect bool kernel_embree_intersect_local(KernelGlobals kg,
                                                         const ccl_private Ray *ray,
                                                         ccl_private LocalIntersection *local_isect,
                                                         const int local_object,
+                                                        const int local_instance,
                                                         ccl_private uint *lcg_state,
                                                         const int max_hits)
 {
@@ -826,11 +827,20 @@ ccl_device_intersect bool kernel_embree_intersect_local(KernelGlobals kg,
     float3 P = ray->P;
     float3 dir = ray->D;
     float3 idir = ray->D;
-#  ifdef __OBJECT_MOTION__
-    bvh_instance_motion_push(kg, local_object, ray, &P, &dir, &idir);
-#  else
-    bvh_instance_push(kg, local_object, ray, &P, &dir, &idir);
+#  ifdef __INSTANCE_NESTING__
+    /* A nested object's placement: its geometry (the object's user data) in the placement's space. */
+    if (kernel_data_fetch(object_flag, local_object) & SD_OBJECT_NESTED) {
+      bvh_instance_push_nested(kg, local_object, local_instance, ray, &P, &dir, &idir);
+    }
+    else
 #  endif
+    {
+#  ifdef __OBJECT_MOTION__
+      bvh_instance_motion_push(kg, local_object, ray, &P, &dir, &idir);
+#  else
+      bvh_instance_push(kg, local_object, ray, &P, &dir, &idir);
+#  endif
+    }
 
     rtc_ray.org_x = P.x;
     rtc_ray.org_y = P.y;

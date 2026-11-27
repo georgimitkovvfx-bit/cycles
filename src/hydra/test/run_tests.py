@@ -539,12 +539,15 @@ def test_id_aovs(render):
     assert values[0] < 0.01 and abs(values[1] - 1) < 0.02 and abs(values[2] - 2) < 0.04, values
 
 
-def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False, vector: bool = False) -> str:
+def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = False, vector: bool = False,
+                  sss: bool = False) -> str:
     """Two trees of a nested point instancer seen from above, the second turned and scaled, each a trunk and an
-    instancer of three leaves: per-tree displayColor on the forest (the trunks' default surface), a per-leaf "tint" on
-    the leaves (their emission; ``tint`` false: a constant green). ``arrays``: cycles:instance_arrays; ``motion``: both
+    instancer of three leaves under a sun: per-tree displayColor on the forest (the trunks' default surface), a per-leaf
+    "tint" on the leaves (their diffuse colour; ``tint`` false: a constant green; not emission, which a mesh light's
+    sampling would expand). ``arrays``: cycles:instance_arrays; ``motion``: both
     levels move over the shutter; ``deform``: the leaf's points move (it flutters); ``vector``: a motion pass
-    (Blender's "vector"), without motion blur."""
+    (Blender's "vector"), without motion blur; ``sss``: the leaves are small boxes of a subsurface Principled BSDF
+    whose normal is a Bevel node's (Cycles nodes: local rays on each placement)."""
     def positions(still, moved):
         return (f"point3f[] positions.timeSamples = {{ 1: {still}, 2: {moved} }}" if motion
                 else f"point3f[] positions = {still}")
@@ -557,6 +560,7 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
                             1: [(-0.6, -0.6, 0), (0.6, -0.6, 0), (0.6, 0.6, 0), (-0.6, 0.6, 0)],
                             2: [(-0.6, -0.6, 0), (0.6, -0.6, 0), (0.9, 0.9, 0.3), (-0.3, 0.9, 0.3)]
                         }"""
+    cube = "\n".join(line.strip() for line in box("leaf", 0, 0, 0, 0.6, 0.6, 0.3).splitlines()[2:-1])
     stage = HEADER % 1
     stage = stage.replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n'
                           "    timeCodesPerSecond = 24\n    startTimeCode = 1\n    endTimeCode = 2\n", 1)
@@ -589,12 +593,32 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
                     {{
                         def Mesh "leaf" (prepend apiSchemas = ["MaterialBindingAPI"])
                         {{
-                        {flutter if deform else tile.format(s=0.6)}
-                        rel material:binding = </world/glow>
+                        {cube if sss else (flutter if deform else tile.format(s=0.6))}
+                        rel material:binding = </world/{"skin" if sss else "glow"}>
                         }}
                     }}
                 }}
             }}
+        }}
+    }}
+    def Material "skin"
+    {{
+        token outputs:cycles:surface.connect = </world/skin/bsdf.outputs:BSDF>
+        def Shader "bsdf"
+        {{
+            uniform token info:id = "cycles_principled_bsdf"
+            color3f inputs:base_color = (0.8, 0.4, 0.2)
+            float inputs:subsurface_weight = 1
+            float inputs:subsurface_scale = 0.5
+            normal3f inputs:normal.connect = </world/skin/bevel.outputs:normal>
+            token outputs:BSDF
+        }}
+        def Shader "bevel"
+        {{
+            uniform token info:id = "cycles_bevel"
+            float inputs:radius = 0.15
+            int inputs:samples = 4
+            normal3f outputs:normal
         }}
     }}
     def Material "glow"
@@ -603,9 +627,8 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
         def Shader "surface"
         {{
             uniform token info:id = "UsdPreviewSurface"
-            color3f inputs:diffuseColor = (0.2, 0.2, 0.2)
-            {"color3f inputs:emissiveColor.connect = </world/glow/tint.outputs:result>" if tint
-             else "color3f inputs:emissiveColor = (0.1, 0.9, 0.2)"}
+            {"color3f inputs:diffuseColor.connect = </world/glow/tint.outputs:result>" if tint
+             else "color3f inputs:diffuseColor = (0.1, 0.9, 0.2)"}
             token outputs:surface
         }}
         def Shader "tint"
@@ -618,6 +641,7 @@ def nested_forest(arrays: bool, motion: bool, tint: bool = True, deform: bool = 
     def DistantLight "sun"
     {{
         float inputs:intensity = 3
+        bool inputs:normalize = 1
     }}
     def Camera "cam"
     {{
@@ -662,14 +686,14 @@ def test_instance_arrays(render):
     (one object, the kernel places it, its colour, random number, primvars and motion per placement); the others are
     expanded into objects (E1). Transforms are composed in floats instead of doubles, so a few edge pixels may differ a little."""
     cases = [("still", False, True, False), ("motion", True, True, False), ("plain", False, False, False),
-             ("deform", True, True, True), ("vector", True, True, False)]
+             ("deform", True, True, True), ("vector", True, True, False), ("sss", False, False, False)]
     for name, motion, tint, deform in cases:
-        vector = name == "vector"
+        vector, sss = name == "vector", name == "sss"
         channel = "Vector.Z" if vector else ""  # the movement to the next frame (the first frame has no previous)
-        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector), size=(96, 96), samples=16,
-                    channel=channel)
+        on = render(f"arrays_{name}", nested_forest(True, motion, tint, deform, vector, sss), size=(96, 96),
+                    samples=16, channel=channel)
         placed = render.output
-        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform, vector), size=(96, 96),
+        off = render(f"objects_{name}", nested_forest(False, motion, tint, deform, vector, sss), size=(96, 96),
                      samples=16, channel=channel)
         if vector:
             on = on[..., None]
@@ -688,6 +712,10 @@ def test_instance_arrays(render):
             continue
         # the leaves' red, green and blue tints, the trunks' colours under the sun, a black background
         assert (not tint or min(on[..., c].max() for c in range(3)) > 0.5) and 0.005 < on.mean() < 0.5, (name, on.mean())
+        if sss:  # random walks and bevel samples: noise of 16 samples, the same on average
+            assert abs(on.mean() - off.mean()) < 0.02 * off.mean() and difference.mean() < 0.02, \
+                (name, on.mean(), off.mean(), difference.mean())
+            continue
         assert difference.mean() < 1e-3 and (difference > 0.02).mean() < 0.005, \
             (name, difference.mean(), (difference > 0.02).mean())
 

@@ -205,7 +205,7 @@ ccl_device float3 svm_bevel(
 
     /* Intersect with the same object. if multiple intersections are found it
      * will use at most LOCAL_MAX_HITS hits, a random subset of all hits. */
-    scene_intersect_local(kg, &ray, &isect, sd->object, &lcg_state, LOCAL_MAX_HITS);
+    scene_intersect_local(kg, &ray, &isect, sd->object, &lcg_state, LOCAL_MAX_HITS, sd->instance);
 
     const int num_eval_hits = min(isect.num_hits, LOCAL_MAX_HITS);
 

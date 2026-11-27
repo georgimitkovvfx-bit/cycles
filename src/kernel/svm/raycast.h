@@ -69,7 +69,7 @@ ccl_device bool svm_raycast(KernelGlobals kg,
   Intersection isect;
   if (only_local) {
     LocalIntersection local_isect;
-    scene_intersect_local(kg, &ray, &local_isect, sd->object, nullptr, 1);
+    scene_intersect_local(kg, &ray, &local_isect, sd->object, nullptr, 1, sd->instance);
     if (local_isect.num_hits == 0) {
       return false;
     }
