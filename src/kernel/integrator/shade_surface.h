@@ -765,12 +765,17 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
 
 /* Preview shading (ADR 0081 in USD Nodes): the hit's colour (the setting's, or the object's) under a
  * headlight, written like emission; the caller ends the path. No shader evaluation, no light or
- * shadow rays, no bounces: one ray per sample. Denoising passes get the colour as albedo. */
+ * shadow rays, no bounces: one ray per sample. The data passes are written as for a surface
+ * without closures (depth, position, object and material ids, cryptomatte, the shading normal):
+ * viewports composite the image by its depth. Denoising passes get the colour as albedo. */
 ccl_device_forceinline void integrate_surface_preview(KernelGlobals kg,
                                                       IntegratorState state,
-                                                      const ccl_private ShaderData *sd,
+                                                      ccl_private ShaderData *sd,
+                                                      const uint32_t path_flag,
                                                       ccl_global float *ccl_restrict render_buffer)
 {
+  sd->num_closure = 0; /* set by shader evaluation, which is skipped */
+
   const float3 color = kernel_data.integrator.preview_shading == PREVIEW_SHADING_OBJECT ?
                            object_color(kg, sd->object) :
                            make_float3(kernel_data.integrator.preview_color_r,
@@ -778,6 +783,9 @@ ccl_device_forceinline void integrate_surface_preview(KernelGlobals kg,
                                        kernel_data.integrator.preview_color_b);
   const float headlight = fabsf(dot(sd->N, sd->wi));
   film_write_surface_emission(kg, state, rgb_to_spectrum(color * headlight), 1.0f, render_buffer);
+#ifdef __PASSES__
+  film_write_data_passes(kg, state, path_flag, sd, render_buffer);
+#endif
 
 #ifdef __DENOISING_FEATURES__
   if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DENOISING_FEATURES) {
@@ -818,7 +826,7 @@ ccl_device int integrate_surface(KernelGlobals kg,
   if (!(sd.shader_flag & SD_HAS_ONLY_VOLUME)) {
 #endif
     if (kernel_data.integrator.preview_shading != PREVIEW_SHADING_NONE) {
-      integrate_surface_preview(kg, state, &sd, render_buffer);
+      integrate_surface_preview(kg, state, &sd, path_flag, render_buffer);
       return LABEL_NONE;
     }
 #ifdef __SUBSURFACE__
