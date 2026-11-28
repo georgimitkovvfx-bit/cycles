@@ -48,10 +48,14 @@ SDF_TYPES = {"float": "float", "integer": "int", "boolean": "bool", "color3": "c
              "matrix44": "matrix4d", "string": "string", "filename": "asset"}
 CLOSURES = ("BSDF", "EDF", "VDF", "surfaceshader", "displacementshader", "volumeshader")
 NOT_PROBED = ("string", "filename", "lightshader", "material")
-FEEDERS = {"BSDF": "ND_oren_nayar_diffuse_bsdf", "EDF": "ND_uniform_edf", "VDF": "ND_absorption_vdf"}
+# A closure of each kind for closure inputs: layering or passing nothing builds no shader at all. A volume shader is
+# a volume of an absorption VDF (fed in turn).
+FEEDERS = {"BSDF": "ND_oren_nayar_diffuse_bsdf", "EDF": "ND_uniform_edf", "VDF": "ND_absorption_vdf",
+           "surfaceshader": "ND_surface_unlit", "volumeshader": "ND_volume"}
 MAPPED = ("standard_surface", "open_pbr_surface", "UsdPreviewSurface", "gltf_pbr")
 # Warnings of a result that is close, not zero.
-APPROXIMATIONS = ("hex tiled image is rendered as a plain image",)
+APPROXIMATIONS = ("hex tiled image is rendered as a plain image", "hex tiled normal map is rendered as a plain normal map",
+                  "measured_edf is rendered as uniform emission")
 OSL = REPO / "lib" / "linux_x64" / "osl"
 OSLC = OSL / "bin" / "oslc"
 OSL_INCLUDE = OSL / "share" / "OSL" / "shaders"
@@ -72,7 +76,9 @@ not MaterialX's (upstream's MaterialX-exact noise, Blender PR #158054, is awaite
 Bump node's world space normal (it completes the `normalmap` it feeds); a missing primvar gives 0, not the
 `geompropvalue` / `UsdPrimvarReader` default (Cycles' Attribute node cannot tell); `chiang_hair_roughness` outputs
 Cycles' hair roughnesses (its consumer, `chiang_hair_bsdf`, takes those); a node defined in the material's own `.mtlx`
-file (MaterialX's simple hair) needs its folder in `PXR_MTLX_PLUGIN_SEARCH_PATHS`, as in Storm."""
+file (MaterialX's simple hair) needs its folder in `PXR_MTLX_PLUGIN_SEARCH_PATHS`, as in Storm. `conical_edf` follows
+the specification's description (MaterialX's OSL and GLSL have no implementation, its MDL marks its own as TODO);
+`divide` and `invertmatrix` of a matrix that varies over the surface are unsupported."""
 
 HEADER = """#usda 1.0
 (
@@ -125,7 +131,11 @@ def material(name: str, nodedef: mx.NodeDef, output: mx.Output) -> str | None:
     for i, closure_input in enumerate(nodedef.getActiveInputs()):
         feeder = FEEDERS.get(closure_input.getType())
         if feeder:
-            node += shader(f"f{i}", feeder, [], "out", "token")
+            inner = []
+            if feeder == "ND_volume":
+                node += shader(f"v{i}", FEEDERS["VDF"], [], "out", "token")
+                inner = [f"token inputs:vdf.connect = <{root}/v{i}.outputs:out>"]
+            node += shader(f"f{i}", feeder, inner, "out", "token")
             feeds.append(f"token inputs:{closure_input.getName()}.connect = <{root}/f{i}.outputs:out>")
     node += shader("n", nodedef.getName(), feeds, output.getName(), SDF_TYPES.get(kind, "token"))
     terminals = {"surface": f"{root}/pbr.outputs:out"}

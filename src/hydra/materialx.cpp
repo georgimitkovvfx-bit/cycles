@@ -848,6 +848,73 @@ class Translator {
     return Of(Out(node, "Closure"), Kind::Closure);
   }
 
+  static bool IsEmission(const Val &closure)
+  {
+    return closure.out && closure.out->parent->type->name == "emission";
+  }
+
+  /* An EDF scaled by a colour: an Emission node's colour times it (another closure by its average). */
+  Val ScaleEmission(const Val &edf, const Val &color)
+  {
+    if (!IsEmission(edf)) {
+      return Weighted(edf, Average(color));
+    }
+    ShaderNode *old = edf.out->parent;
+    const auto inputOf = [&](const char *name, const Kind kind) {
+      ShaderInput *in = In(old, name);
+      if (in->link) {
+        return Of(in->link, kind);
+      }
+      return kind == Kind::Float ? Const(old->get_float(in->socket_type)) :
+                                   Const(old->get_float3(in->socket_type).x,
+                                         old->get_float3(in->socket_type).y,
+                                         old->get_float3(in->socket_type).z);
+    };
+    ShaderNode *emission = Create("emission");
+    Link(Op(Kind::Vec3, "multiply", "multiply", inputOf("Color", Kind::Vec3), Cast(color, Kind::Vec3)),
+         In(emission, "Color"));
+    Link(inputOf("Strength", Kind::Float), In(emission, "Strength"));
+    return Of(Out(emission, "Emission"), Kind::Closure);
+  }
+
+  /* "Artist Friendly Metallic Fresnel" (Gulbrandsen 2014), as pbrlib's mx_artistic_ior: the complex IOR of a
+   * metal of a reflectivity and an edge colour. */
+  Val ArtisticIor(const Val &reflectivity, const Val &edgeColor, const bool extinction)
+  {
+    const auto channel = [](float r, const float edge, float &n, float &k) {
+      r = std::clamp(r, 0.0f, 0.99f);
+      const float rs = sqrtf(r);
+      const float nMin = (1.0f - r) / (1.0f + r), nMax = (1.0f + rs) / (1.0f - rs);
+      n = nMax + (nMin - nMax) * edge;
+      k = sqrtf(std::max(((n + 1.0f) * (n + 1.0f) * r - (n - 1.0f) * (n - 1.0f)) / (1.0f - r), 0.0f));
+    };
+    if (reflectivity.isConstant() && edgeColor.isConstant()) {
+      float n[3], k[3];
+      for (int i = 0; i < 3; i++) {
+        channel(Get(reflectivity.c, i), Get(edgeColor.c, i), n[i], k[i]);
+      }
+      return extinction ? Const(k[0], k[1], k[2]) : Const(n[0], n[1], n[2]);
+    }
+    Val result[3];
+    for (int i = 0; i < 3; i++) {
+      const Val r = Math("minimum", Math("maximum", Component(reflectivity, i), Const(0.0f)), Const(0.99f));
+      const Val rs = Math("sqrt", r);
+      const Val nMin = Math("divide", Math("subtract", Const(1.0f), r), Math("add", Const(1.0f), r));
+      const Val nMax = Math("divide", Math("add", Const(1.0f), rs), Math("subtract", Const(1.0f), rs));
+      const Val n = Mix(Kind::Float, Component(edgeColor, i), nMax, nMin);
+      if (!extinction) {
+        result[i] = n;
+        continue;
+      }
+      const Val np1 = Math("add", n, Const(1.0f)), nm1 = Math("subtract", n, Const(1.0f));
+      const Val k2 = Math("divide",
+                          Math("subtract", Math("multiply", Math("multiply", np1, np1), r), Math("multiply", nm1, nm1)),
+                          Math("subtract", Const(1.0f), r));
+      result[i] = Math("sqrt", Math("maximum", k2, Const(0.0f)));
+    }
+    return Combine(result[0], result[1], result[2]);
+  }
+
   Val Average(const Val &v)
   {
     if (v.kind != Kind::Vec3 && v.kind != Kind::Vec4) {
@@ -1470,6 +1537,24 @@ class Translator {
       }
       return Image(input, kind, outType);
     }
+    if (category == "hextilednormalmap") {
+      /* A plain tangent space normal map of the image: hex tiling (random rotations, scales and offsets per
+       * tile, blended) has no Cycles node. */
+      Warn("hex tiled normal map is rendered as a plain normal map");
+      Val color = Image(input, Kind::Vec3, "vector3");
+      const Val flip = input("flip_g");
+      if (!(flip.isConstant() && flip.c.x == 0.0f)) {
+        const Val g = Component(color, 1);
+        color = Combine(Component(color, 0),
+                        Mix(Kind::Float, flip, g, Math("subtract", Const(1.0f), g)),
+                        Component(color, 2));
+      }
+      ShaderNode *normalMap = Create("normal_map");
+      SetEnum(normalMap, "space", "tangent");
+      Link(input("strength"), In(normalMap, "Strength"));
+      Link(color, In(normalMap, "Color"));
+      return Of(Out(normalMap, "Normal"), Kind::Vec3);
+    }
     if (category == "normalmap") {
       const Val in = input("in");
       if (in.bumpNode) {
@@ -1750,6 +1835,9 @@ class Translator {
     }
 
     /* Physics. */
+    if (category == "artistic_ior") {
+      return ArtisticIor(input("reflectivity"), input("edge_color"), output == "extinction");
+    }
     if (category == "blackbody") {
       ShaderNode *blackbody = Create("blackbody");
       Link(input("temperature"), In(blackbody, "Temperature"));
@@ -1872,7 +1960,10 @@ class Translator {
             filter == "closest" ? "closest" :
             filter == "cubic"   ? "cubic" :
                                   "linear");
-    Link(input("texcoord"), In(image, "Vector"));
+    /* Hex tiled images scale their texture coordinates. */
+    const Val tiling = input("tiling");
+    Link(tiling.kind == Kind::None ? input("texcoord") : Op(Kind::Vec3, "multiply", "multiply", input("texcoord"), tiling),
+         In(image, "Vector"));
     const Val color = Of(Out(image, "Color"), Kind::Vec3);
     switch (kind) {
       case Kind::Float:
@@ -1987,6 +2078,54 @@ class Translator {
       }
       return white ? closure : Weighted(closure, tint);
     }
+    if (category == "dot") {
+      return input("in"); /* A shader passed through. */
+    }
+    /* EDFs: Cycles' emission is uniform; their angular factors are computed per shading point from the view
+     * direction (Geometry's Incoming points to the viewer), as MaterialX's OSL does. */
+    if (category == "generalized_schlick_edf") {
+      /* base * mix(color0, color90, (1 - |N.V|)^exponent) */
+      const Val cosTheta = Math("absolute", VMath("dot_product", Geometry("Normal"), Geometry("Incoming"), Const(0.0f), true));
+      const Val x = Math("power",
+                         Math("minimum", Math("maximum", Math("subtract", Const(1.0f), cosTheta), Const(0.0f)), Const(1.0f)),
+                         input("exponent"));
+      return ScaleEmission(input("base"), Mix(Kind::Vec3, x, input("color0"), input("color90")));
+    }
+    if (category == "conical_edf") {
+      /* MaterialX's OSL and GLSL have none (its MDL marks its own mapping TODO): the specification's cone around
+       * the normal, full inside inner_angle, falling off smoothly to 0 at outer_angle (none when outer <= inner).
+       * The angles are from the normal, in degrees. */
+      const Val cosTheta = Math("absolute", VMath("dot_product", input("normal"), Geometry("Incoming"), Const(0.0f), true));
+      const Val inner = input("inner_angle"), outer = input("outer_angle");
+      const auto cosOf = [&](const Val &degrees) {
+        return Math("cosine", Math("multiply", degrees, Const(M_PI_F / 180.0f)));
+      };
+      const Val edge = cosOf(Math("maximum", inner, outer));
+      const Val full = cosOf(inner);
+      /* outer <= inner: a hard edge at inner. */
+      const Val soft = Math("greater_than", outer, inner);
+      const Val start = Mix(Kind::Float, soft, Math("subtract", full, Const(1e-4f)), edge);
+      ShaderNode *range = Create("map_range");
+      SetEnum(range, "range_type", "smoothstep");
+      SetBool(range, "clamp", true);
+      Link(cosTheta, In(range, "Value"));
+      Link(start, In(range, "From Min"));
+      Link(full, In(range, "From Max"));
+      Link(Const(0.0f), In(range, "To Min"));
+      Link(Const(1.0f), In(range, "To Max"));
+      ShaderNode *emission = Create("emission");
+      Link(Op(Kind::Vec3, "multiply", "multiply", input("color"), Cast(Of(Out(range, "Result"), Kind::Float), Kind::Vec3)),
+           In(emission, "Color"));
+      Link(Const(1.0f), In(emission, "Strength"));
+      return Of(Out(emission, "Emission"), Kind::Closure);
+    }
+    if (category == "measured_edf") {
+      Warn("measured_edf is rendered as uniform emission (its IES profile is not read)");
+      ShaderNode *emission = Create("emission");
+      Link(input("color"), In(emission, "Color"));
+      Link(Const(1.0f), In(emission, "Strength"));
+      return Of(Out(emission, "Emission"), Kind::Closure);
+    }
     if (category == "uniform_edf") {
       ShaderNode *emission = Create("emission");
       Link(input("color"), In(emission, "Color"));
@@ -2024,7 +2163,13 @@ class Translator {
       return Mix(Kind::Closure, input("mix"), input("bg"), input("fg"));
     }
     if (category == "multiply") {
-      return Weighted(input("in1"), Average(input("in2")));
+      const Val closure = input("in1"), weight = input("in2");
+      /* An emission's colour can be scaled exactly; other closures by the weight's average (Cycles mixes
+       * closures by a float). */
+      if (weight.kind != Kind::Float && IsEmission(closure)) {
+        return ScaleEmission(closure, weight);
+      }
+      return Weighted(closure, Average(weight));
     }
     if (category == "surface") {
       return Opacity(AddClosures(input("bsdf"), input("edf")), input("opacity"));
