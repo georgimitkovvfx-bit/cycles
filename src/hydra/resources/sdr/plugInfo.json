@@ -1,0 +1,27 @@
+{
+    "Plugins": [
+        {
+            "Info": {
+                "Types": {
+                    "SdrCyclesDiscoveryPlugin": {
+                        "bases": [
+                            "SdrDiscoveryPlugin"
+                        ],
+                        "displayName": "Cycles Shader Node Discovery"
+                    },
+                    "SdrCyclesParserPlugin": {
+                        "bases": [
+                            "SdrParserPlugin"
+                        ],
+                        "displayName": "Cycles Shader Node Parser"
+                    }
+                }
+            },
+            "LibraryPath": "@PLUG_INFO_SDR_LIBRARY_PATH@",
+            "Name": "sdrCycles",
+            "ResourcePath": "resources",
+            "Root": "@PLUG_INFO_ROOT@",
+            "Type": "library"
+        }
+    ]
+}

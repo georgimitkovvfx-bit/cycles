@@ -593,6 +593,35 @@ def Scope "Render"
     assert abs(value - 0.25) < 0.01, value
 
 
+def test_shader_registry(render):
+    """Cycles' shader registry (sdrCycles, hydra/registry.h): its nodes in USD's shader registry as `cycles_<node>`,
+    each input of the USD type USD Nodes and the delegate write (UsdShade's validation checks authored inputs against
+    it: `bool`, `token` for menus and closures, `asset` for file names, no dots in names), with a label and the
+    Houdini package's menu category. The category table (resources/sdr/categories.json) covers exactly Cycles'
+    nodes: run houdini/src/sdr_categories.py again when they change."""
+    import json
+
+    result = subprocess.run([render.path, "--shaders"], capture_output=True, text=True, timeout=120, check=False)
+    assert result.returncode == 0, result.stderr[-2000:]
+    nodes = json.loads(result.stdout)
+    assert len(nodes) > 90, len(nodes)
+    principled = nodes["cycles_principled_bsdf"]
+    assert principled["context"] == "surface" and principled["category"] == "Cycles/Shader", principled
+    expected = {("cycles_principled_bsdf", "base_color"): "color3f", ("cycles_principled_bsdf", "distribution"): "token",
+                ("cycles_image_texture", "filename"): "asset", ("cycles_image_texture", "tex_mapping_scale"): "vector3f",
+                ("cycles_math", "use_clamp"): "bool", ("cycles_math", "value1"): "float",
+                ("cycles_mix_closure", "closure1"): "token"}
+    wrong = {key: nodes[key[0]]["inputs"].get(key[1]) for key, kind in expected.items()
+             if nodes[key[0]]["inputs"].get(key[1]) != kind}
+    assert not wrong, wrong
+    assert nodes["cycles_principled_bsdf"]["outputs"] == {"BSDF": "token"}, nodes["cycles_principled_bsdf"]["outputs"]
+    assert not [name for node in nodes.values() for name in node["inputs"] if "." in name]
+    table = json.loads((REPO / "src" / "hydra" / "resources" / "sdr" / "categories.json").read_text())
+    published = {name[len("cycles_"):] for name in nodes}
+    tabled = {name for name in table if not name.startswith("convert_")}
+    assert published == tabled, (sorted(published - tabled), sorted(tabled - published))
+
+
 def test_light_and_shadow_links(render):
     """collection:lightLink lights only the left cube; collection:shadowLink leaves the right cube without shadow."""
     size = (192, 108)
@@ -1107,7 +1136,7 @@ def test_nested_volumes(render):
             (name, on.mean(), off.mean(), blocks.max())
 
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_edfs_and_artistic_ior,
-         test_materialx_layering_conserves_energy, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
+         test_materialx_layering_conserves_energy, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_shader_registry, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
