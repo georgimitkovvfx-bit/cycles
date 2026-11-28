@@ -1023,12 +1023,13 @@ class Translator {
   }
 
   /* MaterialX's sheen_bsdf: 1 - weight * its directional albedo (Conty-Kulla's rational fit or Zeltner's). */
-  template<typename InputFn> Val SheenThroughput(const InputFn &input)
+  /* Directional albedo of MaterialX's sheen at x = N.V: Zeltner's Gaussian fit (mx_zeltner_sheen_dir_albedo,
+   * Cycles' own sheen) or Conty-Kulla's rational fit (mx_imageworks_sheen_dir_albedo_analytic), clamped to [0, 1]. */
+  Val SheenAlbedo(const Val &x, const Val &roughness, const bool zeltner)
   {
-    const Val x = NdotV(input("normal"));
     Val albedo;
-    if (input("mode").str == "zeltner") {
-      const Val y = Math("minimum", Math("maximum", input("roughness"), Const(0.01f)), Const(1.0f));
+    if (zeltner) {
+      const Val y = Math("minimum", Math("maximum", roughness, Const(0.01f)), Const(1.0f));
       const auto poly = [&](std::initializer_list<float> coefficients) {
         /* Horner in y, highest power first. */
         Val v = Const(0.0f);
@@ -1037,7 +1038,7 @@ class Translator {
         }
         return v;
       };
-      /* s, m, o of the Gaussian fit (mx_zeltner_sheen_dir_albedo). */
+      /* s, m, o of the Gaussian fit. */
       const Val s = Math("divide",
                          Math("multiply", y, poly({1.58491f, 0.0206607f})),
                          poly({1.0f, 1.32227f, 0.0379424f}));
@@ -1054,7 +1055,7 @@ class Translator {
       albedo = Math("add", gauss, o);
     }
     else {
-      const Val y = input("roughness");
+      const Val &y = roughness;
       const auto r = [&](const float k0, const float kx, const float ky, const float kxy, const float kxx,
                          const float kyy) {
         return Math("add",
@@ -1067,8 +1068,44 @@ class Translator {
                     r(13.67300f, -68.78018f, 799.08825f, -905.00061f, 60.28956f, 1086.96473f),
                     r(1.0f, 61.57746f, 442.78211f, 2597.49308f, 121.81241f, 3045.55075f));
     }
-    albedo = Math("minimum", Math("maximum", albedo, Const(0.0f)), Const(1.0f));
+    return Math("minimum", Math("maximum", albedo, Const(0.0f)), Const(1.0f));
+  }
+
+  /* MaterialX's sheen_bsdf: 1 - weight * its directional albedo. */
+  template<typename InputFn> Val SheenThroughput(const InputFn &input)
+  {
+    const Val albedo = SheenAlbedo(NdotV(input("normal")), input("roughness"), input("mode").str == "zeltner");
     return Math("subtract", Const(1.0f), Math("multiply", albedo, input("weight")));
+  }
+
+  /* MaterialX's default sheen, Conty-Kulla's (Imageworks', Karma's, Storm's), on Cycles' sheen, Zeltner's: Zeltner's
+   * fades out at low roughness where Conty-Kulla's keeps 10-20 % of the light (7x darker than Karma at roughness
+   * 0.3). Zeltner's roughness with the same average albedo (fitted to the two albedo fits: 0.30 + 0.43 r^0.33), and
+   * the colour scaled per shading point by the ratio of their directional albedos (0.4-1.7 over the range), so
+   * that each view reflects Conty-Kulla's energy. */
+  struct Sheen {
+    Val roughness;
+    Val scale;
+  };
+
+  Sheen ContyKullaOnZeltner(const Val &x, const Val &roughness)
+  {
+    Sheen sheen;
+    if (roughness.isConstant()) {
+      sheen.roughness = Const(0.30107f + 0.42938f * powf(std::max(roughness.c.x, 0.0f), 0.33f));
+    }
+    else {
+      sheen.roughness = Math("multiply_add",
+                             Math("power", Math("maximum", roughness, Const(0.0f)), Const(0.33f)),
+                             Const(0.42938f),
+                             Const(0.30107f));
+    }
+    sheen.scale = Math("minimum",
+                       Math("divide",
+                            SheenAlbedo(x, roughness, false),
+                            Math("maximum", SheenAlbedo(x, sheen.roughness, true), Const(1e-4f))),
+                       Const(4.0f));
+    return sheen;
   }
 
   /* MaterialX 1.39's thin film on a BSDF (nanometres, as Cycles'). */
@@ -2209,8 +2246,16 @@ class Translator {
     if (category == "sheen_bsdf") {
       ShaderNode *bsdf = Create("sheen_bsdf");
       SetEnum(bsdf, "distribution", "microfiber");
-      Link(Mul(Kind::Vec3, input("color"), input("weight")), In(bsdf, "Color"));
-      Link(input("roughness"), In(bsdf, "Roughness"));
+      Val color = Mul(Kind::Vec3, input("color"), input("weight"));
+      if (input("mode").str == "zeltner") {
+        Link(input("roughness"), In(bsdf, "Roughness"));
+      }
+      else {
+        const Sheen sheen = ContyKullaOnZeltner(NdotV(input("normal")), input("roughness"));
+        Link(sheen.roughness, In(bsdf, "Roughness"));
+        color = Op(Kind::Vec3, "multiply", "multiply", color, Cast(sheen.scale, Kind::Vec3));
+      }
+      Link(color, In(bsdf, "Color"));
       LinkGeom(input("normal"), In(bsdf, "Normal"));
       return WithThroughput(Of(Out(bsdf, "BSDF"), Kind::Closure), SheenThroughput(input));
     }
@@ -2446,6 +2491,8 @@ class Translator {
     Val transmissionWeight;
     Val coatWeight, coatRoughness, coatIor, coatTint, coatNormal;
     Val sheenWeight, sheenRoughness, sheenTint;
+    /* The sheen is Conty-Kulla's (Standard Surface, glTF), not Zeltner's as Cycles' (OpenPBR's fuzz). */
+    bool sheenContyKulla = false;
     Val emissionColor, emissionStrength;
     Val thinFilmThickness, thinFilmIor, thinWall;
   };
@@ -2481,8 +2528,15 @@ class Translator {
     set(p.coatIor, "Coat IOR");
     set(p.coatTint, "Coat Tint");
     LinkGeom(p.coatNormal, In(bsdf, "Coat Normal"));
-    set(p.sheenWeight, "Sheen Weight");
-    set(p.sheenRoughness, "Sheen Roughness");
+    if (p.sheenContyKulla && !(p.sheenWeight.isConstant() && p.sheenWeight.c.x == 0.0f)) {
+      const Sheen sheen = ContyKullaOnZeltner(NdotV(p.normal), p.sheenRoughness);
+      set(Math("multiply", p.sheenWeight, sheen.scale), "Sheen Weight");
+      set(sheen.roughness, "Sheen Roughness");
+    }
+    else {
+      set(p.sheenWeight, "Sheen Weight");
+      set(p.sheenRoughness, "Sheen Roughness");
+    }
     set(p.sheenTint, "Sheen Tint");
     set(p.emissionColor, "Emission Color");
     set(p.emissionStrength, "Emission Strength");
@@ -2544,6 +2598,7 @@ class Translator {
     p.sheenWeight = input("sheen");
     p.sheenTint = input("sheen_color");
     p.sheenRoughness = input("sheen_roughness");
+    p.sheenContyKulla = true;
     p.coatWeight = input("coat");
     p.coatTint = input("coat_color");
     p.coatRoughness = input("coat_roughness");
@@ -2669,6 +2724,7 @@ class Translator {
     p.sheenWeight = Const(1.0f);
     p.sheenTint = input("sheen_color");
     p.sheenRoughness = input("sheen_roughness");
+    p.sheenContyKulla = true;
     p.coatWeight = input("clearcoat");
     p.coatRoughness = input("clearcoat_roughness");
     p.coatNormal = input("clearcoat_normal");
