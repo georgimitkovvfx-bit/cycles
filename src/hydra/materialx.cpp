@@ -461,6 +461,16 @@ class Translator {
     }
   }
 
+  /* Dot product of two values of the same kind, the fourth components included. */
+  Val Dot(const Val &a, const Val &b)
+  {
+    const Val xyz = VMath("dot_product", a, b, Const(0.0f), true);
+    if (a.kind != Kind::Vec4 && b.kind != Kind::Vec4) {
+      return xyz;
+    }
+    return Math("multiply_add", Component(a, 3), Component(b, 3), xyz);
+  }
+
   Val Mul(const Kind kind, const Val &a, const Val &b)
   {
     return Op(kind, "multiply", "multiply", a, b);
@@ -604,6 +614,13 @@ class Translator {
     }
     else if (prop == "bitangent") {
       v = VMath("cross_product", Geometry("Normal"), Geometry("Tangent"));
+    }
+    else if (prop == "viewdirection") {
+      /* From the eye to the surface (nprlib's Vworld, facingratio's default). */
+      v = Scale(Geometry("Incoming"), Const(-1.0f));
+      if (object) {
+        v = Transform(v, "vector", "world", "object");
+      }
     }
     else {
       ShaderNode *node = Create("attribute");
@@ -794,7 +811,26 @@ class Translator {
       zero.kind = kind;
       return zero;
     }
-    return Cast(v, kind);
+    v = Cast(v, kind);
+    return outType == "vector2" ? Vector2(category, v) : v;
+  }
+
+  /* A vector2 is a Cycles vector with Z = 0, which Cycles' math does not keep: a float input of a vector2 node is
+   * broadcast to Z too (uv * 2 - 1 gave Z = -1), and functions that are not 0 at 0 (cos, exp, invert...) make it
+   * nonzero; dot products, lengths and conversions to vector3 then count it (tiledcircles rendered black). */
+  Val Vector2(const std::string &category, Val v)
+  {
+    if (v.isConstant()) {
+      v.c.z = 0.0f;
+      return v;
+    }
+    /* Nodes whose Z is 0 already (2D primvars are stored with Z = 0; rotate2d turns about Z). */
+    static const std::set<std::string> keepZ = {
+        "texcoord", "combine2", "geompropvalue", "geompropvalueuniform", "UsdPrimvarReader", "rotate2d"};
+    if (keepZ.count(category) || v.kind != Kind::Vec3) {
+      return v;
+    }
+    return Op(Kind::Vec3, "multiply", "multiply", v, Const(1.0f, 1.0f, 0.0f));
   }
 
   template<typename InputFn>
@@ -886,17 +922,28 @@ class Translator {
       }
       return rgb;
     }
+    /* Cycles' vector math is 3D: the fourth component of a vector4 is added on its own. */
     if (category == "dotproduct") {
-      return VMath("dot_product", input("in1"), input("in2"), Const(0.0f), true);
+      return Dot(input("in1"), input("in2"));
     }
     if (category == "crossproduct") {
       return VMath("cross_product", input("in1"), input("in2"));
     }
     if (category == "normalize") {
-      return VMath("normalize", input("in"));
+      const Val in = input("in");
+      if (in.kind != Kind::Vec4) {
+        return VMath("normalize", in);
+      }
+      /* MaterialX's normalize: in / length(in), 0 for a zero vector. */
+      const Val length = Math("sqrt", Dot(in, in));
+      const Val inverse = Math(
+          "divide", Math("greater_than", length, Const(0.0f)), Math("maximum", length, Const(1e-30f)));
+      return Op(Kind::Vec4, "multiply", "multiply", in, Cast(inverse, Kind::Vec4));
     }
     if (category == "magnitude") {
-      return VMath("length", input("in"), Const(0.0f), Const(0.0f), true);
+      const Val in = input("in");
+      return in.kind == Kind::Vec4 ? Math("sqrt", Dot(in, in)) :
+                                     VMath("length", in, Const(0.0f), Const(0.0f), true);
     }
     if (category == "dot") {
       return input("in");
@@ -1009,7 +1056,7 @@ class Translator {
       return Of(Out(time, category == "time" ? "Seconds" : "Frame"), Kind::Float);
     }
     if (category == "viewdirection") {
-      return Scale(Geometry("Incoming"), Const(-1.0f));
+      return GeomProp(category, input("space").str, kind);
     }
 
     /* Textures. */
@@ -1116,7 +1163,9 @@ class Translator {
       else {
         fac = Math("greater_than", coord, input("center"));
       }
-      return vertical ? Mix(kind, fac, input("valueb"), input("valuet")) :
+      /* MaterialX's top value is at v = 0 (genosl: mix(valuet, valueb, v)), although its v = 0 is the bottom of
+       * an image. */
+      return vertical ? Mix(kind, fac, input("valuet"), input("valueb")) :
                         Mix(kind, fac, input("valuel"), input("valuer"));
     }
 
@@ -1832,10 +1881,16 @@ class Translator {
 };
 
 /* The node of the document that the terminal connects to. */
+/* The terminal node of the document, by the name of its USD shader. HdMtlx names the material node
+ * after that shader and renames the shader itself when the shader and its material have the same
+ * name (usdMtlx's looks: Materials/Bishop_B/Bishop_B), so a material node found by the name stands
+ * for the shader connected to it. */
 mx::NodePtr FindTerminalNode(const mx::DocumentPtr &doc, const std::string &name)
 {
   if (mx::NodePtr node = doc->getNode(name)) {
-    return node;
+    if (node->getType() != mx::MATERIAL_TYPE_STRING) {
+      return node;
+    }
   }
   for (const mx::NodePtr &material : doc->getMaterialNodes()) {
     for (const mx::InputPtr &input : material->getInputs()) {
