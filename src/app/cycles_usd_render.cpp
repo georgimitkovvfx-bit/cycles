@@ -738,7 +738,16 @@ int render(const Options &o)
     log_level_set(level); /* Cycles' own log: "info", "debug" … */
   }
   const std::filesystem::path plugin = plugin_folder();
-  path_init((plugin / "hdCycles" / "resources").string());
+  const std::filesystem::path resources = plugin / "hdCycles" / "resources";
+  path_init(resources.string());
+  /* Cycles' OSL shaders: the bundle's (hdcycles-blender) are in the plugin's resources, this repository's own install
+   * has them at its root (install/shader); without them OSL has none of Cycles' nodes. Only the shader folder: the
+   * install root's lib/ would be taken for precompiled GPU kernels. */
+  if (!getenv("CYCLES_SHADER_PATH") && !std::filesystem::exists(resources / "shader") &&
+      std::filesystem::exists(plugin / "shader"))
+  {
+    setenv("CYCLES_SHADER_PATH", (plugin / "shader").c_str(), 1);
+  }
   const std::filesystem::path ocio = plugin / "colormanagement" / "config.ocio";
   if (!getenv("OCIO") && std::filesystem::exists(ocio)) {
     /* Blender's colour management (sRGB, Linear Rec.709, AgX …): texture colour spaces resolve as in Blender. */
@@ -813,6 +822,14 @@ int render(const Options &o)
   }
   scene_params.texture_limit = std::max(0, texture_limit);
   scene_params.texture_resolution = 1.0f;
+  /* The shading system is fixed when the scene is made, before the delegate reads the stage's settings (it only
+   * warns that cycles:shading_system applies to a new render). OSL runs on the CPU. */
+  if (VtValue::Cast<bool>(stage_setting("cycles:shading_system")).GetWithDefault(false)) {
+    if (session_params.device.type != DEVICE_CPU) {
+      fail("cycles:shading_system (OSL) needs --device CPU");
+    }
+    scene_params.shadingsystem = SHADINGSYSTEM_OSL;
+  }
 
   /* Static BVH by default, sequences too: Embree's medium / high build quality traces faster than the dynamic one's
    * low quality (M: ~20 %, L: ~8 % a frame with the rebuild). A static BVH bakes single-user transforms into the

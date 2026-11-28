@@ -318,6 +318,16 @@ def test_materialx(render):
     assert abs(image - 0.428) < 0.03, image
 
 
+def test_materialx_shader_named_as_material(render):
+    """A surface shader named as its material (usdMtlx's looks: Materials/Bishop_B/Bishop_B, MaterialX's chess set):
+    HdMtlx names the material node after the shader and renames the shader, the material node was taken for the
+    shader (no shader graph). The OpenPBR of a 0.5 base colour reflects 0.5."""
+    material = MATERIALX.replace("/world/mat/pbr.", "/world/mat/mat.").replace('def Shader "pbr"', 'def Shader "mat"')
+    value = middle(render("mtlx_same_name", plane(material % {
+        "base_color": "color3f inputs:base_color = (0.5, 0.5, 0.5)", "normal": ""})))
+    assert abs(value - 0.5) < 0.03, value
+
+
 def test_materialx_bump(render):
     """MaterialX's bump (heighttonormal into normalmap) of a constant height leaves a flat plane as it is: 0.5 under
     the dome, as without it. Cycles' Bump node's world space normal decoded again as a tangent space color tilted the
@@ -326,6 +336,105 @@ def test_materialx_bump(render):
         "base_color": "color3f inputs:base_color = (0.5, 0.5, 0.5)",
         "normal": "vector3f inputs:geometry_normal.connect = </world/mat/bump.outputs:out>"})))
     assert abs(value - 0.5) < 0.03, value
+
+
+def unlit(shaders: str, value: str, kind: str = "float") -> str:
+    """A material showing a MaterialX value (``value``: the output's path) as unlit emission: the picture is the
+    value, whatever the lights (a float or vector through a convert node)."""
+    sdf = {"float": "float", "vector2": "float2", "vector3": "vector3f", "vector4": "float4", "color3": "color3f"}
+    convert = "" if kind == "color3" else f"""
+        def Shader "convert"
+        {{
+            uniform token info:id = "ND_convert_{kind}_color3"
+            {sdf[kind]} inputs:in.connect = <{value}>
+            color3f outputs:out
+        }}"""
+    shown = value if kind == "color3" else "/world/mat/convert.outputs:out"
+    return f"""        token outputs:mtlx:surface.connect = </world/mat/unlit.outputs:out>
+{shaders}{convert}
+        def Shader "unlit"
+        {{
+            uniform token info:id = "ND_surface_unlit"
+            color3f inputs:emission_color.connect = <{shown}>
+            token outputs:out
+        }}"""
+
+
+def mtlx_node(name: str, node_id: str, inputs: str, kind: str = "float") -> str:
+    sdf = {"float": "float", "vector2": "float2", "vector3": "vector3f", "vector4": "float4", "color3": "color3f"}
+    return f"""
+        def Shader "{name}"
+        {{
+            uniform token info:id = "{node_id}"
+            {inputs}
+            {sdf[kind]} outputs:out
+        }}"""
+
+
+def test_materialx_values(render):
+    """MaterialX nodes whose translation disagreed with MaterialX's own OSL and with Karma (materialx_coverage.py):
+    top and bottom of ramptb / splittb (MaterialX's top is at v = 0), vector4 dot products, lengths and normalize with
+    their fourth component, facingratio's default view direction (1 facing the camera), tiledcircles (a vector2's Z
+    of uv * 2 - 1 was -1 and moved every circle out: black)."""
+    ramp = 'float inputs:valuet = 0.2\n            float inputs:valueb = 0.6\n            float2 inputs:texcoord = (0.5, 0.25)'
+    vec4 = "float4 inputs:in1 = (0.1, 0.2, 0.2, 0.4)\n            float4 inputs:in2 = (0.1, 0.2, 0.2, 0.4)"
+    cases = {
+        # mix(valuet, valueb, v): 0.2 + 0.25 * 0.4
+        "ramptb": (mtlx_node("n", "ND_ramptb_float", ramp), "/world/mat/n.outputs:out", "float", 0.3),
+        # v = 0.25 below the center 0.5: valuet
+        "splittb": (mtlx_node("n", "ND_splittb_float", ramp), "/world/mat/n.outputs:out", "float", 0.2),
+        "dotproduct": (mtlx_node("n", "ND_dotproduct_vector4", vec4), "/world/mat/n.outputs:out", "float", 0.25),
+        "magnitude": (mtlx_node("n", "ND_magnitude_vector4", vec4.split("\n")[0].replace("in1", "in")),
+                      "/world/mat/n.outputs:out", "float", 0.5),
+        # (0.1, 0.2, 0.2, 0.4) / 0.5: its X
+        "normalize": (mtlx_node("n", "ND_normalize_vector4", vec4.split("\n")[0].replace("in1", "in"), "vector4"),
+                      "/world/mat/n.outputs:out", "vector4", 0.2),
+        "facingratio": (mtlx_node("n", "ND_facingratio_float", ""), "/world/mat/n.outputs:out", "float", 1.0),
+        "tiledcircles": (mtlx_node("n", "ND_tiledcircles_color3", "", "color3"), "/world/mat/n.outputs:out", "color3",
+                         1.0),
+    }
+    values = {}
+    for name, (shaders, value, kind, expected) in cases.items():
+        pixels = render(f"mtlx_value_{name}", plane(unlit(shaders, value, kind)))
+        values[name] = (float(pixels[16:32, 16:32, 0].mean()), expected)
+    wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01}
+    assert not wrong, f"(got, expected): {wrong}"
+
+
+def test_osl_shading_system(render):
+    """A stage's cycles:shading_system turns OSL on in cycles_usd_render (it made the scene before the delegate read
+    the setting, so script nodes were dropped), and Cycles' own OSL nodes are found in this repository's install (an
+    emission's node_emission.oso was not): a script node's 0.25 through an emission renders 0.25."""
+    (render.folder / "quarter.osl").write_text("shader quarter(output color out = 0.25) { out = 0.25; }\n")
+    material = """        token outputs:cycles:surface.connect = </world/mat/emission.outputs:emission>
+        def Shader "script"
+        {
+            uniform token info:id = "cycles_script"
+            asset inputs:filepath = @./quarter.osl@
+            color3f outputs:out
+        }
+        def Shader "emission"
+        {
+            uniform token info:id = "cycles_emission"
+            color3f inputs:color.connect = </world/mat/script.outputs:out>
+            float inputs:strength = 1
+            token outputs:emission
+        }"""
+    stage = plane(material).replace("    metersPerUnit = 1\n", '    metersPerUnit = 1\n    renderSettingsPrimPath = "/Render/settings"\n', 1)
+    stage += """
+def Scope "Render"
+{
+    def RenderSettings "settings"
+    {
+        rel camera = </world/cam>
+        custom bool cycles:shading_system = 1
+    }
+}
+"""
+    if render.device != "CPU":
+        return
+    value = middle(render("osl_script", stage))
+    assert abs(value - 0.25) < 0.01, value
 
 
 def test_light_and_shadow_links(render):
@@ -841,7 +950,7 @@ def test_nested_volumes(render):
         assert abs(on.mean() - off.mean()) < 0.005 * off.mean() and blocks.max() < 0.01, \
             (name, on.mean(), off.mean(), blocks.max())
 
-TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_bump, test_light_and_shadow_links,
+TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_osl_shading_system, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
