@@ -377,7 +377,8 @@ def test_materialx_values(render):
     top and bottom of ramptb / splittb (MaterialX's top is at v = 0), vector4 dot products, lengths and normalize with
     their fourth component, facingratio's default view direction (1 facing the camera), tiledcircles (a vector2's Z
     of uv * 2 - 1 was -1 and moved every circle out: black), roughness_anisotropy as pbrlib defines it (it was
-    isotropic), tangent and bitangent along the UV map (Cycles' geometry tangent is radial)."""
+    isotropic), tangent and bitangent along the UV map (Cycles' geometry tangent is radial), a missing primvar's
+    default (Cycles' Attribute node gave 0)."""
     ramp = 'float inputs:valuet = 0.2\n            float inputs:valueb = 0.6\n            float2 inputs:texcoord = (0.5, 0.25)'
     vec4 = "float4 inputs:in1 = (0.1, 0.2, 0.2, 0.4)\n            float4 inputs:in2 = (0.1, 0.2, 0.2, 0.4)"
     cases = {
@@ -398,6 +399,16 @@ def test_materialx_values(render):
                                  "/world/mat/n.outputs:out", "vector2", 0.3536),
         # The plane's U runs along +X: MaterialX's tangent (Cycles' radial one was about (0.25, 0.97, 0))
         "tangent": (mtlx_node("n", "ND_tangent_vector3", "", "vector3"), "/world/mat/n.outputs:out", "vector3", 1.0),
+        # A primvar the plane does not have: the default (it was 0); UsdPrimvarReader's fallback (a geompropvalue)
+        "missing_primvar": (mtlx_node("n", "ND_geompropvalue_float", 'string inputs:geomprop = "nothere"\n'
+                                      "            float inputs:default = 0.42"), "/world/mat/n.outputs:out", "float", 0.42),
+        "reader_fallback": (mtlx_node("n", "ND_UsdPrimvarReader_vector2", 'string inputs:varname = "nothere"\n'
+                                      "            float2 inputs:fallback = (0.3, 0.7)", "vector2"),
+                            "/world/mat/n.outputs:out", "vector2", 0.3),
+        # A primvar it has is read, not its default: st's U in the middle
+        "present_primvar": (mtlx_node("n", "ND_geompropvalue_vector2", 'string inputs:geomprop = "st"\n'
+                                      "            float2 inputs:default = (0.9, 0.9)", "vector2"),
+                            "/world/mat/n.outputs:out", "vector2", 0.5),
         "tiledcircles": (mtlx_node("n", "ND_tiledcircles_color3", "", "color3"), "/world/mat/n.outputs:out", "color3",
                          1.0),
     }

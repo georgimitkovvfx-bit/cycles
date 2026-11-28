@@ -73,8 +73,7 @@ MaterialX's `resources/Materials/Examples` from its source):
 
 Known: the noise nodes (`noise2d`, `noise3d`, `fractal*`, `cellnoise3d`, `worleynoise*`, `random*`) are Cycles' noise,
 not MaterialX's (upstream's MaterialX-exact noise, Blender PR #158054, is awaited); `heighttonormal` alone is Cycles'
-Bump node's world space normal (it completes the `normalmap` it feeds); a missing primvar gives 0, not the
-`geompropvalue` / `UsdPrimvarReader` default (Cycles' Attribute node cannot tell); `chiang_hair_roughness` outputs
+Bump node's world space normal (it completes the `normalmap` it feeds); `chiang_hair_roughness` outputs
 Cycles' hair roughnesses (its consumer, `chiang_hair_bsdf`, takes those); a node defined in the material's own `.mtlx`
 file (MaterialX's simple hair) needs its folder in `PXR_MTLX_PLUGIN_SEARCH_PATHS`, as in Storm. `conical_edf` follows
 the specification's description (MaterialX's OSL and GLSL have no implementation, its MDL marks its own as TODO);

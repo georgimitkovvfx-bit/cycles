@@ -1710,6 +1710,15 @@ class Translator {
       SetString(attribute,
                 "attribute",
                 category == "geomcolor" ? std::string("displayColor") : input("geomprop").str);
+      /* A primvar the geometry does not have gives the node's default (UsdPrimvarReader's fallback: MaterialX
+       * defines it as a geompropvalue), as MaterialX's OSL and Karma do; Cycles' Attribute node gave 0. */
+      const Val fallback = category == "geomcolor" ? Val() : input("default");
+      if (fallback.kind != Kind::None && fallback.kind != Kind::String) {
+        Link(Cast(fallback, Kind::Vec3), In(attribute, "Missing"));
+        if (fallback.kind == Kind::Vec4) {
+          Link(Component(fallback, 3), In(attribute, "Missing Alpha"));
+        }
+      }
       if (kind == Kind::Float) {
         return Of(Out(attribute, "Fac"), Kind::Float);
       }
