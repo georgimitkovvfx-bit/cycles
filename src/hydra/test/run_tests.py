@@ -489,6 +489,48 @@ def test_materialx_edfs_and_artistic_ior(render):
     assert not wrong, f"(got, expected): {wrong}"
 
 
+def test_materialx_layering_conserves_energy(render):
+    """MaterialX's layer as its GLSL (Storm) layers: the base under the top's throughput, 1 - the top's directional
+    albedo. A white furnace: a clear coat (dielectric, IOR 3, so 25 % reflection head-on) over a white diffuse base,
+    under a uniform white dome, reflects all of the light, 1 (the translator added the layers: 1.25 head-on).
+    A metal over the white base lets nothing through: the metal alone (below 1; the sum was the metal + 1). Lama's
+    dielectric (a reflection over a transmission over its interior) layered over the white base: its transmission goes
+    into the base, so the furnace stays near 1 (0.96: MaterialX's GLSL counts the coat's throughput twice); the
+    transmission through the plane was added too (about 2)."""
+    def surface(shaders: str, layer_id: str, top_input: str, base_input: str) -> str:
+        return f"""        token outputs:mtlx:surface.connect = </world/mat/s.outputs:out>{shaders}
+        def Shader "l"
+        {{
+            uniform token info:id = "{layer_id}"
+            token inputs:{top_input}.connect = </world/mat/top.outputs:out>
+            token inputs:{base_input}.connect = </world/mat/base.outputs:out>
+            token outputs:out
+        }}
+        def Shader "s"
+        {{
+            uniform token info:id = "ND_surface"
+            token inputs:bsdf.connect = </world/mat/l.outputs:out>
+            token outputs:out
+        }}"""
+
+    def layered(top: str, base: str) -> str:
+        return surface(top + base, "ND_layer_bsdf", "top", "base")
+
+    coat = mtlx_node("top", "ND_dielectric_bsdf", "float inputs:ior = 3\n            float2 inputs:roughness = (0.05, 0.05)",
+                     "edf")
+    white = mtlx_node("base", "ND_oren_nayar_diffuse_bsdf", "color3f inputs:color = (1, 1, 1)\n"
+                      "            float inputs:roughness = 0", "edf")
+    metal = mtlx_node("top", "ND_conductor_bsdf", "float2 inputs:roughness = (0.05, 0.05)", "edf")
+    lama = mtlx_node("top", "ND_lama_dielectric", "", "edf")
+    furnace = middle(render("mtlx_layer_furnace", plane(layered(coat, white))))
+    metal_over_white = middle(render("mtlx_layer_metal", plane(layered(metal, white))))
+    lama_furnace = middle(render("mtlx_layer_lama", plane(surface(lama + white, "ND_lama_layer_bsdf", "materialTop",
+                                                                  "materialBase"))))
+    assert abs(furnace - 1.0) < 0.03, furnace
+    assert 0.3 < metal_over_white < 1.0, metal_over_white
+    assert 0.9 < lama_furnace < 1.03, lama_furnace
+
+
 def test_materialx_anisotropy_follows_uv(render):
     """An anisotropic Standard Surface metal stretches its highlight along the UV map's tangent, as MaterialX (and
     Karma) do: swapping U and V turns the highlight, so a sun off to the side of the mirror direction lights the plane
@@ -1065,7 +1107,7 @@ def test_nested_volumes(render):
             (name, on.mean(), off.mean(), blocks.max())
 
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_edfs_and_artistic_ior,
-         test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
+         test_materialx_layering_conserves_energy, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
