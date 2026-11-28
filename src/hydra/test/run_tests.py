@@ -362,7 +362,7 @@ def unlit(shaders: str, value: str, kind: str = "float") -> str:
 
 def mtlx_node(name: str, node_id: str, inputs: str, kind: str = "float") -> str:
     sdf = {"float": "float", "vector2": "float2", "vector3": "vector3f", "vector4": "float4", "color3": "color3f",
-           "matrix33": "matrix3d"}
+           "matrix33": "matrix3d", "edf": "token"}
     return f"""
         def Shader "{name}"
         {{
@@ -445,6 +445,47 @@ def test_materialx_matrices(render):
         pixels = render(f"mtlx_matrix_{name}", plane(unlit(shaders, "/world/mat/n.outputs:out", kind)))
         values[name] = (float(pixels[16:32, 16:32, channel].mean()), expected)
     wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01}
+    assert not wrong, f"(got, expected): {wrong}"
+
+
+def test_materialx_edfs_and_artistic_ior(render):
+    """The MaterialX nodes the translator did not support (they rendered black): generalized_schlick_edf (color0
+    facing the viewer, color90 at grazing angles), conical_edf (light only inside its cone around its normal),
+    an EDF multiplied by a colour (exactly: it was the colour's average), artistic_ior (Gulbrandsen's complex IOR:
+    reflectivity 0.5 and edge colour 0.5 make an IOR of 3.0809)."""
+    def emitting(edf: str) -> str:
+        return """        token outputs:mtlx:surface.connect = </world/mat/s.outputs:out>""" + edf + """
+        def Shader "s"
+        {
+            uniform token info:id = "ND_surface"
+            token inputs:edf.connect = </world/mat/n.outputs:out>
+            token outputs:out
+        }"""
+
+    uniform = '\n        def Shader "u"\n        {\n            uniform token info:id = "ND_uniform_edf"\n' \
+              '            color3f inputs:color = (1, 1, 1)\n            token outputs:out\n        }'
+    tilted = "vector3f inputs:normal = (0.9397, 0, 0.3420)"  # 70 degrees from the view (64-76 over the pixels read)
+    cases = {
+        "schlick": (emitting(uniform + mtlx_node("n", "ND_generalized_schlick_edf", "color3f inputs:color0 = (0.2, 0.2, 0.2)"
+                                                 "\n            color3f inputs:color90 = (1, 1, 1)\n"
+                                                 "            token inputs:base.connect = </world/mat/u.outputs:out>",
+                                                 "edf")), 0, 0.2),
+        "multiply": (emitting(uniform + mtlx_node("n", "ND_multiply_edfC", "token inputs:in1.connect = </world/mat/u.outputs:out>"
+                                                  "\n            color3f inputs:in2 = (0.2, 0.5, 0.8)", "edf")), 0, 0.2),
+        "cone_outside": (emitting(mtlx_node("n", "ND_conical_edf", f"{tilted}\n            float inputs:inner_angle = 30",
+                                            "edf")), 0, 0.0),
+        "cone_inside": (emitting(mtlx_node("n", "ND_conical_edf", f"{tilted}\n            float inputs:inner_angle = 85",
+                                           "edf")), 0, 1.0),
+        "artistic_ior": (unlit(mtlx_node("n", "ND_artistic_ior", "color3f inputs:reflectivity = (0.5, 0.5, 0.5)\n"
+                                         "            color3f inputs:edge_color = (0.5, 0.5, 0.5)\n"
+                                         "            vector3f outputs:ior", "vector3"),
+                               "/world/mat/n.outputs:ior", "vector3"), 0, 3.0809),
+    }
+    values = {}
+    for name, (material, channel, expected) in cases.items():
+        pixels = render(f"mtlx_edf_{name}", plane(material))
+        values[name] = (float(pixels[16:32, 16:32, channel].mean()), expected)
+    wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01 + 0.01 * v[1]}
     assert not wrong, f"(got, expected): {wrong}"
 
 
@@ -1023,7 +1064,8 @@ def test_nested_volumes(render):
         assert abs(on.mean() - off.mean()) < 0.005 * off.mean() and blocks.max() < 0.01, \
             (name, on.mean(), off.mean(), blocks.max())
 
-TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
+TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_edfs_and_artistic_ior,
+         test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
