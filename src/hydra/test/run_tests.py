@@ -375,7 +375,8 @@ def test_materialx_values(render):
     """MaterialX nodes whose translation disagreed with MaterialX's own OSL and with Karma (materialx_coverage.py):
     top and bottom of ramptb / splittb (MaterialX's top is at v = 0), vector4 dot products, lengths and normalize with
     their fourth component, facingratio's default view direction (1 facing the camera), tiledcircles (a vector2's Z
-    of uv * 2 - 1 was -1 and moved every circle out: black)."""
+    of uv * 2 - 1 was -1 and moved every circle out: black), roughness_anisotropy as pbrlib defines it (it was
+    isotropic), tangent and bitangent along the UV map (Cycles' geometry tangent is radial)."""
     ramp = 'float inputs:valuet = 0.2\n            float inputs:valueb = 0.6\n            float2 inputs:texcoord = (0.5, 0.25)'
     vec4 = "float4 inputs:in1 = (0.1, 0.2, 0.2, 0.4)\n            float4 inputs:in2 = (0.1, 0.2, 0.2, 0.4)"
     cases = {
@@ -390,15 +391,53 @@ def test_materialx_values(render):
         "normalize": (mtlx_node("n", "ND_normalize_vector4", vec4.split("\n")[0].replace("in1", "in"), "vector4"),
                       "/world/mat/n.outputs:out", "vector4", 0.2),
         "facingratio": (mtlx_node("n", "ND_facingratio_float", ""), "/world/mat/n.outputs:out", "float", 1.0),
+        # alpha 0.25 / sqrt(0.5), its X (the Y, 0.25 * sqrt(0.5), below)
+        "roughness_anisotropy": (mtlx_node("n", "ND_roughness_anisotropy", "float inputs:roughness = 0.5\n"
+                                           "            float inputs:anisotropy = 0.5", "vector2"),
+                                 "/world/mat/n.outputs:out", "vector2", 0.3536),
+        # The plane's U runs along +X: MaterialX's tangent (Cycles' radial one was about (0.25, 0.97, 0))
+        "tangent": (mtlx_node("n", "ND_tangent_vector3", "", "vector3"), "/world/mat/n.outputs:out", "vector3", 1.0),
         "tiledcircles": (mtlx_node("n", "ND_tiledcircles_color3", "", "color3"), "/world/mat/n.outputs:out", "color3",
                          1.0),
     }
-    values = {}
+    # Second components: (name, case, channel, expected)
+    others = [("roughness_anisotropy_y", "roughness_anisotropy", 1, 0.1768), ("bitangent", "bitangent", 1, 1.0)]
+    cases["bitangent"] = (mtlx_node("n", "ND_bitangent_vector3", "", "vector3"), "/world/mat/n.outputs:out", "vector3",
+                          0.0)
+    values, pixels = {}, {}
     for name, (shaders, value, kind, expected) in cases.items():
-        pixels = render(f"mtlx_value_{name}", plane(unlit(shaders, value, kind)))
-        values[name] = (float(pixels[16:32, 16:32, 0].mean()), expected)
+        pixels[name] = render(f"mtlx_value_{name}", plane(unlit(shaders, value, kind)))
+        values[name] = (float(pixels[name][16:32, 16:32, 0].mean()), expected)
+    for name, case, channel, expected in others:
+        values[name] = (float(pixels[case][16:32, 16:32, channel].mean()), expected)
     wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01}
     assert not wrong, f"(got, expected): {wrong}"
+
+
+def test_materialx_anisotropy_follows_uv(render):
+    """An anisotropic Standard Surface metal stretches its highlight along the UV map's tangent, as MaterialX (and
+    Karma) do: swapping U and V turns the highlight, so a sun off to the side of the mirror direction lights the plane
+    differently. Cycles' own default tangent is radial (the same for both UV maps)."""
+    material = """        token outputs:mtlx:surface.connect = </world/mat/metal.outputs:out>
+        def Shader "metal"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:metalness = 1
+            float inputs:base = 1
+            color3f inputs:base_color = (1, 1, 1)
+            float inputs:specular_roughness = 0.3
+            float inputs:specular_anisotropy = 0.8
+            token outputs:out
+        }"""
+    sun = ('    def DistantLight "sun"\n    {\n        float inputs:intensity = 20\n'
+           '        float3 xformOp:rotateXYZ = (0, 12, 0)\n        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]\n'
+           '    }\n    def DomeLight "sky"')
+    # The sun only: a uniform dome reflects the same whichever way the highlight stretches.
+    stage = plane(material).replace('    def DomeLight "sky"', sun).replace(
+        "float inputs:intensity = 1", "float inputs:intensity = 0")
+    swapped = stage.replace("[(0,0),(1,0),(1,1),(0,1)]", "[(0,0),(0,1),(1,1),(1,0)]")
+    along, across = middle(render("aniso_u", stage)), middle(render("aniso_v", swapped))
+    assert max(along, across) > 1.5 * min(along, across), (along, across)
 
 
 def test_osl_shading_system(render):
@@ -950,7 +989,7 @@ def test_nested_volumes(render):
         assert abs(on.mean() - off.mean()) < 0.005 * off.mean() and blocks.max() < 0.01, \
             (name, on.mean(), off.mean(), blocks.max())
 
-TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_osl_shading_system, test_light_and_shadow_links,
+TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 

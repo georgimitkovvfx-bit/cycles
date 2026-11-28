@@ -552,9 +552,70 @@ class Translator {
   }
 
   /* MaterialX microfacet roughness is alpha (squared roughness), Cycles uses roughness. */
+  /* A Cycles microfacet BSDF's roughness for MaterialX's (alpha along the tangent, alpha along the bitangent):
+   * Cycles squares its roughness into the geometric mean of the two alphas and spreads them with its anisotropy,
+   * the glossy BSDFs' (Metallic) as alpha / (1 + an), alpha * (1 + an) for an < 0 (1 - an, 1 / (1 - an) above),
+   * the Principled BSDF's as alpha / aspect, alpha * aspect with aspect = sqrt(1 - 0.9 an) (0 <= an <= 1; an
+   * alpha_y above alpha_x turns the tangent by a quarter turn). Both invert exactly, but for the Principled
+   * BSDF's aspects below sqrt(0.1). */
+  struct Microfacet {
+    Val roughness;
+    Val anisotropy;
+    Val rotation;
+    bool anisotropic = false;
+  };
+
+  Microfacet MicrofacetOf(const Val &alpha, const bool principled)
+  {
+    Microfacet m;
+    const Val ax = Component(alpha, 0), ay = Component(alpha, 1);
+    if (ax.isConstant() && ay.isConstant()) {
+      const float x = std::max(ax.c.x, 0.0f), y = std::max(ay.c.x, 0.0f);
+      m.roughness = Const(sqrtf(sqrtf(x * y)));
+      m.anisotropic = x != y;
+      const float ratio = std::min(x, y) / std::max(std::max(x, y), 1e-8f);
+      m.anisotropy = principled ? Const(std::min((1.0f - ratio) / 0.9f, 1.0f)) :
+                                  Const((sqrtf(ratio) - 1.0f) * (x > y ? 1.0f : -1.0f));
+      m.rotation = Const(principled && y > x ? 0.25f : 0.0f);
+      return m;
+    }
+    m.anisotropic = true;
+    m.roughness = Math("sqrt", Math("sqrt", Math("multiply", ax, ay)));
+    const Val ratio = Math("divide",
+                           Math("minimum", ax, ay),
+                           Math("maximum", Math("maximum", ax, ay), Const(1e-8f)));
+    if (principled) {
+      m.anisotropy = Math("minimum",
+                          Math("divide", Math("subtract", Const(1.0f), ratio), Const(0.9f)),
+                          Const(1.0f));
+      m.rotation = Math("multiply", Math("greater_than", ay, ax), Const(0.25f));
+    }
+    else {
+      m.anisotropy = Math("multiply",
+                          Math("subtract", Math("sqrt", ratio), Const(1.0f)),
+                          Math("sign", Math("subtract", ax, ay)));
+      m.rotation = Const(0.0f);
+    }
+    return m;
+  }
+
+  /* Roughness, anisotropy and (where it is anisotropic) the tangent of a Cycles microfacet BSDF. */
+  void LinkMicrofacet(ShaderNode *bsdf, const Val &alpha, const Val &tangent, const bool principled)
+  {
+    const Microfacet m = MicrofacetOf(alpha, principled);
+    Link(m.roughness, In(bsdf, "Roughness"));
+    if (!m.anisotropic) {
+      return;
+    }
+    Link(m.anisotropy, In(bsdf, principled ? "Anisotropic" : "Anisotropy"));
+    Link(m.rotation, In(bsdf, principled ? "Anisotropic Rotation" : "Rotation"));
+    Link(tangent, In(bsdf, "Tangent"));
+  }
+
+  /* An isotropic Cycles roughness for MaterialX's alphas (glass: no anisotropy in Cycles). */
   Val RoughnessFromAlpha(const Val &alpha)
   {
-    return Math("sqrt", Component(alpha, 0));
+    return MicrofacetOf(alpha, false).roughness;
   }
 
   Val TexCoord()
@@ -606,14 +667,18 @@ class Translator {
         v = Transform(v, "normal", "world", "object");
       }
     }
-    else if (prop == "tangent") {
-      v = Geometry("Tangent");
+    else if (prop == "tangent" || prop == "bitangent") {
+      /* MaterialX's tangent follows the texture coordinates (MaterialX's dPdu, Karma's); Cycles' geometry Tangent
+       * is radial around Z (Blender's default for anisotropic BSDFs). */
+      ShaderNode *tangent = Create("tangent");
+      SetEnum(tangent, "direction_type", "uv_map");
+      v = Of(Out(tangent, "Tangent"), Kind::Vec3);
+      if (prop == "bitangent") {
+        v = VMath("cross_product", Geometry("Normal"), v);
+      }
       if (object) {
         v = Transform(v, "vector", "world", "object");
       }
-    }
-    else if (prop == "bitangent") {
-      v = VMath("cross_product", Geometry("Normal"), Geometry("Tangent"));
     }
     else if (prop == "viewdirection") {
       /* From the eye to the surface (nprlib's Vworld, facingratio's default). */
@@ -1351,14 +1416,25 @@ class Translator {
       Link(input("temperature"), In(blackbody, "Temperature"));
       return Of(Out(blackbody, "Color"), Kind::Vec3);
     }
+    /* pbrlib's genosl: alpha = clamp(r^2, eps, 1), alpha / aspect (at most 1) and alpha * aspect with aspect =
+     * sqrt(1 - clamp(a, 0, 0.98)) for a > 0; roughness_dual squares both, Y < 0 meaning X. */
     if (category == "roughness_anisotropy") {
-      const Val roughness = input("roughness");
-      const Val alpha = Math("multiply", roughness, roughness);
-      return Combine(alpha, alpha, Const(0.0f));
+      const Val r = input("roughness"), a = input("anisotropy");
+      const Val alpha = Math("minimum", Math("maximum", Math("multiply", r, r), Const(1e-8f)), Const(1.0f));
+      const Val clamped = Math("minimum", Math("maximum", a, Const(0.0f)), Const(0.98f));
+      const Val aspect = Math("sqrt", Math("subtract", Const(1.0f), clamped));
+      return Combine(Math("minimum", Math("divide", alpha, aspect), Const(1.0f)),
+                     Math("multiply", alpha, aspect),
+                     Const(0.0f));
     }
     if (category == "roughness_dual") {
-      const Val roughness = input("roughness");
-      return Op(Kind::Vec3, "multiply", "multiply", roughness, roughness);
+      const Val r = input("roughness");
+      const auto square = [&](const Val &x) {
+        return Math("minimum", Math("maximum", Math("multiply", x, x), Const(1e-8f)), Const(1.0f));
+      };
+      const Val x = square(Component(r, 0));
+      const Val y = Mix(Kind::Float, Math("less_than", Component(r, 1), Const(0.0f)), square(Component(r, 1)), x);
+      return Combine(x, y, Const(0.0f));
     }
 
     (void)output;
@@ -1493,9 +1569,8 @@ class Translator {
         Link(Const(0.0f, 0.0f, 0.0f), In(bsdf, "Base Color"));
         Link(input("tint"), In(bsdf, "Specular Tint"));
         Link(input("ior"), In(bsdf, "IOR"));
-        Link(RoughnessFromAlpha(input("roughness")), In(bsdf, "Roughness"));
+        LinkMicrofacet(bsdf, input("roughness"), input("tangent"), true);
         LinkGeom(input("normal"), In(bsdf, "Normal"));
-        LinkGeom(input("tangent"), In(bsdf, "Tangent"));
         return Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight"));
       }
       ShaderNode *bsdf = Create("glass_bsdf");
@@ -1517,9 +1592,8 @@ class Translator {
         Link(input("color0"), In(bsdf, "Base Color"));
         Link(input("color90"), In(bsdf, "Edge Tint"));
       }
-      Link(RoughnessFromAlpha(input("roughness")), In(bsdf, "Roughness"));
+      LinkMicrofacet(bsdf, input("roughness"), input("tangent"), false);
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      LinkGeom(input("tangent"), In(bsdf, "Tangent"));
       return Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight"));
     }
     if (category == "sheen_bsdf") {
@@ -1696,7 +1770,11 @@ class Translator {
     set(p.specularTint, "Specular Tint");
     set(p.anisotropic, "Anisotropic");
     set(p.anisotropicRotation, "Anisotropic Rotation");
-    LinkGeom(p.tangent, In(bsdf, "Tangent"));
+    /* MaterialX's tangent (the UV map's) only where the highlight is anisotropic: Cycles computes a UV tangent for
+     * every mesh using the material. */
+    if (!(p.anisotropic.isConstant() && p.anisotropic.c.x == 0.0f)) {
+      Link(p.tangent, In(bsdf, "Tangent"));
+    }
     set(p.transmissionWeight, "Transmission Weight");
     set(p.coatWeight, "Coat Weight");
     set(p.coatRoughness, "Coat Roughness");
@@ -1712,6 +1790,16 @@ class Translator {
     set(p.thinFilmIor, "Thin Film IOR");
     set(p.thinWall, "Thin Wall");
     return Of(Out(bsdf, "BSDF"), Kind::Closure);
+  }
+
+  /* The Principled BSDF's anisotropy for an aspect of sqrt(1 - a) (Standard Surface's and OpenPBR's): its own is
+   * sqrt(1 - 0.9 an), the same up to a = 0.9. */
+  Val AnisotropyOf(const Val &a)
+  {
+    if (a.isConstant()) {
+      return Const(std::clamp(a.c.x / 0.9f, 0.0f, 1.0f));
+    }
+    return Math("minimum", Math("maximum", Math("divide", a, Const(0.9f)), Const(0.0f)), Const(1.0f));
   }
 
   /* The Principled BSDF uses the base color for subsurface scattering and transmission. */
@@ -1744,7 +1832,9 @@ class Translator {
     p.ior = input("specular_IOR");
     p.specularLevel = Math("multiply", input("specular"), Const(0.5f));
     p.specularTint = input("specular_color");
-    p.anisotropic = input("specular_anisotropy");
+    /* Standard Surface's roughness_anisotropy: alpha / aspect, alpha * aspect with aspect = sqrt(1 - a), the
+     * Principled BSDF's aspect is sqrt(1 - 0.9 an). */
+    p.anisotropic = AnisotropyOf(input("specular_anisotropy"));
     p.anisotropicRotation = input("specular_rotation");
     p.transmissionWeight = input("transmission");
     p.subsurfaceWeight = input("subsurface");
@@ -1805,11 +1895,23 @@ class Translator {
     }
     p.metallic = input("base_metalness");
     p.diffuseRoughness = input("base_diffuse_roughness");
-    p.roughness = input("specular_roughness");
+    /* OpenPBR's anisotropy: alpha_x = r^2 sqrt(2 / (1 + (1 - a)^2)), alpha_y = (1 - a) alpha_x. Their geometric
+     * mean, Cycles' squared roughness, is r^2 sqrt(2 (1 - a) / (1 + (1 - a)^2)), their aspect sqrt(1 - a) as
+     * Standard Surface's. */
+    {
+      const Val a = input("specular_roughness_anisotropy");
+      const Val inverse = Math("subtract", Const(1.0f), Math("minimum", Math("maximum", a, Const(0.0f)), Const(1.0f)));
+      const Val spread = Math("divide",
+                              Math("multiply", Const(2.0f), inverse),
+                              Math("multiply_add", inverse, inverse, Const(1.0f)));
+      p.roughness = a.isConstant() && a.c.x == 0.0f ?
+                        input("specular_roughness") :
+                        Math("multiply", input("specular_roughness"), Math("sqrt", Math("sqrt", spread)));
+      p.anisotropic = AnisotropyOf(a);
+    }
     p.ior = input("specular_ior");
     p.specularLevel = Math("multiply", input("specular_weight"), Const(0.5f));
     p.specularTint = input("specular_color");
-    p.anisotropic = input("specular_roughness_anisotropy");
     p.transmissionWeight = input("transmission_weight");
     p.subsurfaceWeight = input("subsurface_weight");
     p.subsurfaceRadius = Mul(
