@@ -531,6 +531,29 @@ def test_materialx_layering_conserves_energy(render):
     assert 0.9 < lama_furnace < 1.03, lama_furnace
 
 
+def test_materialx_sheen_is_conty_kulla(render):
+    """MaterialX's default sheen is Conty-Kulla's (Karma's, Storm's); Cycles' sheen is Zeltner's, which fades out at low
+    roughness. The translator gives Cycles' sheen the roughness of the same average albedo and scales its colour by
+    the ratio of the two directional albedos: a white sheen of roughness 0.3 facing the camera under a white dome
+    reflects Conty-Kulla's 0.052 head-on (Zeltner's: 0.002, Karma's render 7 times brighter than ours)."""
+    material = """        token outputs:mtlx:surface.connect = </world/mat/s.outputs:out>
+        def Shader "sheen"
+        {
+            uniform token info:id = "ND_sheen_bsdf"
+            color3f inputs:color = (1, 1, 1)
+            float inputs:roughness = 0.3
+            token outputs:out
+        }
+        def Shader "s"
+        {
+            uniform token info:id = "ND_surface"
+            token inputs:bsdf.connect = </world/mat/sheen.outputs:out>
+            token outputs:out
+        }"""
+    value = middle(render("mtlx_sheen", plane(material), samples=128))
+    assert abs(value - 0.052) < 0.01, value
+
+
 def test_materialx_anisotropy_follows_uv(render):
     """An anisotropic Standard Surface metal stretches its highlight along the UV map's tangent, as MaterialX (and
     Karma) do: swapping U and V turns the highlight, so a sun off to the side of the mirror direction lights the plane
@@ -1136,7 +1159,8 @@ def test_nested_volumes(render):
             (name, on.mean(), off.mean(), blocks.max())
 
 TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_edfs_and_artistic_ior,
-         test_materialx_layering_conserves_energy, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_shader_registry, test_light_and_shadow_links,
+         test_materialx_layering_conserves_energy, test_materialx_sheen_is_conty_kulla,
+         test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_shader_registry, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
