@@ -98,6 +98,12 @@ struct Val {
   std::shared_ptr<Val> bumpScale;
   /* Rows of a matrix, 3 or 4; none for a zero matrix. */
   std::shared_ptr<std::vector<Val>> rows;
+  /* Throughput of a BSDF, as MaterialX's GLSL layers them: the share of light that passes it to a base below
+   * (1 - its directional albedo * weight), a float. None: 1. */
+  std::shared_ptr<Val> throughput;
+  /* The closure without its transmission, where it differs (dielectrics that transmit): what a layer over an
+   * opaque base shows of it, the transmitted light going into the base. */
+  std::shared_ptr<Val> opaque;
 
   bool isConstant() const
   {
@@ -913,6 +919,163 @@ class Translator {
       result[i] = Math("sqrt", Math("maximum", k2, Const(0.0f)));
     }
     return Combine(result[0], result[1], result[2]);
+  }
+
+  static Val WithThroughput(Val closure, const Val &throughput)
+  {
+    closure.throughput = std::make_shared<Val>(throughput);
+    return closure;
+  }
+
+  static Val OpaqueOf(const Val &closure)
+  {
+    return closure.opaque ? *closure.opaque : closure;
+  }
+
+  static Val ThroughputOf(const Val &closure)
+  {
+    return closure.throughput ? *closure.throughput : Const(1.0f);
+  }
+
+  /* |N.V| of a BSDF's normal, at least MaterialX's M_FLOAT_EPS (Geometry's Incoming points to the viewer). */
+  Val NdotV(const Val &normal)
+  {
+    const Val n = normal.kind == Kind::None ? Geometry("Normal") : normal;
+    return Math("maximum",
+                Math("absolute", VMath("dot_product", n, Geometry("Incoming"), Const(0.0f), true)),
+                Const(1e-8f));
+  }
+
+  /* MaterialX's GGX directional albedo fit (its GLSL's mx_ggx_dir_albedo_analytic): A and B of
+   * E = F0 A + F90 B, a rational function of x = N.V and y = the average alpha. With a constant alpha it is a
+   * quadratic in x per term (Cycles folds the constant math). */
+  std::pair<Val, Val> GgxDirAlbedo(const Val &x, const Val &y)
+  {
+    static const float c[9][4] = {{0.1003f, 0.9345f, 1.0f, 1.0f},
+                                  {-0.6303f, -2.323f, -1.765f, 0.2281f},
+                                  {9.748f, 2.229f, 8.263f, 15.94f},
+                                  {-2.038f, -3.748f, 11.53f, -55.83f},
+                                  {29.34f, 1.424f, 28.96f, 13.08f},
+                                  {-8.245f, -0.7684f, -7.507f, 41.26f},
+                                  {-26.44f, 1.436f, -36.11f, 54.9f},
+                                  {19.99f, 0.2913f, 15.86f, 300.2f},
+                                  {-5.448f, 0.6286f, 33.37f, -285.1f}};
+    Val r[4];
+    for (int k = 0; k < 4; k++) {
+      /* r = (c0 + c2 y + c5 y^2) + x (c1 + c3 y + c7 y^2) + x^2 (c4 + c6 y + c8 y^2) */
+      const auto quad = [&](const int a, const int b, const int d) {
+        if (y.isConstant()) {
+          return Const(c[a][k] + c[b][k] * y.c.x + c[d][k] * y.c.x * y.c.x);
+        }
+        return Math("multiply_add", Math("multiply_add", Const(c[d][k]), y, Const(c[b][k])), y, Const(c[a][k]));
+      };
+      const Val a0 = quad(0, 2, 5), a1 = quad(1, 3, 7), a2 = quad(4, 6, 8);
+      r[k] = Math("multiply_add", Math("multiply_add", a2, x, a1), x, a0);
+    }
+    const auto clamp01 = [&](const Val &v) {
+      return Math("minimum", Math("maximum", v, Const(0.0f)), Const(1.0f));
+    };
+    return {clamp01(Math("divide", r[0], r[2])), clamp01(Math("divide", r[1], r[3]))};
+  }
+
+  Val AverageAlpha(const Val &alpha)
+  {
+    return Math("sqrt", Math("multiply", Component(alpha, 0), Component(alpha, 1)));
+  }
+
+  /* MaterialX's dielectric_bsdf: 1 - weight * (F0 A + B) * (1 + F (1 - Ess) / Ess), F the Fresnel at N.V,
+   * Ess = A + B (its energy compensation). */
+  template<typename InputFn> Val DielectricThroughput(const InputFn &input)
+  {
+    const Val ior = input("ior");
+    const Val x = NdotV(input("normal"));
+    const auto [a, b] = GgxDirAlbedo(x, AverageAlpha(input("roughness")));
+    const Val f0r = Math("divide", Math("subtract", ior, Const(1.0f)), Math("add", ior, Const(1.0f)));
+    const Val f0 = Math("multiply", f0r, f0r);
+    ShaderNode *fresnel = Create("fresnel");
+    Link(ior, In(fresnel, "IOR"));
+    LinkGeom(input("normal"), In(fresnel, "Normal"));
+    const Val f = Of(Out(fresnel, "Fac"), Kind::Float);
+    const Val ess = Math("maximum", Math("add", a, b), Const(1e-8f));
+    const Val comp = Math("multiply_add", f, Math("divide", Math("subtract", Const(1.0f), ess), ess), Const(1.0f));
+    const Val albedo = Math("multiply", Math("multiply_add", f0, a, b), comp);
+    return Math("subtract", Const(1.0f), Math("multiply", albedo, input("weight")));
+  }
+
+  /* MaterialX's generalized_schlick_bsdf: 1 - weight * average((color0 A + color90 B) comp), F the generalized
+   * Schlick Fresnel at N.V. */
+  template<typename InputFn> Val SchlickThroughput(const InputFn &input)
+  {
+    const Val x = NdotV(input("normal"));
+    const auto [a, b] = GgxDirAlbedo(x, AverageAlpha(input("roughness")));
+    const Val c0 = input("color0"), c90 = input("color90");
+    const Val s = Math("power", Math("subtract", Const(1.0f), x), input("exponent"));
+    const Val f = Mix(Kind::Vec3, s, c0, c90);
+    const Val ess = Math("maximum", Math("add", a, b), Const(1e-8f));
+    const Val k = Math("divide", Math("subtract", Const(1.0f), ess), ess);
+    const Val comp = Op(Kind::Vec3, "multiply_add", "multiply_add", f, Cast(k, Kind::Vec3), Const(1.0f, 1.0f, 1.0f));
+    const Val albedo = Op(Kind::Vec3,
+                          "multiply",
+                          "multiply",
+                          Op(Kind::Vec3, "add", "add", Mul(Kind::Vec3, c0, Cast(a, Kind::Vec3)), Mul(Kind::Vec3, c90, Cast(b, Kind::Vec3))),
+                          comp);
+    return Math("subtract", Const(1.0f), Math("multiply", Average(albedo), input("weight")));
+  }
+
+  /* MaterialX's sheen_bsdf: 1 - weight * its directional albedo (Conty-Kulla's rational fit or Zeltner's). */
+  template<typename InputFn> Val SheenThroughput(const InputFn &input)
+  {
+    const Val x = NdotV(input("normal"));
+    Val albedo;
+    if (input("mode").str == "zeltner") {
+      const Val y = Math("minimum", Math("maximum", input("roughness"), Const(0.01f)), Const(1.0f));
+      const auto poly = [&](std::initializer_list<float> coefficients) {
+        /* Horner in y, highest power first. */
+        Val v = Const(0.0f);
+        for (const float coefficient : coefficients) {
+          v = Math("multiply_add", v, y, Const(coefficient));
+        }
+        return v;
+      };
+      /* s, m, o of the Gaussian fit (mx_zeltner_sheen_dir_albedo). */
+      const Val s = Math("divide",
+                         Math("multiply", y, poly({1.58491f, 0.0206607f})),
+                         poly({1.0f, 1.32227f, 0.0379424f}));
+      const Val m = Math("divide",
+                         Math("multiply", y, poly({-0.95943f, 0.0f, 1.7932f, -1.14885f, -0.193854f})),
+                         Math("add", y, Const(0.046391f)));
+      const Val o = Math("divide",
+                         Math("multiply", y, poly({0.119681f, -0.0207818f, 0.000654023f})),
+                         poly({1.0f, -1.92021f, 1.26264f}));
+      const Val z = Math("divide", Math("subtract", x, m), s);
+      const Val gauss = Math("divide",
+                             Math("exponent", Math("multiply", Math("multiply", z, z), Const(-0.5f))),
+                             Math("multiply", s, Const(sqrtf(2.0f * M_PI_F))));
+      albedo = Math("add", gauss, o);
+    }
+    else {
+      const Val y = input("roughness");
+      const auto r = [&](const float k0, const float kx, const float ky, const float kxy, const float kxx,
+                         const float kyy) {
+        return Math("add",
+                    Math("add",
+                         Math("multiply_add", Math("multiply_add", Const(kxx), x, Const(kx)), x, Const(k0)),
+                         Math("multiply", Math("multiply_add", Const(kyy), y, Const(ky)), y)),
+                    Math("multiply", Const(kxy), Math("multiply", x, y)));
+      };
+      albedo = Math("divide",
+                    r(13.67300f, -68.78018f, 799.08825f, -905.00061f, 60.28956f, 1086.96473f),
+                    r(1.0f, 61.57746f, 442.78211f, 2597.49308f, 121.81241f, 3045.55075f));
+    }
+    albedo = Math("minimum", Math("maximum", albedo, Const(0.0f)), Const(1.0f));
+    return Math("subtract", Const(1.0f), Math("multiply", albedo, input("weight")));
+  }
+
+  /* MaterialX 1.39's thin film on a BSDF (nanometres, as Cycles'). */
+  template<typename InputFn> void LinkThinFilm(ShaderNode *bsdf, const InputFn &input)
+  {
+    Link(input("thinfilm_thickness"), In(bsdf, "Thin Film Thickness"));
+    Link(input("thinfilm_ior"), In(bsdf, "Thin Film IOR"));
   }
 
   Val Average(const Val &v)
@@ -1978,37 +2141,52 @@ class Translator {
   template<typename InputFn>
   Val Closure(const std::string &category, const InputFn &input, bool &supported)
   {
+    /* Opaque BSDFs let nothing through to a base below them (throughput 0). */
     if (category == "oren_nayar_diffuse_bsdf" || category == "burley_diffuse_bsdf") {
       ShaderNode *bsdf = Create("diffuse_bsdf");
       Link(Mul(Kind::Vec3, input("color"), input("weight")), In(bsdf, "Color"));
       Link(input("roughness"), In(bsdf, "Roughness"));
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      return Of(Out(bsdf, "BSDF"), Kind::Closure);
+      return WithThroughput(Of(Out(bsdf, "BSDF"), Kind::Closure), Const(0.0f));
     }
     if (category == "translucent_bsdf") {
       ShaderNode *bsdf = Create("translucent_bsdf");
       Link(Mul(Kind::Vec3, input("color"), input("weight")), In(bsdf, "Color"));
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      return Of(Out(bsdf, "BSDF"), Kind::Closure);
+      return WithThroughput(Of(Out(bsdf, "BSDF"), Kind::Closure), Const(0.0f));
     }
     if (category == "dielectric_bsdf") {
       const std::string mode = input("scatter_mode").str;
-      if (mode == "R") {
-        /* Fresnel weighted reflection: a Principled BSDF without diffuse. */
+      const Val throughput = DielectricThroughput(input);
+      /* Fresnel weighted reflection: a Principled BSDF without diffuse. */
+      const auto reflection = [&]() {
         ShaderNode *bsdf = Create("principled_bsdf");
         Link(Const(0.0f, 0.0f, 0.0f), In(bsdf, "Base Color"));
         Link(input("tint"), In(bsdf, "Specular Tint"));
         Link(input("ior"), In(bsdf, "IOR"));
         LinkMicrofacet(bsdf, input("roughness"), input("tangent"), true);
         LinkGeom(input("normal"), In(bsdf, "Normal"));
-        return Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight"));
+        LinkThinFilm(bsdf, input);
+        return WithThroughput(Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight")), throughput);
+      };
+      if (mode == "R") {
+        return reflection();
       }
-      ShaderNode *bsdf = Create("glass_bsdf");
+      /* Transmission only (T): Cycles' Refraction BSDF, the reflection being another layer's (Lama's dielectric
+       * is a reflection over a transmission over its interior). Both (RT): its Glass BSDF. */
+      ShaderNode *bsdf = Create(mode == "T" ? "refraction_bsdf" : "glass_bsdf");
       Link(Mul(Kind::Vec3, input("tint"), input("weight")), In(bsdf, "Color"));
       Link(input("ior"), In(bsdf, "IOR"));
       Link(RoughnessFromAlpha(input("roughness")), In(bsdf, "Roughness"));
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      return Of(Out(bsdf, "BSDF"), Kind::Closure);
+      if (mode != "T") {
+        LinkThinFilm(bsdf, input);
+      }
+      Val v = WithThroughput(Of(Out(bsdf, "BSDF"), Kind::Closure), throughput);
+      Val none;
+      none.kind = Kind::Closure;
+      v.opaque = std::make_shared<Val>(mode == "T" ? WithThroughput(none, throughput) : reflection());
+      return v;
     }
     if (category == "conductor_bsdf" || category == "generalized_schlick_bsdf") {
       ShaderNode *bsdf = Create("metallic_bsdf");
@@ -2024,7 +2202,9 @@ class Translator {
       }
       LinkMicrofacet(bsdf, input("roughness"), input("tangent"), false);
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      return Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight"));
+      LinkThinFilm(bsdf, input);
+      const Val closure = Weighted(Of(Out(bsdf, "BSDF"), Kind::Closure), input("weight"));
+      return WithThroughput(closure, category == "conductor_bsdf" ? Const(0.0f) : SchlickThroughput(input));
     }
     if (category == "sheen_bsdf") {
       ShaderNode *bsdf = Create("sheen_bsdf");
@@ -2032,7 +2212,7 @@ class Translator {
       Link(Mul(Kind::Vec3, input("color"), input("weight")), In(bsdf, "Color"));
       Link(input("roughness"), In(bsdf, "Roughness"));
       LinkGeom(input("normal"), In(bsdf, "Normal"));
-      return Of(Out(bsdf, "BSDF"), Kind::Closure);
+      return WithThroughput(Of(Out(bsdf, "BSDF"), Kind::Closure), SheenThroughput(input));
     }
     if (category == "subsurface_bsdf") {
       ShaderNode *bssrdf = Create("subsurface_scattering");
@@ -2042,7 +2222,7 @@ class Translator {
       Link(Const(1.0f), In(bssrdf, "Scale"));
       Link(input("anisotropy"), In(bssrdf, "Anisotropy"));
       LinkGeom(input("normal"), In(bssrdf, "Normal"));
-      return Of(Out(bssrdf, "BSSRDF"), Kind::Closure);
+      return WithThroughput(Of(Out(bssrdf, "BSSRDF"), Kind::Closure), Const(0.0f));
     }
     if (category == "chiang_hair_bsdf") {
       ShaderNode *bsdf = Create("principled_hair_bsdf");
@@ -2076,7 +2256,7 @@ class Translator {
         white &= t.isConstant() && t.c.x == 1.0f && t.c.y == 1.0f && t.c.z == 1.0f;
         tint = Math("multiply_add", Average(t), Const(1.0f / 3.0f), tint);
       }
-      return white ? closure : Weighted(closure, tint);
+      return WithThroughput(white ? closure : Weighted(closure, tint), Const(0.0f));
     }
     if (category == "dot") {
       return input("in"); /* A shader passed through. */
@@ -2153,14 +2333,45 @@ class Translator {
     if (category == "volumematerial") {
       return input("volumeshader");
     }
-    if (category == "layer" || category == "add") {
-      /* Cycles has no layering: the top layer is added, which is too bright where the top
-       * reflects. */
-      return AddClosures(input(category == "layer" ? "top" : "in1"),
-                         input(category == "layer" ? "base" : "in2"));
+    /* Layering as MaterialX's GLSL (Storm): the base under the top's throughput, the throughputs combined. */
+    if (category == "layer") {
+      const Val top = input("top"), base = input("base");
+      if (base.out && base.out->parent->type->name.string().find("volume") != std::string::npos) {
+        /* A BSDF over a VDF (a surface over its interior): Cycles' surface and volume closures are separate,
+         * the sum keeps both; over an opaque base the interior is not seen. */
+        Val v = WithThroughput(AddClosures(top, base), ThroughputOf(top));
+        v.opaque = std::make_shared<Val>(OpaqueOf(top));
+        return v;
+      }
+      /* Over a BSDF base the top's transmission goes into the base: the top without it. */
+      const Val t = ThroughputOf(top);
+      const Val throughput = Math("multiply", t, ThroughputOf(base));
+      Val v = WithThroughput(AddClosures(OpaqueOf(top), Weighted(base, t)), throughput);
+      if (base.opaque) {
+        v.opaque = std::make_shared<Val>(
+            WithThroughput(AddClosures(OpaqueOf(top), Weighted(*base.opaque, t)), throughput));
+      }
+      return v;
+    }
+    if (category == "add") {
+      const Val a = input("in1"), b = input("in2");
+      const Val throughput = Math(
+          "maximum", Math("subtract", Math("add", ThroughputOf(a), ThroughputOf(b)), Const(1.0f)), Const(0.0f));
+      Val v = WithThroughput(AddClosures(a, b), throughput);
+      if (a.opaque || b.opaque) {
+        v.opaque = std::make_shared<Val>(WithThroughput(AddClosures(OpaqueOf(a), OpaqueOf(b)), throughput));
+      }
+      return v;
     }
     if (category == "mix") {
-      return Mix(Kind::Closure, input("mix"), input("bg"), input("fg"));
+      const Val mix = input("mix"), bg = input("bg"), fg = input("fg");
+      const Val throughput = Mix(Kind::Float, Cast(mix, Kind::Float), ThroughputOf(bg), ThroughputOf(fg));
+      Val v = WithThroughput(Mix(Kind::Closure, mix, bg, fg), throughput);
+      if (bg.opaque || fg.opaque) {
+        v.opaque = std::make_shared<Val>(
+            WithThroughput(Mix(Kind::Closure, mix, OpaqueOf(bg), OpaqueOf(fg)), throughput));
+      }
+      return v;
     }
     if (category == "multiply") {
       const Val closure = input("in1"), weight = input("in2");
@@ -2169,7 +2380,12 @@ class Translator {
       if (weight.kind != Kind::Float && IsEmission(closure)) {
         return ScaleEmission(closure, weight);
       }
-      return Weighted(closure, Average(weight));
+      Val v = WithThroughput(Weighted(closure, Average(weight)), ThroughputOf(closure));
+      if (closure.opaque) {
+        v.opaque = std::make_shared<Val>(
+            WithThroughput(Weighted(*closure.opaque, Average(weight)), ThroughputOf(closure)));
+      }
+      return v;
     }
     if (category == "surface") {
       return Opacity(AddClosures(input("bsdf"), input("edf")), input("opacity"));

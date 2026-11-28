@@ -353,7 +353,7 @@ Every translated, expanded or approximated output of a value type (832) on an un
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_R | (0.202, 0.670, 0.000) | (0.000, 0.000, 0.000) | (0.032, 0.714, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TRT | (0.598, 0.393, 0.000) | (0.000, 0.000, 0.000) | (0.013, 0.289, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TT | (0.657, 0.267, 0.000) | (0.000, 0.000, 0.000) | (0.131, 0.156, 0.000) |
-| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (-304217343939051520.000, 0.000, 0.000) | (1.000, 1.000, 1.000) |
+| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (-20101197691819445452800.000, 0.000, 0.000) | (1.000, 1.000, 1.000) |
 | `hextilednormalmap` | ND_hextilednormalmap_vector3 | out | (-0.368, 0.000, 0.930) | – | (-0.707, 0.007, 0.707) |
 | `normalmap` | ND_normalmap_float | out | (0.609, -0.102, 0.786) | (0.292, 0.209, -0.933) | (0.354, -0.059, 0.001) |
 | `normalmap` | ND_normalmap_vector2 | out | (0.099, 0.021, 0.995) | (-0.006, 0.339, -0.941) | (0.235, 0.244, 0.001) |
