@@ -38,6 +38,9 @@
 #endif
 
 #include <pxr/base/plug/registry.h>
+#include <pxr/usd/sdr/registry.h>
+#include <pxr/usd/sdr/shaderNode.h>
+#include <pxr/usd/sdr/shaderProperty.h>
 #include <pxr/imaging/hd/legacyTaskFactory.h>
 #include <pxr/imaging/hd/legacyTaskSchema.h>
 #include <pxr/imaging/hd/mergingSceneIndex.h>
@@ -516,6 +519,7 @@ struct Options {
   bool prepare_textures = false;
   bool stats = false;
   bool cycles_defaults = false;
+  bool shaders = false;
   DisplayImage display; /* for .png / .jpg images */
 };
 
@@ -582,7 +586,8 @@ void usage()
       "  --skip-existing     frames whose image exists are not rendered again (resumable sequences, farm retries)\n"
       "  --prepare-textures  make the .tx texture cache for the first frame and exit (before a farm render)\n"
       "  --stats             print Cycles' scene update times per frame (where the time goes)\n"
-      "  --cycles-defaults   Cycles' own integrator defaults, not Blender's (bounces, filter glossy, adaptive)\n");
+      "  --cycles-defaults   Cycles' own integrator defaults, not Blender's (bounces, filter glossy, adaptive)\n"
+      "  --shaders           print Cycles' shader nodes in USD's shader registry (Sdr) as JSON, and exit\n");
   exit(1);
 }
 
@@ -646,6 +651,9 @@ Options parse(int argc, const char **argv)
     else if (arg == "--cycles-defaults") {
       o.cycles_defaults = true;
     }
+    else if (arg == "--shaders") {
+      o.shaders = true;
+    }
     else if (arg == "--display") {
       o.display.display = value();
     }
@@ -674,12 +682,60 @@ Options parse(int argc, const char **argv)
       positional.push_back(arg);
     }
   }
+  if (o.shaders && positional.empty()) {
+    return o;
+  }
   if (positional.size() != 2) {
     usage();
   }
   o.usd = positional[0];
   o.image = positional[1];
   return o;
+}
+
+/* --shaders: Cycles' nodes in USD's shader registry, as JSON (what hosts and USD's validation see). */
+void print_shaders()
+{
+  SdrRegistry &registry = SdrRegistry::GetInstance();
+  const auto json_string = [](const string &text) {
+    string out = "\"";
+    for (const char c : text) {
+      out += c == '"' || c == '\\' ? string("\\") + c : string(1, c);
+    }
+    return out + "\"";
+  };
+  printf("{\n");
+  const SdrIdentifierVec ids = registry.GetShaderNodeIdentifiers(TfToken("cycles"));
+  bool first = true;
+  for (const SdrIdentifier &id : ids) {
+    const SdrShaderNodeConstPtr node = registry.GetShaderNodeByIdentifier(id);
+    if (!node) {
+      continue;
+    }
+    printf("%s %s: {\"label\": %s, \"category\": %s, \"context\": %s, \"inputs\": {",
+           first ? "" : ",\n",
+           json_string(id.GetString()).c_str(),
+           json_string(node->GetLabel().GetString()).c_str(),
+           json_string(node->GetCategory().GetString()).c_str(),
+           json_string(node->GetContext().GetString()).c_str());
+    first = false;
+    const auto properties = [&](const SdrTokenVec &names, const bool output) {
+      bool firstProperty = true;
+      for (const TfToken &name : names) {
+        const SdrShaderPropertyConstPtr property = output ? node->GetShaderOutput(name) : node->GetShaderInput(name);
+        printf("%s%s: %s",
+               firstProperty ? "" : ", ",
+               json_string(name.GetString()).c_str(),
+               json_string(property->GetTypeAsSdfType().GetSdfType().GetAsToken().GetString()).c_str());
+        firstProperty = false;
+      }
+    };
+    properties(node->GetShaderInputNames(), false);
+    printf("}, \"outputs\": {");
+    properties(node->GetShaderOutputNames(), true);
+    printf("}}");
+  }
+  printf("\n}\n");
 }
 
 DeviceInfo choose_device(const string &name)
@@ -755,6 +811,14 @@ int render(const Options &o)
   }
   PlugRegistry::GetInstance().RegisterPlugins(
       std::vector<std::string>{(plugin / "usd").string(), (plugin / "usd_plugins").string()});
+  /* Cycles' shader registry (Sdr, hydra/registry.h): the delegate is linked in, its plugin folder not registered. */
+  if (const std::filesystem::path sdr = plugin / "hydra" / "sdrCycles" / "resources"; std::filesystem::exists(sdr)) {
+    PlugRegistry::GetInstance().RegisterPlugins(sdr.string());
+  }
+  if (o.shaders) {
+    print_shaders();
+    return 0;
+  }
   const bool display_image = is_display_image(o.image);
   DisplayImage display = o.display;
   if (display_image) {

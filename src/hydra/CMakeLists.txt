@@ -255,10 +255,61 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     target_include_directories(${HdCyclesImagingName} SYSTEM PRIVATE ${PYTHON_INCLUDE_DIR})
   endif()
 
+  # The shader registry (Sdr: Cycles' nodes as `cycles_<node>`, registry.h) in its own library, as upstream's pull
+  # request #120: hosts list the nodes without loading the delegate. It reads Cycles' node types, with the delegate's
+  # own shader nodes (as the Houdini package's shaders_node_dump).
+  set(SdrCyclesName sdrCycles)
+  add_library(${SdrCyclesName} SHARED registry.h registry.cpp dome_texture.cpp parallax_occlusion.cpp)
+  set_target_properties(${SdrCyclesName}
+    PROPERTIES PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  target_compile_definitions(${SdrCyclesName}
+    PRIVATE
+    MFB_PACKAGE_NAME=${SdrCyclesName}
+    MFB_ALT_PACKAGE_NAME=${SdrCyclesName}
+    GLOG_NO_ABBREVIATED_SEVERITIES=1
+    OSL_DEBUG=$<CONFIG:DEBUG>
+    TBB_USE_DEBUG=$<CONFIG:DEBUG>
+    $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX=1>
+  )
+  set(SDR_LIB
+    cycles_session
+    cycles_scene
+    cycles_device
+    cycles_kernel
+    cycles_bvh
+    cycles_subd
+    cycles_integrator
+    cycles_graph
+    cycles_util
+  )
+  if(WITH_CYCLES_OSL)
+    list(APPEND SDR_LIB cycles_kernel_osl)
+  endif()
+  cycles_external_libraries_append(SDR_LIB)
+  target_link_libraries(${SdrCyclesName}
+    PRIVATE
+    bf::dependencies::optional::usd
+    bf::dependencies::optional::tbb
+    ${SDR_LIB}
+  )
+  # cycles_device uses symbols of cycles_integrator and cycles_session without declaring them (the delegate and
+  # the programs get them from elsewhere; this library loaded on its own did not: undefined
+  # GraphicsInteropBuffer::get_size). Declare the cycle, so the static libraries are repeated on the link line
+  # (as upstream's pull request #120).
+  set_property(TARGET cycles_device APPEND PROPERTY INTERFACE_LINK_LIBRARIES cycles_integrator cycles_session)
+  set_property(TARGET cycles_device PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+  if(PYTHON_INCLUDE_DIR)
+    target_include_directories(${SdrCyclesName} SYSTEM PRIVATE ${PYTHON_INCLUDE_DIR})
+  endif()
+
   if(APPLE)
     set_property(
       TARGET
       ${HdCyclesPluginName}
+      ${SdrCyclesName}
       APPEND_STRING PROPERTY LINK_FLAGS
       " -Wl,-exported_symbols_list,'${CMAKE_CURRENT_SOURCE_DIR}/resources/apple_symbols.map'"
     )
@@ -266,6 +317,7 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     set_property(
       TARGET
       ${HdCyclesPluginName}
+      ${SdrCyclesName}
       APPEND_STRING PROPERTY LINK_FLAGS
       " -Wl,--version-script='${CMAKE_CURRENT_SOURCE_DIR}/resources/linux_symbols.map'"
     )
@@ -291,7 +343,7 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     else()
       set(_hydra_lib_rpath "$ORIGIN/../lib")
     endif()
-    foreach(_hydra_target ${HdCyclesPluginName} ${HdCyclesImagingName})
+    foreach(_hydra_target ${HdCyclesPluginName} ${HdCyclesImagingName} ${SdrCyclesName})
       get_target_property(_hydra_build_rpath ${_hydra_target} BUILD_RPATH)
       if(NOT _hydra_build_rpath)
         set(_hydra_build_rpath "")
@@ -307,11 +359,13 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins)
     delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
     delayed_install("" $<TARGET_FILE:${HdCyclesImagingName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
+    delayed_install("" $<TARGET_FILE:${SdrCyclesName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
   else()
     # Put the root `plugInfo.json` one level up.
     delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH})
     delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH})
     delayed_install("" $<TARGET_FILE:${HdCyclesImagingName}> ${CYCLES_HYDRA_INSTALL_PATH})
+    delayed_install("" $<TARGET_FILE:${SdrCyclesName}> ${CYCLES_HYDRA_INSTALL_PATH})
   endif()
 
   set_target_properties(${HdCyclesPluginName}
@@ -360,15 +414,27 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     ${CMAKE_CURRENT_BINARY_DIR}/imaging/resources/plugInfo.json
     @ONLY
   )
+  # The registry's plugin folder too, with its menu categories.
+  string(REPLACE "${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    "${SdrCyclesName}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    PLUG_INFO_SDR_LIBRARY_PATH "${PLUG_INFO_LIBRARY_PATH}")
+  configure_file(resources/sdr/plugInfo.json
+    ${CMAKE_CURRENT_BINARY_DIR}/sdr/resources/plugInfo.json
+    @ONLY
+  )
 
   if(HOUDINI_FOUND)
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesPluginName}/resources")
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/imaging/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesImagingName}/resources")
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/sdr/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${SdrCyclesName}/resources")
+    delayed_install("${CMAKE_CURRENT_SOURCE_DIR}/resources/sdr" "categories.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${SdrCyclesName}/resources/sdr")
     # Houdini package, renderer registration and shader nodes.
     add_subdirectory(houdini)
   else()
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}/resources")
     delayed_install("${CMAKE_CURRENT_BINARY_DIR}/imaging/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesImagingName}/resources")
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/sdr/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${SdrCyclesName}/resources")
+    delayed_install("${CMAKE_CURRENT_SOURCE_DIR}/resources/sdr" "categories.json" "${CYCLES_HYDRA_INSTALL_PATH}/${SdrCyclesName}/resources/sdr")
   endif()
 
   if(WITH_CYCLES_OSL)
