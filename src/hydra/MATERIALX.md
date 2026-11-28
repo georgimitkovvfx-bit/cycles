@@ -9,8 +9,7 @@ MaterialX's `resources/Materials/Examples` from its source):
 
 Known: the noise nodes (`noise2d`, `noise3d`, `fractal*`, `cellnoise3d`, `worleynoise*`, `random*`) are Cycles' noise,
 not MaterialX's (upstream's MaterialX-exact noise, Blender PR #158054, is awaited); `heighttonormal` alone is Cycles'
-Bump node's world space normal (it completes the `normalmap` it feeds); a missing primvar gives 0, not the
-`geompropvalue` / `UsdPrimvarReader` default (Cycles' Attribute node cannot tell); `chiang_hair_roughness` outputs
+Bump node's world space normal (it completes the `normalmap` it feeds); `chiang_hair_roughness` outputs
 Cycles' hair roughnesses (its consumer, `chiang_hair_bsdf`, takes those); a node defined in the material's own `.mtlx`
 file (MaterialX's simple hair) needs its folder in `PXR_MTLX_PLUGIN_SEARCH_PATHS`, as in Storm. `conical_edf` follows
 the specification's description (MaterialX's OSL and GLSL have no implementation, its MDL marks its own as TODO);
@@ -278,16 +277,12 @@ Outputs no surface consumes directly (strings, file names, light shaders, materi
 
 ## Values
 
-Every translated, expanded or approximated output of a value type (832) on an unlit quad, against MaterialX's own OSL (its genosl implementations through MaterialXGenOsl and oslc, rendered by Cycles' OSL) and Karma (husk, Houdini's MaterialX): constant inputs in [0.1, 0.9], file inputs a constant image (0.2, 0.5, 0.8, 0.6), geometric defaults (texture coordinates, position, normal) as they are, read at (3/8, 3/8) of each quad. Within 0.01 + 2 %, 764 agree with a reference, 61 with neither while the references agree (ours is wrong), 7 with neither while the references disagree too.
+Every translated, expanded or approximated output of a value type (832) on an unlit quad, against MaterialX's own OSL (its genosl implementations through MaterialXGenOsl and oslc, rendered by Cycles' OSL) and Karma (husk, Houdini's MaterialX): constant inputs in [0.1, 0.9], file inputs a constant image (0.2, 0.5, 0.8, 0.6), geometric defaults (texture coordinates, position, normal) as they are, read at (3/8, 3/8) of each quad. Within 0.01 + 2 %, 774 agree with a reference, 51 with neither while the references agree (ours is wrong), 7 with neither while the references disagree too.
 
 ### Cycles is wrong
 
 | Node | Definition | Output | Cycles | OSL | Karma |
 |---|---|---|---|---|---|
-| `UsdPrimvarReader` | ND_UsdPrimvarReader_float | out | (0.000, 0.000, 0.000) | (0.192, 0.192, 0.192) | (0.192, 0.192, 0.192) |
-| `UsdPrimvarReader` | ND_UsdPrimvarReader_vector2 | out | (0.000, 0.000, 0.000) | (0.352, 0.135, 0.000) | (0.352, 0.135, 0.000) |
-| `UsdPrimvarReader` | ND_UsdPrimvarReader_vector3 | out | (0.000, 0.000, 0.000) | (0.205, 0.788, 0.571) | (0.205, 0.788, 0.571) |
-| `UsdPrimvarReader` | ND_UsdPrimvarReader_vector4 | out | (0.000, 0.000, 0.000) | (0.184, 0.767, 0.550) | (0.184, 0.767, 0.550) |
 | `cellnoise3d` | ND_cellnoise3d_float | out | (0.578, 0.578, 0.578) | (0.462, 0.462, 0.462) | (0.462, 0.462, 0.462) |
 | `fractal2d` | ND_fractal2d_color3 | out | (0.062, -0.039, 0.141) | (0.062, 0.987, -0.303) | (0.062, 0.983, -0.302) |
 | `fractal2d` | ND_fractal2d_color3FA | out | (0.320, 0.313, 0.416) | (0.320, 1.087, -0.331) | (0.320, 1.085, -0.332) |
@@ -309,12 +304,6 @@ Every translated, expanded or approximated output of a value type (832) on an un
 | `fractal3d` | ND_fractal3d_vector3FA | out | (-0.062, 0.128, -0.048) | (-0.062, -0.010, -0.014) | (-0.061, -0.011, -0.015) |
 | `fractal3d` | ND_fractal3d_vector4 | out | (0.339, 0.016, -0.131) | (0.339, -0.120, -0.183) | (0.340, -0.122, -0.184) |
 | `fractal3d` | ND_fractal3d_vector4FA | out | (0.092, -0.109, -0.063) | (0.092, -0.111, -0.130) | (0.091, -0.111, -0.127) |
-| `geompropvalue` | ND_geompropvalue_color3 | out | (0.000, 0.000, 0.000) | (0.142, 0.726, 0.509) | (0.142, 0.726, 0.509) |
-| `geompropvalue` | ND_geompropvalue_color4 | out | (0.000, 0.000, 0.000) | (0.232, 0.815, 0.598) | (0.232, 0.815, 0.598) |
-| `geompropvalue` | ND_geompropvalue_float | out | (0.000, 0.000, 0.000) | (0.882, 0.882, 0.882) | (0.882, 0.882, 0.882) |
-| `geompropvalue` | ND_geompropvalue_vector2 | out | (0.000, 0.000, 0.000) | (0.341, 0.124, 0.000) | (0.341, 0.124, 0.000) |
-| `geompropvalue` | ND_geompropvalue_vector3 | out | (0.000, 0.000, 0.000) | (0.442, 0.225, 0.808) | (0.442, 0.225, 0.808) |
-| `geompropvalue` | ND_geompropvalue_vector4 | out | (0.000, 0.000, 0.000) | (0.640, 0.423, 0.206) | (0.640, 0.423, 0.206) |
 | `heighttonormal` | ND_heighttonormal_vector3 | out | (0.000, 0.000, 1.000) | (0.500, 0.500, 1.000) | (0.500, 0.500, 1.000) |
 | `noise2d` | ND_noise2d_color3 | out | (0.571, 0.565, 0.671) | (0.571, 1.083, 0.345) | (0.571, 1.078, 0.350) |
 | `noise2d` | ND_noise2d_color3FA | out | (0.751, 0.729, 0.799) | (0.751, 0.968, 0.589) | (0.752, 0.965, 0.591) |
@@ -353,7 +342,7 @@ Every translated, expanded or approximated output of a value type (832) on an un
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_R | (0.202, 0.670, 0.000) | (0.000, 0.000, 0.000) | (0.032, 0.714, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TRT | (0.598, 0.393, 0.000) | (0.000, 0.000, 0.000) | (0.013, 0.289, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TT | (0.657, 0.267, 0.000) | (0.000, 0.000, 0.000) | (0.131, 0.156, 0.000) |
-| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (-20101197691819445452800.000, 0.000, 0.000) | (1.000, 1.000, 1.000) |
+| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (-177528418731032576.000, 0.000, 0.000) | (1.000, 1.000, 1.000) |
 | `hextilednormalmap` | ND_hextilednormalmap_vector3 | out | (-0.368, 0.000, 0.930) | – | (-0.707, 0.007, 0.707) |
 | `normalmap` | ND_normalmap_float | out | (0.609, -0.102, 0.786) | (0.292, 0.209, -0.933) | (0.354, -0.059, 0.001) |
 | `normalmap` | ND_normalmap_vector2 | out | (0.099, 0.021, 0.995) | (-0.006, 0.339, -0.941) | (0.235, 0.244, 0.001) |
