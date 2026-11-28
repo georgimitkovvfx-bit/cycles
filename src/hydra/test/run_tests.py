@@ -361,7 +361,8 @@ def unlit(shaders: str, value: str, kind: str = "float") -> str:
 
 
 def mtlx_node(name: str, node_id: str, inputs: str, kind: str = "float") -> str:
-    sdf = {"float": "float", "vector2": "float2", "vector3": "vector3f", "vector4": "float4", "color3": "color3f"}
+    sdf = {"float": "float", "vector2": "float2", "vector3": "vector3f", "vector4": "float4", "color3": "color3f",
+           "matrix33": "matrix3d"}
     return f"""
         def Shader "{name}"
         {{
@@ -410,6 +411,39 @@ def test_materialx_values(render):
         values[name] = (float(pixels[name][16:32, 16:32, 0].mean()), expected)
     for name, case, channel, expected in others:
         values[name] = (float(pixels[case][16:32, 16:32, channel].mean()), expected)
+    wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01}
+    assert not wrong, f"(got, expected): {wrong}"
+
+
+def test_materialx_matrices(render):
+    """MaterialX's matrices (the translator had none: matrix math, transformmatrix and cmlib's colour-space
+    conversions rendered black). MaterialX multiplies row vectors, out_j = sum_i in_i m_ij, the last row translating:
+    a column-vector reading gives other numbers in every case below."""
+    m33 = "matrix3d inputs:mat = ((1, 2, 0), (0, 1, 0), (0, 0, 1))"
+    cases = {
+        # y = 0.1 * 2 + 0.2 * 1 (columns would give 0.2)
+        "transform33": (mtlx_node("n", "ND_transformmatrix_vector3", "vector3f inputs:in = (0.1, 0.2, 0.3)\n"
+                                  f"            {m33}", "vector3"), "vector3", 1, 0.4),
+        # A point: z = 0.3 + 0.25 from the fourth row
+        "transform34": (mtlx_node("n", "ND_transformmatrix_vector3M4", "vector3f inputs:in = (0.1, 0.2, 0.3)\n"
+                                  "            matrix4d inputs:mat = ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), "
+                                  "(0, 0, 0.25, 1))", "vector3"), "vector3", 2, 0.55),
+        "determinant": (mtlx_node("n", "ND_determinant_matrix33",
+                                  "matrix3d inputs:in = ((2, 0, 0), (0, 3, 0), (1, 1, 0.1))"), "float", 0, 0.6),
+        # inverse(diag(2, 4, 5)) * (1, 1, 1): its Y
+        "invert": (mtlx_node("i", "ND_invertmatrix_matrix33",
+                             "matrix3d inputs:in = ((2, 0, 0), (0, 4, 0), (0, 0, 5))", "matrix33")
+                   + mtlx_node("n", "ND_transformmatrix_vector3", "vector3f inputs:in = (1, 1, 1)\n"
+                               "            matrix3d inputs:mat.connect = </world/mat/i.outputs:out>", "vector3"),
+                   "vector3", 1, 0.25),
+        # ACEScg green in linear Rec.709: the matrix's second row, its green 1.1408
+        "acescg": (mtlx_node("n", "ND_acescg_to_lin_rec709_color3", "color3f inputs:in = (0, 1, 0)", "color3"),
+                   "color3", 1, 1.1408),
+    }
+    values = {}
+    for name, (shaders, kind, channel, expected) in cases.items():
+        pixels = render(f"mtlx_matrix_{name}", plane(unlit(shaders, "/world/mat/n.outputs:out", kind)))
+        values[name] = (float(pixels[16:32, 16:32, channel].mean()), expected)
     wrong = {name: v for name, v in values.items() if abs(v[0] - v[1]) > 0.01}
     assert not wrong, f"(got, expected): {wrong}"
 
@@ -989,7 +1023,7 @@ def test_nested_volumes(render):
         assert abs(on.mean() - off.mean()) < 0.005 * off.mean() and blocks.max() < 0.01, \
             (name, on.mean(), off.mean(), blocks.max())
 
-TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
+TESTS = [test_dome_radiance, test_texture_colour_spaces, test_materialx, test_materialx_shader_named_as_material, test_materialx_bump, test_materialx_values, test_materialx_matrices, test_materialx_anisotropy_follows_uv, test_osl_shading_system, test_light_and_shadow_links,
          test_implicit_cube_and_stage_units, test_catmull_rom_curve, test_preview_shading,
          test_id_aovs, test_instance_arrays, test_nested_volumes]
 
