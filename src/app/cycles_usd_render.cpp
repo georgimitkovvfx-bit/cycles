@@ -75,8 +75,14 @@
 #  include <openvdb/openvdb.h>
 #endif
 
-#include <sys/resource.h>
-#include <unistd.h>
+#ifdef _WIN32
+#  include "util/windows.h"
+#  include <psapi.h>
+#  include <stdlib.h>
+#else
+#  include <sys/resource.h>
+#  include <unistd.h>
+#endif
 
 #include <OpenImageIO/imageio.h>
 
@@ -513,7 +519,7 @@ struct Options {
   int threads = 0;
   string bvh = "auto";
   string texture_cache;      /* "", off, on (use .tx files), auto (and make missing ones) */
-  string texture_cache_path; /* "" → ~/.cache/cycles_usd_render/tx */
+  string texture_cache_path; /* "" → ~/.cache/cycles_usd_render/tx (Windows: %LOCALAPPDATA%/cycles_usd_render/tx) */
   int texture_limit = -1;    /* pixels, 0 = none; -1 → the stage's cycles:texture_limit */
   bool skip_existing = false;
   bool prepare_textures = false;
@@ -525,9 +531,24 @@ struct Options {
 
 long peak_mb()
 {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS counters = {};
+  GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters));
+  return long(counters.PeakWorkingSetSize / (1024 * 1024));
+#else
   rusage usage;
   getrusage(RUSAGE_SELF, &usage);
   return usage.ru_maxrss / 1024;
+#endif
+}
+
+void set_env(const char *name, const std::string &value)
+{
+#ifdef _WIN32
+  _putenv_s(name, value.c_str());
+#else
+  setenv(name, value.c_str(), 1);
+#endif
 }
 
 /* "image.####.exr" → "image.0012.exr". */
@@ -576,7 +597,7 @@ void usage()
 {
   printf(
       "usage: cycles_usd_render <file.usd> <image (#### for the frame)> [--frames 1-24] [--camera /path]\n"
-      "         [--resolution 1280x720] [--samples N] [--device CPU|CUDA] [--threads N] [--bvh auto|static|dynamic]\n"
+      "         [--resolution 1280x720] [--samples N] [--device CPU|CUDA|OPTIX] [--threads N] [--bvh auto|static|dynamic]\n"
       "         [--texture-cache off|on|auto] [--texture-cache-path DIR] [--texture-limit PIXELS]\n"
       "         [--skip-existing] [--prepare-textures] [--stats] [--cycles-defaults]\n"
       "         [--display sRGB] [--view AgX] [--look None] [--exposure 0] [--gamma 1] [--dither 1] [--quality 90]\n"
@@ -740,7 +761,9 @@ void print_shaders()
 
 DeviceInfo choose_device(const string &name)
 {
-  const DeviceTypeMask mask = name == "CUDA" ? DEVICE_MASK_CUDA : DEVICE_MASK_CPU;
+  const DeviceTypeMask mask = name == "CUDA"  ? DEVICE_MASK_CUDA :
+                              name == "OPTIX" ? DEVICE_MASK_OPTIX :
+                                                DEVICE_MASK_CPU;
   const vector<DeviceInfo> devices = Device::available_devices(mask);
   if (devices.empty()) {
     fail("no " + name + " device");
@@ -773,12 +796,20 @@ SdfPath choose_camera(const UsdStageRefPtr &stage, const UsdRenderSettings &sett
  * <plugin>/usd and <plugin>/usd_plugins. */
 std::filesystem::path plugin_folder()
 {
+#ifdef _WIN32
+  wchar_t buffer[32768];
+  const DWORD length = GetModuleFileNameW(nullptr, buffer, DWORD(std::size(buffer)));
+  if (length == 0 || length >= std::size(buffer)) {
+    fail("cannot find the executable's folder");
+  }
+#else
   char buffer[4096];
   const ssize_t length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
   if (length <= 0) {
     fail("cannot find the executable's folder");
   }
   buffer[length] = '\0';
+#endif
   return std::filesystem::path(buffer).parent_path().parent_path();
 }
 
@@ -802,12 +833,12 @@ int render(const Options &o)
   if (!getenv("CYCLES_SHADER_PATH") && !std::filesystem::exists(resources / "shader") &&
       std::filesystem::exists(plugin / "shader"))
   {
-    setenv("CYCLES_SHADER_PATH", (plugin / "shader").c_str(), 1);
+    set_env("CYCLES_SHADER_PATH", (plugin / "shader").string());
   }
   const std::filesystem::path ocio = plugin / "colormanagement" / "config.ocio";
   if (!getenv("OCIO") && std::filesystem::exists(ocio)) {
     /* Blender's colour management (sRGB, Linear Rec.709, AgX …): texture colour spaces resolve as in Blender. */
-    setenv("OCIO", ocio.c_str(), 1);
+    set_env("OCIO", ocio.string());
   }
   PlugRegistry::GetInstance().RegisterPlugins(
       std::vector<std::string>{(plugin / "usd").string(), (plugin / "usd_plugins").string()});
@@ -870,10 +901,15 @@ int render(const Options &o)
   scene_params.auto_texture_cache = texture_cache == "auto";
   scene_params.texture_cache_path = o.texture_cache_path;
   if (scene_params.texture_cache_path.empty()) {
+#ifdef _WIN32
+    const char *home = getenv("LOCALAPPDATA");
+    scene_params.texture_cache_path = (std::filesystem::path(home ? home : ".") / "cycles_usd_render" / "tx").string();
+#else
     const char *home = getenv("XDG_CACHE_HOME");
     scene_params.texture_cache_path = home ? string(home) + "/cycles_usd_render/tx" :
                                              string(getenv("HOME") ? getenv("HOME") : "/tmp") +
                                                  "/.cache/cycles_usd_render/tx";
+#endif
   }
   if (scene_params.auto_texture_cache) {
     std::error_code error;
