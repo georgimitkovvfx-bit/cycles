@@ -1,7 +1,7 @@
 # MaterialX coverage of the Hydra delegate
 
-Regenerate after a change to `hydra/materialx.cpp` (it takes minutes; `--karma` needs Houdini, `--examples` MaterialX's
-`resources/Materials/Examples` from its source):
+Regenerate after a change to `hydra/materialx.cpp` (it takes minutes; `--karma` needs Houdini, `--examples`
+MaterialX's `resources/Materials/Examples` from its source):
 
     LD_LIBRARY_PATH=$(ls -d $PWD/lib/linux_x64/*/lib | tr '\n' :) lib/linux_x64/python/bin/python3.13 \
         src/hydra/test/materialx_coverage.py --values --karma --examples <MaterialX>/resources/Materials/Examples \
@@ -286,7 +286,7 @@ Outputs no surface consumes directly (strings, file names, light shaders, materi
 
 ## Values
 
-Every translated, expanded or approximated output of a value type (770) on an unlit quad, against MaterialX's own OSL (its genosl implementations through MaterialXGenOsl and oslc, rendered by Cycles' OSL) and Karma (husk, Houdini's MaterialX): constant inputs in [0.1, 0.9], file inputs a constant image (0.2, 0.5, 0.8, 0.6), geometric defaults (texture coordinates, position, normal) as they are, read at (3/8, 3/8) of each quad. Within 0.01 + 2 %, 697 agree with a reference, 66 with neither while the references agree (ours is wrong), 7 with neither while the references disagree too.
+Every translated, expanded or approximated output of a value type (770) on an unlit quad, against MaterialX's own OSL (its genosl implementations through MaterialXGenOsl and oslc, rendered by Cycles' OSL) and Karma (husk, Houdini's MaterialX): constant inputs in [0.1, 0.9], file inputs a constant image (0.2, 0.5, 0.8, 0.6), geometric defaults (texture coordinates, position, normal) as they are, read at (3/8, 3/8) of each quad. Within 0.01 + 2 %, 703 agree with a reference, 61 with neither while the references agree (ours is wrong), 6 with neither while the references disagree too.
 
 ### Cycles is wrong
 
@@ -296,7 +296,6 @@ Every translated, expanded or approximated output of a value type (770) on an un
 | `UsdPrimvarReader` | ND_UsdPrimvarReader_vector2 | out | (0.000, 0.000, 0.000) | (0.352, 0.135, 0.000) | (0.352, 0.135, 0.000) |
 | `UsdPrimvarReader` | ND_UsdPrimvarReader_vector3 | out | (0.000, 0.000, 0.000) | (0.205, 0.788, 0.571) | (0.205, 0.788, 0.571) |
 | `UsdPrimvarReader` | ND_UsdPrimvarReader_vector4 | out | (0.000, 0.000, 0.000) | (0.184, 0.767, 0.550) | (0.184, 0.767, 0.550) |
-| `bitangent` | ND_bitangent_vector3 | out | (-0.971, 0.238, 0.000) | (0.000, 1.000, 0.000) | (0.000, 1.000, 0.000) |
 | `cellnoise3d` | ND_cellnoise3d_float | out | (0.572, 0.572, 0.572) | (0.172, 0.172, 0.172) | (0.172, 0.172, 0.172) |
 | `fractal2d` | ND_fractal2d_color3 | out | (0.062, -0.039, 0.141) | (0.062, 0.987, -0.303) | (0.062, 0.985, -0.304) |
 | `fractal2d` | ND_fractal2d_color3FA | out | (0.319, 0.314, 0.416) | (0.319, 1.087, -0.332) | (0.319, 1.084, -0.331) |
@@ -324,7 +323,6 @@ Every translated, expanded or approximated output of a value type (770) on an un
 | `geompropvalue` | ND_geompropvalue_vector2 | out | (0.000, 0.000, 0.000) | (0.341, 0.124, 0.000) | (0.341, 0.124, 0.000) |
 | `geompropvalue` | ND_geompropvalue_vector3 | out | (0.000, 0.000, 0.000) | (0.442, 0.225, 0.808) | (0.442, 0.225, 0.808) |
 | `geompropvalue` | ND_geompropvalue_vector4 | out | (0.000, 0.000, 0.000) | (0.640, 0.423, 0.206) | (0.640, 0.423, 0.206) |
-| `glossiness_anisotropy` | ND_glossiness_anisotropy | out | (0.187, 0.187, 0.000) | (0.530, 0.066, 0.000) | (0.530, 0.066, 0.000) |
 | `heighttonormal` | ND_heighttonormal_vector3 | out | (0.000, 0.000, 1.000) | (0.500, 0.500, 1.000) | (0.500, 0.500, 1.000) |
 | `noise2d` | ND_noise2d_color3 | out | (0.571, 0.565, 0.671) | (0.571, 1.083, 0.345) | (0.572, 1.078, 0.350) |
 | `noise2d` | ND_noise2d_color3FA | out | (0.751, 0.729, 0.799) | (0.751, 0.968, 0.589) | (0.752, 0.967, 0.591) |
@@ -349,9 +347,6 @@ Every translated, expanded or approximated output of a value type (770) on an un
 | `randomcolor` | ND_randomcolor_float | out | (0.129, 0.245, 0.629) | (0.069, 0.378, 0.370) | (0.068, 0.378, 0.370) |
 | `randomcolor` | ND_randomcolor_integer | out | (0.434, 0.528, 0.349) | (0.396, 0.484, 0.427) | (0.396, 0.484, 0.427) |
 | `randomfloat` | ND_randomfloat_float | out | (0.485, 0.485, 0.485) | (0.605, 0.605, 0.605) | (0.604, 0.604, 0.604) |
-| `roughness_anisotropy` | ND_roughness_anisotropy | out | (0.194, 0.194, 0.000) | (0.227, 0.167, 0.000) | (0.227, 0.167, 0.000) |
-| `standard_surface_to_gltf_pbr` | ND_standard_surface_to_gltf_pbr | anisotropy_strength_out | (0.000, 0.000, 0.000) | (1.000, 1.000, 1.000) | (1.000, 1.000, 1.000) |
-| `standard_surface_to_gltf_pbr` | ND_standard_surface_to_gltf_pbr | roughness_out | (0.435, 0.435, 0.435) | (0.412, 0.412, 0.412) | (0.412, 0.412, 0.412) |
 | `worleynoise2d` | ND_worleynoise2d_float | out | (0.468, 0.468, 0.468) | (0.259, 0.259, 0.259) | (0.261, 0.261, 0.261) |
 | `worleynoise2d` | ND_worleynoise2d_vector2 | out | (0.174, 0.174, 0.000) | (0.443, 0.638, 0.000) | (0.444, 0.637, 0.000) |
 | `worleynoise2d` | ND_worleynoise2d_vector3 | out | (0.138, 0.138, 0.138) | (0.378, 0.676, 0.997) | (0.376, 0.677, 0.995) |
@@ -366,10 +361,9 @@ Every translated, expanded or approximated output of a value type (770) on an un
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_R | (0.202, 0.670, 0.000) | (0.000, 0.000, 0.000) | (0.032, 0.714, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TRT | (0.598, 0.393, 0.000) | (0.000, 0.000, 0.000) | (0.013, 0.289, 0.000) |
 | `chiang_hair_roughness` | ND_chiang_hair_roughness | roughness_TT | (0.657, 0.267, 0.000) | (0.000, 0.000, 0.000) | (0.131, 0.156, 0.000) |
-| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (0.010, 0.000, 0.000) | (1.000, 1.000, 1.000) |
+| `geomcolor` | ND_geomcolor_color4 | out | (0.000, 0.000, 0.000) | (-4898144354226518924197888.000, 0.000, 0.000) | (1.000, 1.000, 1.000) |
 | `normalmap` | ND_normalmap_float | out | (0.609, -0.102, 0.786) | (0.292, 0.209, -0.933) | (0.354, -0.059, 0.001) |
 | `normalmap` | ND_normalmap_vector2 | out | (0.099, 0.021, 0.995) | (-0.006, 0.339, -0.941) | (0.235, 0.244, 0.001) |
-| `tangent` | ND_tangent_vector3 | out | (0.250, 0.968, -0.000) | (0.707, 0.707, 0.000) | (1.000, -0.000, 0.000) |
 
 ## Example materials
 
