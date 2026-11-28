@@ -217,15 +217,25 @@ CELL = 16
 SAMPLE = 3 * CELL // 8
 # The image of every file input: a constant linear colour, so that filtering and colour spaces do not matter.
 TEXTURE = (0.2, 0.5, 0.8, 0.6)
-VALUE_TYPES = ("float", "color3", "color4", "vector2", "vector3", "vector4", "integer", "boolean")
+VALUE_TYPES = ("float", "color3", "color4", "vector2", "vector3", "vector4", "integer", "boolean", "matrix33",
+               "matrix44")
+# A matrix output is shown as this vector transformed by it (transformmatrix), then as a colour.
+MATRIX_PROBE = {"matrix33": ("ND_transformmatrix_vector3", "vector3", "0.3, 0.5, 0.7"),
+                "matrix44": ("ND_transformmatrix_vector4", "vector4", "0.3, 0.5, 0.7, 0.9")}
 
 
 def constant(kind: str, seed: int) -> str | None:
-    """A fixed non-default value in [0.1, 0.9] for an input, so that math nodes do more than their defaults."""
-    values = [0.1 + 0.8 * (((seed * 7919 + k * 104729) % 1000) / 1000.0) for k in range(4)]
-    count = {"float": 1, "vector2": 2, "color3": 3, "vector3": 3, "color4": 4, "vector4": 4}.get(kind)
+    """A fixed non-default value in [0.1, 0.9] for an input, so that math nodes do more than their defaults (matrices:
+    plus the identity)."""
+    values = [0.1 + 0.8 * (((seed * 7919 + k * 104729) % 1000) / 1000.0) for k in range(16)]
+    count = {"float": 1, "vector2": 2, "color3": 3, "vector3": 3, "color4": 4, "vector4": 4, "matrix33": 9,
+             "matrix44": 16}.get(kind)
     if count is None:
         return None
+    if count in (9, 16):
+        # A matrix plus the identity: far from singular, so that inverses and determinants compare well.
+        n = 3 if count == 9 else 4
+        values = [v + (1.0 if k % (n + 1) == 0 else 0.0) for k, v in enumerate(values[:count])]
     text = ", ".join(f"{v:.3f}" for v in values[:count])
     return text if count == 1 else f"({text})"
 
@@ -250,6 +260,10 @@ def probe_inputs(name: str, nodedef: mx.NodeDef, texture: Path) -> list[tuple[st
 def usd_value(kind: str, value: str) -> str:
     if kind == "filename":
         return f"@{value}@"
+    if kind in ("matrix33", "matrix44"):
+        n = 3 if kind == "matrix33" else 4
+        values = [v.strip() for v in value.split(",")]
+        return "(" + ", ".join("(" + ", ".join(values[i * n:(i + 1) * n]) + ")" for i in range(n)) + ")"
     return value if kind in ("float", "integer", "boolean") else f"({value})"
 
 
@@ -267,6 +281,12 @@ def value_material(name: str, nodedef: mx.NodeDef, output: mx.Output, column: in
     lines = [f"{SDF_TYPES[k]} inputs:{n} = {usd_value(k, v)}" for n, k, v in inputs]
     out = f"{root}/n.outputs:{output.getName()}"
     node = shader("n", nodedef.getName(), lines, output.getName(), SDF_TYPES[kind])
+    if kind in MATRIX_PROBE:
+        transform, kind, vector = MATRIX_PROBE[kind]
+        node += shader("t", transform, [f"{SDF_TYPES[kind]} inputs:in = {usd_value(kind, vector)}",
+                                        f"{SDF_TYPES[output.getType()]} inputs:mat.connect = <{out}>"], "out",
+                       SDF_TYPES[kind])
+        out = f"{root}/t.outputs:out"
     if kind != "color3":
         node += shader("c", f"ND_convert_{kind}_color3", [f"{SDF_TYPES[kind]} inputs:in.connect = <{out}>"], "out",
                        "color3f")
@@ -291,12 +311,18 @@ def osl_material(name: str, nodedef: mx.NodeDef, output: mx.Output, column: int,
         node.addInput(input_name, kind).setValueString(value)
     if output.getName() != "out" or len(nodedef.getOutputs()) > 1:
         node.setType("multioutput")
-    source = node
-    if output.getType() != "color3":
-        source = doc.addNodeInstance(doc.getNodeDef(f"ND_convert_{output.getType()}_color3"), "c")
-        source.addInput("in", output.getType()).setConnectedNode(node)
-        if node.getType() == "multioutput":
-            source.getInput("in").setOutputString(output.getName())
+    source, kind = node, output.getType()
+    if kind in MATRIX_PROBE:
+        transform, kind, vector = MATRIX_PROBE[kind]
+        source = doc.addNodeInstance(doc.getNodeDef(transform), "t")
+        source.addInput("in", kind).setValueString(vector)
+        source.addInput("mat", output.getType()).setConnectedNode(node)
+    if kind != "color3":
+        converted = doc.addNodeInstance(doc.getNodeDef(f"ND_convert_{kind}_color3"), "c")
+        converted.addInput("in", kind).setConnectedNode(source)
+        if source is node and node.getType() == "multioutput":
+            converted.getInput("in").setOutputString(output.getName())
+        source = converted
     result = doc.addOutput("out", "color3")
     result.setNodeName(source.getName())
     if source is node and node.getType() == "multioutput":

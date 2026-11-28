@@ -44,8 +44,9 @@ TF_DEFINE_PRIVATE_TOKENS(MaterialXTokens,
 // clang-format on
 
 /* What a MaterialX value is in the Cycles graph. Vector2 values are 3D vectors with Z = 0, the
- * fourth component of color4 and vector4 values is a separate float. */
-enum class Kind { None, Float, Vec3, Vec4, Closure, String };
+ * fourth component of color4 and vector4 values is a separate float. A matrix (Cycles has no
+ * matrix type) is its rows, each a Vec3 (matrix33) or a Vec4 (matrix44). */
+enum class Kind { None, Float, Vec3, Vec4, Closure, String, Matrix };
 
 Kind KindOf(const std::string &type)
 {
@@ -54,6 +55,9 @@ Kind KindOf(const std::string &type)
   }
   if (type == "color3" || type == "vector3" || type == "vector2") {
     return Kind::Vec3;
+  }
+  if (type == "matrix33" || type == "matrix44") {
+    return Kind::Matrix;
   }
   if (type == "color4" || type == "vector4") {
     return Kind::Vec4;
@@ -92,6 +96,8 @@ struct Val {
    * instead of decoding that normal again: bumpNode's Distance is linked there, from bumpScale. */
   ShaderNode *bumpNode = nullptr;
   std::shared_ptr<Val> bumpScale;
+  /* Rows of a matrix, 3 or 4; none for a zero matrix. */
+  std::shared_ptr<std::vector<Val>> rows;
 
   bool isConstant() const
   {
@@ -471,6 +477,300 @@ class Translator {
     return Math("multiply_add", Component(a, 3), Component(b, 3), xyz);
   }
 
+  /* Matrices. MaterialX's (as its OSL and GLSL code) multiply row vectors: out_j = sum_i in_i m_ij,
+   * the last row is the translation, A * B applies A first. Constant matrices are computed here,
+   * others with Cycles' vector math, row by row. */
+  struct MatC {
+    int n;
+    float m[4][4];
+  };
+
+  static Val MatrixOf(std::vector<Val> rows)
+  {
+    Val v;
+    v.kind = Kind::Matrix;
+    v.rows = std::make_shared<std::vector<Val>>(std::move(rows));
+    return v;
+  }
+
+  static int Size(const Val &m)
+  {
+    return m.rows ? int(m.rows->size()) : 0;
+  }
+
+  static Kind RowKind(const int n)
+  {
+    return n == 4 ? Kind::Vec4 : Kind::Vec3;
+  }
+
+  static Val ConstRow(const float4 &c, const int n)
+  {
+    Val v;
+    v.kind = RowKind(n);
+    v.c = n == 4 ? c : make_float4(c.x, c.y, c.z, 1.0f);
+    return v;
+  }
+
+  /* Row i of an n x n matrix: a missing one (a zero matrix) is zero. */
+  Val Row(const Val &m, const int i, const int n)
+  {
+    if (i < Size(m)) {
+      return Cast((*m.rows)[i], RowKind(n));
+    }
+    return ConstRow(zero_float4(), n);
+  }
+
+  static Val FromMatC(const MatC &c)
+  {
+    std::vector<Val> rows;
+    for (int i = 0; i < c.n; i++) {
+      rows.push_back(ConstRow(make_float4(c.m[i][0], c.m[i][1], c.m[i][2], c.m[i][3]), c.n));
+    }
+    return MatrixOf(std::move(rows));
+  }
+
+  bool ToMatC(const Val &m, const int n, MatC &c)
+  {
+    c.n = n;
+    for (int i = 0; i < n; i++) {
+      const Val row = Row(m, i, n);
+      if (!row.isConstant()) {
+        return false;
+      }
+      for (int j = 0; j < 4; j++) {
+        c.m[i][j] = j < n ? Get(row.c, j) : 0.0f;
+      }
+    }
+    return true;
+  }
+
+  static MatC MulC(const MatC &a, const MatC &b)
+  {
+    MatC c{a.n, {}};
+    for (int i = 0; i < a.n; i++) {
+      for (int j = 0; j < a.n; j++) {
+        for (int k = 0; k < a.n; k++) {
+          c.m[i][j] += a.m[i][k] * b.m[k][j];
+        }
+      }
+    }
+    return c;
+  }
+
+  /* The matrix without one row and one column. */
+  static MatC MinorC(const MatC &a, const int row, const int column)
+  {
+    MatC minor{a.n - 1, {}};
+    for (int i = 0, mi = 0; i < a.n; i++) {
+      if (i == row) {
+        continue;
+      }
+      for (int j = 0, mj = 0; j < a.n; j++) {
+        if (j != column) {
+          minor.m[mi][mj++] = a.m[i][j];
+        }
+      }
+      mi++;
+    }
+    return minor;
+  }
+
+  /* Laplace along the first row: enough for 3 x 3 and 4 x 4. */
+  static float DetC(const MatC &a)
+  {
+    if (a.n == 2) {
+      return a.m[0][0] * a.m[1][1] - a.m[0][1] * a.m[1][0];
+    }
+    float det = 0.0f;
+    for (int j = 0; j < a.n; j++) {
+      det += (j % 2 ? -1.0f : 1.0f) * a.m[0][j] * DetC(MinorC(a, 0, j));
+    }
+    return det;
+  }
+
+  /* Inverse by cofactors, a zero matrix for a singular one (as OSL's 1 / m). */
+  static MatC InverseC(const MatC &a)
+  {
+    MatC inverse{a.n, {}};
+    const float det = DetC(a);
+    if (fabsf(det) < 1e-30f) {
+      return inverse;
+    }
+    for (int i = 0; i < a.n; i++) {
+      for (int j = 0; j < a.n; j++) {
+        inverse.m[j][i] = ((i + j) % 2 ? -1.0f : 1.0f) * DetC(MinorC(a, i, j)) / det;
+      }
+    }
+    return inverse;
+  }
+
+  /* x * row: a row (Vec3 / Vec4) scaled by a float. */
+  Val ScaleRow(const Val &row, const Val &x, const int n)
+  {
+    return Op(RowKind(n), "multiply", "multiply", row, Cast(x, RowKind(n)));
+  }
+
+  /* sum_i v_i row_i over the first `count` rows, plus row `count` when `point`. */
+  Val CombineRows(const Val &m, const int n, const Val &v, const int count, const bool point)
+  {
+    Val sum = ScaleRow(Row(m, 0, n), Component(v, 0), n);
+    for (int i = 1; i < count; i++) {
+      sum = Op(RowKind(n), "add", "add", sum, ScaleRow(Row(m, i, n), Component(v, i), n));
+    }
+    return point ? Op(RowKind(n), "add", "add", sum, Row(m, count, n)) : sum;
+  }
+
+  /* 3 x 3 determinant of three Vec3 rows: a . (b x c). */
+  Val Det3(const Val &a, const Val &b, const Val &c)
+  {
+    return VMath("dot_product", a, VMath("cross_product", b, c), Const(0.0f), true);
+  }
+
+  template<typename InputFn>
+  Val MatrixNode(const std::string &category,
+                 const mx::NodePtr &node,
+                 const InputFn &input,
+                 bool &supported)
+  {
+    const mx::NodeDefPtr nodeDef = NodeDef(node);
+    const auto size = [&](const char *name) {
+      const mx::InputPtr def = nodeDef->getActiveInput(name);
+      return def && def->getType() == "matrix44" ? 4 : 3;
+    };
+    const int n = nodeDef->getType() == "matrix44" ? 4 : size(category == "creatematrix" ? "in4" : "in");
+    MatC a, b;
+    if (category == "add" || category == "subtract") {
+      const Val m1 = input("in1"), m2 = input("in2");
+      const bool scalar = m2.kind != Kind::Matrix;
+      if (ToMatC(m1, n, a) && (scalar ? m2.isConstant() : ToMatC(m2, n, b))) {
+        for (int i = 0; i < n; i++) {
+          for (int j = 0; j < n; j++) {
+            const float y = scalar ? m2.c.x : b.m[i][j];
+            a.m[i][j] += category == "add" ? y : -y;
+          }
+        }
+        return FromMatC(a);
+      }
+      std::vector<Val> rows;
+      for (int i = 0; i < n; i++) {
+        rows.push_back(Op(RowKind(n),
+                          category.c_str(),
+                          category.c_str(),
+                          Row(m1, i, n),
+                          scalar ? Cast(m2, RowKind(n)) : Row(m2, i, n)));
+      }
+      return MatrixOf(std::move(rows));
+    }
+    if (category == "multiply" || category == "divide") {
+      const Val m1 = input("in1"), m2 = input("in2");
+      const bool divide = category == "divide";
+      if (!ToMatC(m2, n, b)) {
+        if (divide) {
+          supported = false; /* The inverse of a varying matrix. */
+          return Val();
+        }
+      }
+      else if (divide) {
+        b = InverseC(b);
+      }
+      if (ToMatC(m1, n, a) && (divide || ToMatC(m2, n, b))) {
+        return FromMatC(MulC(a, b));
+      }
+      const Val right = divide ? FromMatC(b) : m2;
+      std::vector<Val> rows;
+      for (int i = 0; i < n; i++) {
+        rows.push_back(CombineRows(right, n, Row(m1, i, n), n, false));
+      }
+      return MatrixOf(std::move(rows));
+    }
+    if (category == "transpose") {
+      const Val m = input("in");
+      if (ToMatC(m, n, a)) {
+        MatC t{n, {}};
+        for (int i = 0; i < n; i++) {
+          for (int j = 0; j < n; j++) {
+            t.m[i][j] = a.m[j][i];
+          }
+        }
+        return FromMatC(t);
+      }
+      std::vector<Val> rows;
+      for (int j = 0; j < n; j++) {
+        const Val xyz = Combine(Component(Row(m, 0, n), j),
+                                Component(Row(m, 1, n), j),
+                                Component(Row(m, 2, n), j));
+        rows.push_back(n == 4 ? WithAlpha(xyz, Component(Row(m, 3, n), j)) : xyz);
+      }
+      return MatrixOf(std::move(rows));
+    }
+    if (category == "determinant") {
+      const Val m = input("in");
+      if (ToMatC(m, n, a)) {
+        return Const(DetC(a));
+      }
+      if (n == 3) {
+        return Det3(Row(m, 0, 3), Row(m, 1, 3), Row(m, 2, 3));
+      }
+      /* Along the first row: the 3 x 3 minors of rows 1-3 without column j. */
+      Val det = Const(0.0f);
+      for (int j = 0; j < 4; j++) {
+        Val minor[3];
+        for (int i = 0; i < 3; i++) {
+          const Val row = Row(m, i + 1, 4);
+          Val c[3];
+          for (int k = 0, l = 0; k < 4; k++) {
+            if (k != j) {
+              c[l++] = Component(row, k);
+            }
+          }
+          minor[i] = Combine(c[0], c[1], c[2]);
+        }
+        const Val term = Math("multiply", Component(Row(m, 0, 4), j), Det3(minor[0], minor[1], minor[2]));
+        det = Math(j % 2 ? "subtract" : "add", det, term);
+      }
+      return det;
+    }
+    if (category == "invertmatrix") {
+      if (ToMatC(input("in"), n, a)) {
+        return FromMatC(InverseC(a));
+      }
+      supported = false; /* The inverse of a varying matrix. */
+      return Val();
+    }
+    if (category == "creatematrix") {
+      const bool vector4 = nodeDef->getActiveInput("in1")->getType() == "vector4";
+      std::vector<Val> rows;
+      const char *names[] = {"in1", "in2", "in3", "in4"};
+      for (int i = 0; i < n; i++) {
+        const Val in = input(names[i]);
+        if (n == 3 || vector4) {
+          rows.push_back(Cast(in, RowKind(n)));
+        }
+        else {
+          rows.push_back(WithAlpha(Cast(in, Kind::Vec3), Const(i == 3 ? 1.0f : 0.0f)));
+        }
+      }
+      return MatrixOf(std::move(rows));
+    }
+    if (category == "transformmatrix") {
+      const Val m = input("mat");
+      const std::string inType = nodeDef->getActiveInput("in")->getType();
+      const int msize = size("mat");
+      const Val in = input("in");
+      if (inType == "vector2") {
+        /* (x, y, 1): the third row translates. */
+        return CombineRows(m, 3, in, 2, true);
+      }
+      if (inType == "vector3" && msize == 4) {
+        /* A point (x, y, z, 1), as MaterialX's GLSL (its OSL leaves the translation out). */
+        return Cast(CombineRows(m, 4, in, 3, true), Kind::Vec3);
+      }
+      return CombineRows(m, msize, in, msize, false);
+    }
+    supported = false;
+    return Val();
+  }
+
   Val Mul(const Kind kind, const Val &a, const Val &b)
   {
     return Op(kind, "multiply", "multiply", a, b);
@@ -501,6 +801,14 @@ class Translator {
             Kind::Vec3, fac.kind == Kind::Vec4 ? Cast(fac, Kind::Vec3) : fac, bg4, fg4);
         return WithAlpha(
             rgb, Mix(Kind::Float, Component(fac, 3), Component(bg4, 3), Component(fg4, 3)));
+      }
+      case Kind::Matrix: {
+        const int n = std::max(Size(bg), Size(fg));
+        std::vector<Val> rows;
+        for (int i = 0; i < n; i++) {
+          rows.push_back(Mix(RowKind(n), fac, Row(bg, i, n), Row(fg, i, n)));
+        }
+        return MatrixOf(std::move(rows));
       }
       case Kind::Closure: {
         ShaderNode *node = Create("mix_closure");
@@ -744,6 +1052,26 @@ class Translator {
       const mx::Vector4 c = value->asA<mx::Vector4>();
       v.c = make_float4(c[0], c[1], c[2], c[3]);
     }
+    else if (value->isA<mx::Matrix33>()) {
+      const mx::Matrix33 m = value->asA<mx::Matrix33>();
+      MatC c{3, {}};
+      for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+          c.m[i][j] = m[i][j];
+        }
+      }
+      return FromMatC(c);
+    }
+    else if (value->isA<mx::Matrix44>()) {
+      const mx::Matrix44 m = value->asA<mx::Matrix44>();
+      MatC c{4, {}};
+      for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+          c.m[i][j] = m[i][j];
+        }
+      }
+      return FromMatC(c);
+    }
     return v;
   }
 
@@ -910,6 +1238,17 @@ class Translator {
     /* Closures. */
     if (kind == Kind::Closure) {
       return Closure(category, input, supported);
+    }
+    /* Matrices, and the nodes that take one. */
+    if (kind == Kind::Matrix || category == "transformmatrix" || category == "determinant") {
+      if (category == "ifgreater" || category == "ifgreatereq" || category == "ifequal" ||
+          category == "constant" || category == "dot")
+      {
+        /* The conditional and organization nodes below handle matrices through Mix. */
+      }
+      else {
+        return MatrixNode(category, node, input, supported);
+      }
     }
 
     /* Math. */
